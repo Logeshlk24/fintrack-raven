@@ -1,0 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PASTE THIS IN:
+// Firebase Console → Firestore Database → Rules → Replace all → Publish
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Each user can ONLY read/write their own data.
+// No other user, and no unauthenticated request, can access any document.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+  }
+}
