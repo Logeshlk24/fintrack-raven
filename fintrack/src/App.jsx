@@ -512,17 +512,11 @@ function Overview({ data, netWorth, foNetPnl, setPage }) {
   const totalIncome = data.transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
   const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-  // Bank balances: sum income - expense per bank
-  // Credit cards: opening balance + expenses - income (payments reduce outstanding)
+  // Bank balances: sum income - expense per bank (exclude credit cards)
   const banks = data.banks || [];
-  const bankBalances = banks.map(bank => {
+  const bankBalances = banks.filter(bank => bank.type !== "Credit Card").map(bank => {
     const inc = data.transactions.filter(t => t.type === "income" && t.bankId === bank.id).reduce((s, t) => s + Number(t.amount || 0), 0);
     const exp = data.transactions.filter(t => t.type === "expense" && t.bankId === bank.id).reduce((s, t) => s + Number(t.amount || 0), 0);
-    
-    // For credit cards: expenses increase outstanding, income (payments) reduces it
-    if (bank.type === "Credit Card") {
-      return { ...bank, balance: (bank.openingBalance || 0) + exp - inc };
-    }
     // For bank accounts and cash: normal calculation
     return { ...bank, balance: (bank.openingBalance || 0) + inc - exp };
   });
@@ -676,7 +670,7 @@ function MoneyPage({ data, update, tab, setTab }) {
 
   function saveEditAcct() {
     if (!editAcct || !editAcct.name.trim()) return;
-    update(p => ({ banks: (p.banks || []).map(b => b.id === editAcct.id ? { ...b, name: editAcct.name, creditLimit: editAcct.creditLimit, dueDate: editAcct.dueDate } : b) }));
+    update(p => ({ banks: (p.banks || []).map(b => b.id === editAcct.id ? { ...b, name: editAcct.name, openingBalance: editAcct.openingBalance ?? b.openingBalance, creditLimit: editAcct.creditLimit, dueDate: editAcct.dueDate } : b) }));
     setEditAcct(null);
   }
 
@@ -829,6 +823,10 @@ function MoneyPage({ data, update, tab, setTab }) {
             {editAcct.type === "Credit Card" && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                 <div>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Outstanding Balance (₹)</label>
+                  <input type="number" placeholder="e.g. 5000" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+                <div>
                   <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
                   <input type="number" value={editAcct.creditLimit || ""} onChange={e => setEditAcct(p => ({ ...p, creditLimit: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
                 </div>
@@ -849,7 +847,7 @@ function MoneyPage({ data, update, tab, setTab }) {
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
-      <TabBar tabs={["expenses", "income", "accounts", "categories", "insights", "liabilities"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Accounts", "Categories", "Insights", "Liabilities"]} />
+      <TabBar tabs={["expenses", "income", "accounts", "categories", "liabilities"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Accounts", "Categories", "Liabilities"]} />
 
       {/* ── Accounts Tab ── */}
       {tab === "accounts" && (
@@ -1085,20 +1083,6 @@ function MoneyPage({ data, update, tab, setTab }) {
               </div>
             </Card>
           ))}
-        </div>
-      )}
-
-      {/* ── Insights Tab ── */}
-      {tab === "insights" && (
-        <div style={{ marginTop: 16 }}>
-          <PeriodBar periods={["This Week", "This Month", "Last Month", "6M", "12M"]} active={period} setActive={setPeriod} />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, margin: "12px 0" }}>
-            <StatCard label="Total Income" value={fmtCur(income)} />
-            <StatCard label="Total Expenses" value={fmtCur(expense)} />
-            <StatCard label="Gap" value={fmtCur(income - expense)} pnl={income - expense} />
-            <StatCard label="Avg Monthly Expense" value={fmtCur(expense / 6)} />
-          </div>
-          {income === 0 && expense === 0 && <EmptyState msg="No transactions yet." />}
         </div>
       )}
 
