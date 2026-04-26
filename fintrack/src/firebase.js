@@ -37,6 +37,13 @@ export { onAuthStateChanged };
 
 const userRef = (uid) => doc(db, "users", uid, "fintrack", "data");
 
+// Strips undefined values — Firestore does not accept undefined
+function cleanData(obj) {
+  return JSON.parse(JSON.stringify(obj, (key, val) =>
+    val === undefined ? null : val
+  ));
+}
+
 export async function loadFromFirestore(uid, fallback) {
   try {
     const snap = await getDoc(userRef(uid));
@@ -49,7 +56,7 @@ export async function loadFromFirestore(uid, fallback) {
 
 export async function saveToFirestore(uid, data) {
   try {
-    await setDoc(userRef(uid), data, { merge: true });
+    await setDoc(userRef(uid), cleanData(data), { merge: true });
   } catch (e) {
     console.error("Firestore save error:", e);
   }
