@@ -14,7 +14,6 @@ import {
   setDoc,
 } from "firebase/firestore";
 
-// ── Your Firebase project config ─────────────────────────────────────────────
 const firebaseConfig = {
   apiKey: "AIzaSyDr_yGnZNsT_NgFmw0RkTRZhpzsRFy0SiU",
   authDomain: "fintracker-raven.firebaseapp.com",
@@ -25,21 +24,17 @@ const firebaseConfig = {
   measurementId: "G-1MVVYSS4SR",
 };
 
-// ── Initialize ────────────────────────────────────────────────────────────────
-const app   = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);   // kept from your original config
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
 
-export const auth     = getAuth(app);
-export const db       = getFirestore(app);
-const provider        = new GoogleAuthProvider();
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
 
-// ── Auth helpers ──────────────────────────────────────────────────────────────
 export const signInWithGoogle = () => signInWithPopup(auth, provider);
-export const signOutUser      = () => signOut(auth);
+export const signOutUser = () => signOut(auth);
 export { onAuthStateChanged };
 
-// ── Firestore helpers ─────────────────────────────────────────────────────────
-// Data path:  users/{uid}/fintrack/data  (one doc per user)
 const userRef = (uid) => doc(db, "users", uid, "fintrack", "data");
 
 export async function loadFromFirestore(uid, fallback) {
