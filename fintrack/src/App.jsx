@@ -145,6 +145,14 @@ export default function App() {
   const netWorth = (data.banks || []).reduce((s, b) => {
     const inc = data.transactions.filter(t => t.type === "income" && t.bankId === b.id).reduce((a, t) => a + Number(t.amount || 0), 0);
     const exp = data.transactions.filter(t => t.type === "expense" && t.bankId === b.id).reduce((a, t) => a + Number(t.amount || 0), 0);
+    
+    // For credit cards, outstanding is a liability (subtract from net worth)
+    // Credit card balance = opening + expenses - income (payments)
+    if (b.type === "Credit Card") {
+      const outstanding = (b.openingBalance || 0) + exp - inc;
+      return s - outstanding; // Credit card debt reduces net worth
+    }
+    // For bank accounts and cash: add to net worth
     return s + (b.openingBalance || 0) + inc - exp;
   }, 0);
 
@@ -505,10 +513,17 @@ function Overview({ data, netWorth, foNetPnl, setPage }) {
   const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
   // Bank balances: sum income - expense per bank
+  // Credit cards: opening balance + expenses - income (payments reduce outstanding)
   const banks = data.banks || [];
   const bankBalances = banks.map(bank => {
     const inc = data.transactions.filter(t => t.type === "income" && t.bankId === bank.id).reduce((s, t) => s + Number(t.amount || 0), 0);
     const exp = data.transactions.filter(t => t.type === "expense" && t.bankId === bank.id).reduce((s, t) => s + Number(t.amount || 0), 0);
+    
+    // For credit cards: expenses increase outstanding, income (payments) reduces it
+    if (bank.type === "Credit Card") {
+      return { ...bank, balance: (bank.openingBalance || 0) + exp - inc };
+    }
+    // For bank accounts and cash: normal calculation
     return { ...bank, balance: (bank.openingBalance || 0) + inc - exp };
   });
 
@@ -934,8 +949,10 @@ function MoneyPage({ data, update, tab, setTab }) {
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>💳 Credit Cards</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
                 {cards.map(acct => {
+                  const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
                   const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-                  const bal = Math.abs(acct.balance || 0);
+                  // Credit card balance = opening + expenses - payments
+                  const bal = (acct.openingBalance || 0) + txExp - txInc;
                   const limit = acct.creditLimit || 0;
                   const usedPct = limit > 0 ? Math.min((bal / limit) * 100, 100) : 0;
                   const available = limit > 0 ? limit - bal : null;
@@ -995,7 +1012,9 @@ function MoneyPage({ data, update, tab, setTab }) {
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>💵 Cash</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
                 {cashAccounts.map(acct => {
-                  const bal = acct.balance || 0;
+                  const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+                  const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+                  const bal = (acct.openingBalance || 0) + txInc - txExp;
                   return (
                     <div key={acct.id} style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
