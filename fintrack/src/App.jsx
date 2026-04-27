@@ -64,6 +64,7 @@ const defaultData = {
   goals: [],
   snapshots: [],
   scheduledPayments: [],
+  featureToggles: { fo: true },
 };
 
 
@@ -186,11 +187,11 @@ export default function App() {
 
   if (onboarding) return <Onboarding step={onboardStep} setStep={setOnboardStep} data={data} update={update} done={() => setOnboarding(false)} />;
 
+  const toggles = data.featureToggles || { fo: true };
   const navItems = [
     { id: "overview", label: "Overview", icon: "⊞" },
     { id: "money", label: "Money", icon: "⊕" },
-    { id: "fo", label: "F&O", icon: "◉" },
-
+    ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
   ];
 
   return (
@@ -1751,10 +1752,10 @@ function SettingsPage({ data, update, tab, setTab }) {
       <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 }}>Settings</h1>
       <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 16 }}>Manage your app preferences, accounts and categories.</p>
       <TabBar
-        tabs={["trading", "accounts", "categories"]}
+        tabs={["trading", "accounts", "categories", "features"]}
         active={tab}
         setActive={setTab}
-        labels={["Trading Settings", "Account Settings", "Categories"]}
+        labels={["Trading Settings", "Account Settings", "Categories", "Features"]}
       />
 
       {/* ── Trading Settings ── */}
@@ -1765,6 +1766,69 @@ function SettingsPage({ data, update, tab, setTab }) {
 
       {/* ── Categories ── */}
       {tab === "categories" && <CategoriesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Feature Toggles ── */}
+      {tab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+    </div>
+  );
+}
+
+function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
+  const toggles = data.featureToggles || { fo: true };
+
+  function toggle(key) {
+    update(p => ({ featureToggles: { ...(p.featureToggles || { fo: true }), [key]: !(p.featureToggles || { fo: true })[key] } }));
+  }
+
+  const features = [
+    {
+      key: "fo",
+      icon: "◉",
+      label: "F&O Tracker",
+      sub: "Futures & Options trade journal, P&L calculator, broker charge breakdown and charge profiles.",
+    },
+  ];
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={cardStyle}>
+        {sectionTitle("🔧", "Feature Toggles", "Turn features on or off. Your data is always preserved — just hidden until you switch back on.")}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {features.map(f => {
+            const isOn = toggles[f.key] !== false;
+            return (
+              <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 20 }}>{f.icon}</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{f.label}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>{f.sub}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggle(f.key)}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
+                    background: isOn ? "#1a6b3c" : "var(--color-border-primary)",
+                    position: "relative", transition: "background 0.2s", flexShrink: 0,
+                  }}
+                  title={isOn ? "Turn off" : "Turn on"}
+                >
+                  <span style={{
+                    position: "absolute", top: 3, left: isOn ? 23 : 3,
+                    width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                    transition: "left 0.2s", display: "block",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.25)"
+                  }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          💡 Toggling a feature off hides it from the sidebar. All data (trades, records, history) is kept safe and will reappear the moment you turn it back on.
+        </p>
+      </div>
     </div>
   );
 }
@@ -2201,7 +2265,7 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
 // ─── Scheduled Payments Tab ──────────────────────────────────────────────────
 function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
-  const [form, setForm] = useState({ name: "", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", tenure: "", notes: "", accountId: "" });
+  const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", tenure: "", notes: "", accountId: "" });
   const [filterType, setFilterType] = useState("all");
   const [view, setView] = useState("list");
 
@@ -2263,7 +2327,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   }
 
   const now = new Date();
-  let list = payments.filter(p => filterType === "all" || p.type === filterType);
+  let list = payments.filter(p => filterType === "all" || p.type === filterType || p.flowType === filterType);
   list = [...list].sort((a, b) => { const da = getDueDate(a), db = getDueDate(b); if (!da) return 1; if (!db) return -1; return da - db; });
 
   const monthDue = payments.reduce((s, p) => { const d = getDueDate(p); const key = getNextDueKey(p); const isPaid = key && p.paid.includes(key); if (!isPaid && d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) return s + p.amount; return s; }, 0);
@@ -2272,8 +2336,8 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   const freqMult = { monthly: 12, quarterly: 4, annually: 1, once: 1 };
   const annual = payments.reduce((s, p) => s + p.amount * (freqMult[p.freq] || 12), 0);
 
-  const typeColors = { "EMI": "#4da6ff", "Credit Card": "#f5a623", "Utility": "#ff4757", "Subscription": "#1a6b3c" };
-  const typeBg = { "EMI": "#e8f0ff", "Credit Card": "#fff3e0", "Utility": "#fdf0f0", "Subscription": "#e8f5ee" };
+  const typeColors = { "EMI": "#4da6ff", "Credit Card": "#f5a623", "Utility": "#ff4757", "Subscription": "#1a6b3c", "Salary": "#1a6b3c", "Freelance": "#2d9e5f", "Rent Income": "#4da6ff", "Dividend": "#9b59b6", "Rent": "#9b59b6", "Insurance": "#888" };
+  const typeBg = { "EMI": "#e8f0ff", "Credit Card": "#fff3e0", "Utility": "#fdf0f0", "Subscription": "#e8f5ee", "Salary": "#e8f5ee", "Freelance": "#e8f5ee", "Rent Income": "#e8f0ff", "Dividend": "#f3e8ff", "Rent": "#f3e8ff", "Insurance": "#f5f5f5" };
 
   // Timeline view — next 6 months
   const timelineMonths = [];
@@ -2301,40 +2365,68 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
         {/* Add form */}
-        <Card title="Add Payment">
+        <Card title="Add Scheduled Payment">
+          {/* Income / Expense toggle */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Direction</label>
+            <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)" }}>
+              {[["expense", "📤 Expense", "#d44", "#fdf0f0"], ["income", "📥 Income", "#1a6b3c", "#e8f5ee"]].map(([v, lbl, color, bg]) => (
+                <button key={v} onClick={() => setForm(p => ({ ...p, flowType: v }))}
+                  style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: form.flowType === v ? 600 : 400, background: form.flowType === v ? bg : "transparent", color: form.flowType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {["EMI", "Credit Card", "Utility", "Subscription"].map(t => (
+              {(form.flowType === "income"
+                ? [["Salary", "#1a6b3c", "#e8f5ee"], ["Freelance", "#2d9e5f", "#e8f5ee"], ["Rent Income", "#4da6ff", "#e8f0ff"], ["Dividend", "#9b59b6", "#f3e8ff"], ["Other", "#888", "#f5f5f5"]]
+                : [["EMI", "#4da6ff", "#e8f0ff"], ["Credit Card", "#f5a623", "#fff3e0"], ["Utility", "#ff4757", "#fdf0f0"], ["Subscription", "#1a6b3c", "#e8f5ee"], ["Rent", "#9b59b6", "#f3e8ff"], ["Insurance", "#888", "#f5f5f5"]]
+              ).map(([t, color, bg]) => (
                 <button key={t} onClick={() => setForm(p => ({ ...p, type: t }))}
-                  style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.type === t ? typeColors[t] : "var(--color-border-secondary)", background: form.type === t ? typeBg[t] : "transparent", color: form.type === t ? typeColors[t] : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.type === t ? 600 : 400 }}>
+                  style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.type === t ? color : "var(--color-border-secondary)", background: form.type === t ? bg : "transparent", color: form.type === t ? color : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.type === t ? 600 : 400 }}>
                   {t}
                 </button>
               ))}
             </div>
           </div>
-          <LabelInput label="Name" placeholder="e.g. HDFC Home Loan, Netflix" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} />
+          <LabelInput label="Name" placeholder="e.g. HDFC Home Loan, Netflix, Rent" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
-            <LabelInput label="Due Day (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
+            <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
-              <input type="month" value={form.startMonth} onChange={e => setForm(p => ({ ...p, startMonth: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Frequency</label>
-              <select value={form.freq} onChange={e => setForm(p => ({ ...p, freq: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="annually">Annually</option>
-                <option value="once">One-time</option>
-              </select>
-            </div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
+            <input type="month" value={form.startMonth} onChange={e => setForm(p => ({ ...p, startMonth: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
           </div>
-          {form.type === "EMI" && (
-            <LabelInput label="Tenure (months, optional)" placeholder="e.g. 24" value={form.tenure} onChange={v => setForm(p => ({ ...p, tenure: v }))} />
+          {/* Fully customizable repeat */}
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Repeat</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+              {["monthly", "quarterly", "annually", "once", "custom"].map(f => (
+                <button key={f} onClick={() => setForm(p => ({ ...p, freq: f }))}
+                  style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.freq === f ? "#1a6b3c" : "var(--color-border-secondary)", background: form.freq === f ? "#e8f5ee" : "transparent", color: form.freq === f ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.freq === f ? 600 : 400, textTransform: "capitalize" }}>
+                  {f === "once" ? "One-time" : f}
+                </button>
+              ))}
+            </div>
+            {form.freq === "custom" && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Every</span>
+                <input type="number" min="1" value={form.customEveryN} onChange={e => setForm(p => ({ ...p, customEveryN: e.target.value }))} style={{ width: 60, boxSizing: "border-box", textAlign: "center" }} />
+                <select value={form.customUnit} onChange={e => setForm(p => ({ ...p, customUnit: e.target.value }))} style={{ flex: 1, boxSizing: "border-box" }}>
+                  <option value="days">Day(s)</option>
+                  <option value="weeks">Week(s)</option>
+                  <option value="months">Month(s)</option>
+                  <option value="years">Year(s)</option>
+                </select>
+              </div>
+            )}
+          </div>
+          {(form.type === "EMI" || form.flowType === "expense") && (
+            <LabelInput label="Tenure (months, optional)" placeholder="e.g. 24 — leave blank for ongoing" value={form.tenure} onChange={v => setForm(p => ({ ...p, tenure: v }))} />
           )}
           <div style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account (optional)</label>
@@ -2344,7 +2436,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
             </select>
           </div>
           <LabelInput label="Notes (optional)" placeholder="e.g. Auto-debit from SBI" value={form.notes} onChange={v => setForm(p => ({ ...p, notes: v }))} />
-          <GreenBtn onClick={addPayment} label="+ Add Payment" />
+          <GreenBtn onClick={addPayment} label="+ Add" />
         </Card>
 
         {/* List / Timeline */}
@@ -2362,10 +2454,10 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               </div>
               {/* Type filter */}
               <div style={{ display: "flex", gap: 4 }}>
-                {["all", "EMI", "Credit Card", "Utility", "Subscription"].map(t => (
+                {["all", "expense", "income", "EMI", "Credit Card", "Utility", "Subscription", "Salary"].map(t => (
                   <button key={t} onClick={() => setFilterType(t)}
                     style={{ padding: "3px 9px", borderRadius: 6, border: "0.5px solid", borderColor: filterType === t ? "#1a6b3c" : "var(--color-border-secondary)", background: filterType === t ? "#e8f5ee" : "transparent", color: filterType === t ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 11, cursor: "pointer" }}>
-                    {t === "all" ? "All" : t === "Credit Card" ? "CC" : t}
+                    {t === "all" ? "All" : t === "Credit Card" ? "CC" : t === "expense" ? "📤 Expense" : t === "income" ? "📥 Income" : t}
                   </button>
                 ))}
               </div>
@@ -2393,7 +2485,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                       <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
-                        {p.type} · {p.freq}{p.tenure ? ` · ${p.tenure}mo` : ""}
+                        {p.flowType === "income" ? "📥" : "📤"} {p.type} · {p.freq === "custom" ? `every ${p.customEveryN || 1} ${p.customUnit || "months"}` : p.freq}{p.tenure ? ` · ${p.tenure}mo` : ""}
                         {acct ? ` · ${acct.name}` : ""}
                         {p.notes ? ` · ${p.notes}` : ""}
                       </div>
@@ -2608,8 +2700,48 @@ function LiabilitiesTab({ data, update }) {
   const activeLiabilities = liabilities.filter(e => e.active && e.paidMonths < e.totalMonths);
   const completedLiabilities = liabilities.filter(e => !e.active || e.paidMonths >= e.totalMonths);
 
+  // Summary computations for the liability strip
+  const nowL = new Date();
+  const liabDueThisMonth = activeLiabilities.reduce((s, l) => {
+    const start = new Date(l.startDate);
+    const monthsIn = (nowL.getFullYear() - start.getFullYear()) * 12 + (nowL.getMonth() - start.getMonth());
+    if (monthsIn >= 0 && monthsIn < l.totalMonths) return s + l.amount;
+    return s;
+  }, 0);
+  const liabOverdue = activeLiabilities.reduce((s, l) => {
+    const start = new Date(l.startDate);
+    const monthsIn = (nowL.getFullYear() - start.getFullYear()) * 12 + (nowL.getMonth() - start.getMonth());
+    const dueDate = new Date(nowL.getFullYear(), nowL.getMonth(), l.paymentDay);
+    if (monthsIn >= 0 && monthsIn < l.totalMonths && nowL > dueDate) return s + l.amount;
+    return s;
+  }, 0);
+  const liabDue7 = activeLiabilities.reduce((s, l) => {
+    const start = new Date(l.startDate);
+    const monthsIn = (nowL.getFullYear() - start.getFullYear()) * 12 + (nowL.getMonth() - start.getMonth());
+    if (monthsIn < 0 || monthsIn >= l.totalMonths) return s;
+    const dueDate = new Date(nowL.getFullYear(), nowL.getMonth(), l.paymentDay);
+    const diff = Math.round((dueDate - nowL) / 86400000);
+    if (diff >= 0 && diff <= 7) return s + l.amount;
+    return s;
+  }, 0);
+  const liabAnnual = activeLiabilities.reduce((s, l) => s + l.amount * 12, 0);
+
   return (
     <div style={{ marginTop: 16 }}>
+      {/* Summary Strip — matching Scheduled Payments look */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Due This Month", val: fmtCur(liabDueThisMonth), color: "#4da6ff" },
+          { label: "Overdue", val: fmtCur(liabOverdue), color: "#d44" },
+          { label: "Due in 7 Days", val: fmtCur(liabDue7), color: "#f0a020" },
+          { label: "Annual Total", val: fmtCur(liabAnnual), color: "#1a6b3c" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+          </div>
+        ))}
+      </div>
       {/* Edit Liability Modal */}
       {editLiability && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
