@@ -293,7 +293,7 @@ export default function App() {
 
       {/* Main */}
       <main style={{ flex: 1, padding: "1.5rem", overflowY: "auto" }}>
-        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} />}
+        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
 
@@ -508,7 +508,8 @@ function AddAssetMini({ update }) {
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
-function Overview({ data, netWorth, foNetPnl, setPage }) {
+function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
+  const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const monthIncome = data.transactions.filter(t => t.type === "income" && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
   const monthExpense = data.transactions.filter(t => t.type === "expense" && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
@@ -528,16 +529,16 @@ function Overview({ data, netWorth, foNetPnl, setPage }) {
     <div>
       <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 20 }}>Overview</h1>
 
-      {/* Top stat row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+      {/* Top stat row — F&O card hidden when toggle is off */}
+      <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
         <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
         <StatCard label="Total Income" value={fmtCur(totalIncome)} sub="all time" icon="⊕" />
         <StatCard label="Total Expenses" value={fmtCur(totalExpense)} sub="all time" icon="⊟" danger />
-        <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />
+        {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
       </div>
 
-      {/* This month cashflow + F&O summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+      {/* This month cashflow + F&O summary (F&O card hidden when toggle off) */}
+      <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
         <Card title="This Month" action={<button onClick={() => setPage("money")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}>
           <div style={{ padding: "0.5rem 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13 }}>
@@ -554,9 +555,11 @@ function Overview({ data, netWorth, foNetPnl, setPage }) {
             </div>
           </div>
         </Card>
-        <Card title="F&O Summary" action={<button onClick={() => setPage("fo")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}>
-          <FOSummaryMini trades={data.foTrades} netPnl={foNetPnl} />
-        </Card>
+        {foOn && (
+          <Card title="F&O Summary" action={<button onClick={() => setPage("fo")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}>
+            <FOSummaryMini trades={data.foTrades} netPnl={foNetPnl} />
+          </Card>
+        )}
       </div>
 
       {/* Bank balances */}
@@ -1736,6 +1739,7 @@ function EssentialsPage({ data, update, tab, setTab }) {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 function SettingsPage({ data, update, tab, setTab }) {
+  const foOn = (data.featureToggles || { fo: true }).fo !== false;
   const cardStyle = { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginBottom: 16 };
   const sectionTitle = (icon, label, sub) => (
     <div style={{ marginBottom: 14 }}>
@@ -1747,28 +1751,38 @@ function SettingsPage({ data, update, tab, setTab }) {
     </div>
   );
 
+  // If current tab is "trading" but FO is off, redirect to accounts
+  const effectiveTab = (!foOn && tab === "trading") ? "accounts" : tab;
+
+  const settingsTabs = foOn
+    ? ["trading", "accounts", "categories", "features"]
+    : ["accounts", "categories", "features"];
+  const settingsLabels = foOn
+    ? ["Trading Settings", "Account Settings", "Categories", "Features"]
+    : ["Account Settings", "Categories", "Features"];
+
   return (
     <div>
       <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 }}>Settings</h1>
       <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 16 }}>Manage your app preferences, accounts and categories.</p>
       <TabBar
-        tabs={["trading", "accounts", "categories", "features"]}
-        active={tab}
+        tabs={settingsTabs}
+        active={effectiveTab}
         setActive={setTab}
-        labels={["Trading Settings", "Account Settings", "Categories", "Features"]}
+        labels={settingsLabels}
       />
 
-      {/* ── Trading Settings ── */}
-      {tab === "trading" && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+      {/* ── Trading Settings — only shown when F&O is on ── */}
+      {foOn && effectiveTab === "trading" && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
       {/* ── Account Settings ── */}
-      {tab === "accounts" && <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+      {effectiveTab === "accounts" && <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
       {/* ── Categories ── */}
-      {tab === "categories" && <CategoriesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+      {effectiveTab === "categories" && <CategoriesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
       {/* ── Feature Toggles ── */}
-      {tab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+      {effectiveTab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
     </div>
   );
 }
@@ -2275,18 +2289,52 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
   }
 
-  function deletePayment(id) { update(p => ({ scheduledPayments: (p.scheduledPayments || []).filter(x => x.id !== id) })); }
+  function deletePayment(id) { update(p => ({ scheduledPayments: (p.scheduledPayments || []).filter(x => x.id !== id), transactions: (p.transactions || []).filter(t => t.scheduledPaymentId !== id) })); }
 
   function togglePaid(id) {
-    update(p => ({
-      scheduledPayments: (p.scheduledPayments || []).map(pay => {
-        if (pay.id !== id) return pay;
-        const key = getNextDueKey(pay);
-        if (!key) return pay;
-        const paid = pay.paid.includes(key) ? pay.paid.filter(k => k !== key) : [...pay.paid, key];
-        return { ...pay, paid };
-      })
-    }));
+    update(p => {
+      const payments = (p.scheduledPayments || []);
+      const pay = payments.find(x => x.id === id);
+      if (!pay) return {};
+      const key = getNextDueKey(pay);
+      if (!key) return {};
+      const wasAlreadyPaid = pay.paid.includes(key);
+
+      // Build [year, month] from key "YYYY-MM"
+      const [kyear, kmonth] = key.split("-").map(Number);
+      // Transaction date = due day of that month
+      const txDate = `${kyear}-${String(kmonth).padStart(2,"0")}-${String(pay.day).padStart(2,"0")}`;
+      const txType = pay.flowType === "income" ? "income" : "expense";
+
+      let transactions = p.transactions || [];
+      if (wasAlreadyPaid) {
+        // Remove the auto-transaction created for this scheduled payment + period
+        transactions = transactions.filter(t => !(t.scheduledPaymentId === id && t.scheduledPeriodKey === key));
+      } else {
+        // Add a real transaction to Expenses / Income
+        const newTx = {
+          id: Date.now() + Math.random(),
+          type: txType,
+          amount: pay.amount,
+          category: pay.type || (txType === "income" ? "Income" : "EMI"),
+          note: pay.name + (pay.notes ? ` — ${pay.notes}` : ""),
+          date: txDate,
+          bankId: pay.accountId || "",
+          scheduledPaymentId: id,
+          scheduledPeriodKey: key,
+        };
+        transactions = [...transactions, newTx];
+      }
+
+      const paid = wasAlreadyPaid
+        ? pay.paid.filter(k => k !== key)
+        : [...pay.paid, key];
+
+      return {
+        scheduledPayments: payments.map(x => x.id === id ? { ...x, paid } : x),
+        transactions,
+      };
+    });
   }
 
   function getNextDueKey(p) {
@@ -2495,9 +2543,10 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                       <span style={{ fontSize: 10, background: isPaid ? "#e8f5ee" : badgeBg, color: isPaid ? "#1a6b3c" : badgeColor, borderRadius: 4, padding: "2px 7px", display: "inline-block", marginTop: 2, fontWeight: 500 }}>
                         {isPaid ? "✓ Paid" : badge}
                       </span>
+                      {isPaid && <div style={{ fontSize: 10, color: "#1a6b3c", marginTop: 2, opacity: 0.8 }}>↳ logged in {p.flowType === "income" ? "Income" : "Expenses"}</div>}
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                      <button onClick={() => togglePaid(p.id)} title={isPaid ? "Mark Unpaid" : "Mark Paid"} style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
+                      <button onClick={() => togglePaid(p.id)} title={isPaid ? "Mark Unpaid (removes transaction)" : "Mark Paid (logs to Expenses/Income)"} style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
                       <button onClick={() => deletePayment(p.id)} title="Delete" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#d44", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
                     </div>
                   </div>
