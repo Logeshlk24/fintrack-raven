@@ -63,6 +63,7 @@ const defaultData = {
   customInstruments: { "Index Options": [], "Stock Options": [], "Commodities": [] },
   goals: [],
   snapshots: [],
+  scheduledPayments: [],
 };
 
 
@@ -89,6 +90,7 @@ export default function App() {
   const [foTab, setFoTab]               = useState("trades");
   const [moneyTab, setMoneyTab]         = useState("expenses");
   const [essentialsTab, setEssentialsTab] = useState("essentials");
+  const [settingsTab, setSettingsTab]   = useState("trading");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Debounce timer ref — avoids hammering Firestore on every keystroke
@@ -294,7 +296,7 @@ export default function App() {
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
 
-        {page === "settings" && <SettingsPage data={data} update={update} />}
+        {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} />}
       </main>
     </div>
   );
@@ -643,7 +645,7 @@ function MoneyPage({ data, update, tab, setTab }) {
   };
 
   const filtered = data.transactions.filter(t =>
-    filterPeriod(t) && (tab === "insights" || tab === "accounts" || t.type === (tab === "expenses" ? "expense" : "income"))
+    filterPeriod(t) && t.type === (tab === "expenses" ? "expense" : "income")
   );
 
   function addTx() {
@@ -731,7 +733,7 @@ function MoneyPage({ data, update, tab, setTab }) {
   }
   const expense = data.transactions.filter(t => t.type === "expense" && filterByPeriod(t.date, period)).reduce((s, t) => s + Number(t.amount), 0);
 
-  const pageTitle = { expenses: "Expenses", income: "Income", accounts: "Accounts", insights: "Money Insights", categories: "Categories", liabilities: "Liabilities" }[tab];
+  const pageTitle = { expenses: "Expenses", income: "Income", scheduled: "Scheduled Payments", liabilities: "Liabilities" }[tab];
 
   const banks = accounts.filter(a => a.type === "Bank");
   const cards = accounts.filter(a => a.type === "Credit Card");
@@ -847,244 +849,10 @@ function MoneyPage({ data, update, tab, setTab }) {
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
-      <TabBar tabs={["expenses", "income", "accounts", "categories", "liabilities"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Accounts", "Categories", "Liabilities"]} />
+      <TabBar tabs={["expenses", "income", "scheduled", "liabilities"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Scheduled", "Liabilities"]} />
 
-      {/* ── Accounts Tab ── */}
-      {tab === "accounts" && (
-        <div style={{ marginTop: 16 }}>
-
-          {/* Adjust balance modal */}
-          {adjusting && (
-            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Adjust Balance</div>
-                <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>{adjusting.name} · Current: {fmtCur(adjusting.balance || 0)}</div>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
-                  <input type="number" placeholder="e.g. 5000" value={adjustAmt} onChange={e => setAdjustAmt(e.target.value)} style={{ width: "100%", boxSizing: "border-box", fontSize: 16, fontWeight: 600 }} autoFocus />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Note (optional)</label>
-                  <input placeholder="e.g. Salary credit, Bill payment" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => applyAdjustment("add")} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>+ Add Money</button>
-                  <button onClick={() => applyAdjustment("subtract")} style={{ flex: 1, background: "#d44", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>− Deduct</button>
-                  <button onClick={() => { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Add account form */}
-          <Card title="Add Account">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "flex-end" }}>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account Name</label>
-                <input placeholder="e.g. HDFC Savings, SBI, Axis CC" value={acctForm.name} onChange={e => setAcctForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} onKeyDown={e => e.key === "Enter" && addAccount()} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
-                <select value={acctForm.type} onChange={e => setAcctForm(p => ({ ...p, type: e.target.value }))} style={{ boxSizing: "border-box" }}>
-                  <option>Bank</option>
-                  <option>Credit Card</option>
-                  <option>Cash</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Opening Balance (₹)</label>
-                <input type="number" placeholder="e.g. 10000" value={acctForm.balance} onChange={e => setAcctForm(p => ({ ...p, balance: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
-              </div>
-              <GreenBtn onClick={addAccount} label="+ Add" />
-            </div>
-            {acctForm.type === "Credit Card" && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
-                  <input type="number" placeholder="e.g. 1,00,000" value={acctForm.creditLimit} onChange={e => setAcctForm(p => ({ ...p, creditLimit: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Due Date (day of month)</label>
-                  <input type="number" min="1" max="31" placeholder="e.g. 15" value={acctForm.dueDate} onChange={e => setAcctForm(p => ({ ...p, dueDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-              </div>
-            )}
-          </Card>
-
-          {/* Bank Accounts */}
-          {banks.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>🏦 Bank Accounts</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-                {banks.map(acct => {
-                  const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-                  const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-                  const bal = (acct.openingBalance || 0) + txInc - txExp;
-                  return (
-                    <div key={acct.id} style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
-                        <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
-                      </div>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: bal >= 0 ? "var(--color-text-primary)" : "#d44", marginBottom: 8 }}>{fmtCur(bal)}</div>
-                      <div style={{ display: "flex", gap: 10, fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
-                        <span style={{ color: "#1a6b3c" }}>↑ {fmtCur(txInc)}</span>
-                        <span style={{ color: "#d44" }}>↓ {fmtCur(txExp)}</span>
-                      </div>
-                      <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                        ± Adjust Balance
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Credit Cards */}
-          {cards.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>💳 Credit Cards</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-                {cards.map(acct => {
-                  const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-                  const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-                  // Credit card balance = opening + expenses - payments
-                  const bal = (acct.openingBalance || 0) + txExp - txInc;
-                  const limit = acct.creditLimit || 0;
-                  const usedPct = limit > 0 ? Math.min((bal / limit) * 100, 100) : 0;
-                  const available = limit > 0 ? limit - bal : null;
-                  const dueDay = acct.dueDate ? parseInt(acct.dueDate) : null;
-                  let dueLabel = null;
-                  if (dueDay) {
-                    const now = new Date();
-                    let dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay);
-                    if (dueDate <= now) dueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDay);
-                    const daysLeft = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
-                    dueLabel = { date: dueDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }), days: daysLeft };
-                  }
-                  return (
-                    <div key={acct.id} style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <div>
-                          <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
-                          <span style={{ marginLeft: 6, fontSize: 10, background: "#fff3e0", color: "#e65100", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CC</span>
-                        </div>
-                        <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
-                      </div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Outstanding</div>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: bal > 0 ? "#d44" : "var(--color-text-primary)", marginBottom: 6 }}>{fmtCur(bal)}</div>
-                      {limit > 0 && (
-                        <div style={{ marginBottom: 8 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-                            <span>Used {usedPct.toFixed(0)}%</span>
-                            <span style={{ color: "#1a6b3c" }}>Avail: {fmtCur(available)}</span>
-                          </div>
-                          <div style={{ background: "#f0f0f0", borderRadius: 4, height: 5, overflow: "hidden" }}>
-                            <div style={{ width: usedPct + "%", height: "100%", background: usedPct > 80 ? "#d44" : usedPct > 50 ? "#f0a020" : "#1a6b3c", borderRadius: 4, transition: "width 0.4s" }} />
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Limit: {fmtCur(limit)}</div>
-                        </div>
-                      )}
-                      {dueLabel && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, background: dueLabel.days <= 5 ? "#fff3e0" : "#f0fdf4", borderRadius: 8, padding: "5px 8px", marginBottom: 8, fontSize: 11 }}>
-                          <span>📅</span>
-                          <span style={{ color: dueLabel.days <= 5 ? "#e65100" : "#1a6b3c", fontWeight: 500 }}>
-                            Due {dueLabel.date} · {dueLabel.days === 0 ? "Today!" : `${dueLabel.days}d left`}
-                          </span>
-                        </div>
-                      )}
-                      <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                        ± Adjust Balance
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Cash */}
-          {cashAccounts.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>💵 Cash</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-                {cashAccounts.map(acct => {
-                  const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-                  const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-                  const bal = (acct.openingBalance || 0) + txInc - txExp;
-                  return (
-                    <div key={acct.id} style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
-                          <span style={{ fontSize: 10, background: "#f0fdf4", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CASH</span>
-                        </div>
-                        <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
-                      </div>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: bal >= 0 ? "var(--color-text-primary)" : "#d44", marginBottom: 12 }}>{fmtCur(bal)}</div>
-                      <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                        ± Adjust Balance
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {accounts.length === 0 && (
-            <div style={{ marginTop: 16 }}><EmptyState msg="No accounts yet. Add a bank account, credit card or cash above." /></div>
-          )}
-        </div>
-      )}
-
-      {/* ── Categories Tab ── */}
-      {tab === "categories" && (
-        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          {/* Edit category modal */}
-          {editCat && (
-            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(340px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>✏️ Rename Category</div>
-                <input value={editCatName} onChange={e => setEditCatName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEditCat()} style={{ width: "100%", boxSizing: "border-box", marginBottom: 14, fontSize: 14 }} autoFocus />
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                  <button onClick={() => { setEditCat(null); setEditCatName(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-                  <button onClick={saveEditCat} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {["expense", "income"].map(type => (
-            <Card key={type} title={type === "expense" ? "🔴 Expense Categories" : "🟢 Income Categories"}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                {(categories[type] || []).map(cat => (
-                  <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "7px 12px" }}>
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{cat}</span>
-                    <ThreeDotMenu
-                      onEdit={() => { setEditCat({ type, oldName: cat }); setEditCatName(cat); }}
-                      onDelete={() => deleteCategory(type, cat)}
-                    />
-                  </div>
-                ))}
-                {(categories[type] || []).length === 0 && <EmptyState msg="No categories yet." />}
-              </div>
-              {/* Add new category */}
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  placeholder={`New ${type} category`}
-                  value={newCat.type === type ? newCat.name : ""}
-                  onFocus={() => setNewCat(p => ({ ...p, type }))}
-                  onChange={e => setNewCat({ type, name: e.target.value })}
-                  onKeyDown={e => e.key === "Enter" && addCategory()}
-                  style={{ flex: 1, boxSizing: "border-box" }}
-                />
-                <button onClick={addCategory} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+      {/* ── Scheduled Payments Tab ── */}
+      {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} />}
 
       {/* ── Income / Expense Tabs ── */}
       {(tab === "income" || tab === "expenses") && (
@@ -1966,82 +1734,81 @@ function EssentialsPage({ data, update, tab, setTab }) {
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-function SettingsPage({ data, update }) {
-  const lotSizes = { ...DEFAULT_LOT_SIZES, ...(data.lotSizes || {}) };
-  const [form, setForm] = useState({ ...lotSizes });
-  const [saved, setSaved] = useState(false);
-  const [savedMsg, setSavedMsg] = useState("");
-
-  const custom = data.customInstruments || { "Index Options": [], "Stock Options": [], "Commodities": [] };
-  const [newInstrument, setNewInstrument] = useState({ category: "Index Options", name: "", lotSize: "" });
-
-  const indexItems = ["Nifty 50", "Bank Nifty", "Sensex"];
-  const commodityItems = ["Crude Oil", "Crude Oil M", "Natural Gas", "Natural Gas M", "Gold", "Gold M"];
-
-  function showSaved(msg) {
-    setSavedMsg(msg);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  function handleSaveLotSizes() {
-    const parsed = {};
-    Object.entries(form).forEach(([k, v]) => { parsed[k] = Number(v) || 0; });
-    update(() => ({ lotSizes: parsed }));
-    showSaved("Lot sizes saved!");
-  }
-
-  function handleReset() {
-    setForm({ ...DEFAULT_LOT_SIZES });
-    update(() => ({ lotSizes: { ...DEFAULT_LOT_SIZES } }));
-    showSaved("Reset to defaults!");
-  }
-
-  function handleAddInstrument() {
-    const name = newInstrument.name.trim();
-    if (!name) return;
-    const cat = newInstrument.category;
-    const already = [
-      ...(cat === "Index Options" ? indexItems : []),
-      ...(cat === "Commodities" ? commodityItems : []),
-      ...(custom[cat] || []),
-    ];
-    if (already.includes(name)) return;
-    const updatedCustom = { ...custom, [cat]: [...(custom[cat] || []), name] };
-    const updatedLotSizes = { ...lotSizes };
-    if (newInstrument.lotSize) updatedLotSizes[name] = Number(newInstrument.lotSize);
-    setForm(p => ({ ...p, [name]: newInstrument.lotSize || "" }));
-    update(() => ({ customInstruments: updatedCustom, lotSizes: updatedLotSizes }));
-    setNewInstrument({ category: cat, name: "", lotSize: "" });
-    showSaved(`"${name}" added to ${cat}!`);
-  }
-
-  function handleRemoveInstrument(cat, name) {
-    const updatedCustom = { ...custom, [cat]: (custom[cat] || []).filter(x => x !== name) };
-    const updatedLotSizes = { ...lotSizes };
-    delete updatedLotSizes[name];
-    setForm(p => { const next = { ...p }; delete next[name]; return next; });
-    update(() => ({ customInstruments: updatedCustom, lotSizes: updatedLotSizes }));
-    showSaved(`"${name}" removed!`);
-  }
-
+function SettingsPage({ data, update, tab, setTab }) {
   const cardStyle = { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginBottom: 16 };
-  const sectionTitle = (icon, label) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-      <span style={{ fontSize: 16 }}>{icon}</span>
-      <span style={{ fontWeight: 600, fontSize: 15 }}>{label}</span>
+  const sectionTitle = (icon, label, sub) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>{label}</span>
+      </div>
+      {sub && <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 24 }}>{sub}</p>}
     </div>
   );
 
   return (
     <div>
       <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 }}>Settings</h1>
-      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 20 }}>Manage lot sizes and instruments used in F&O trade calculations.</p>
+      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 16 }}>Manage your app preferences, accounts and categories.</p>
+      <TabBar
+        tabs={["trading", "accounts", "categories"]}
+        active={tab}
+        setActive={setTab}
+        labels={["Trading Settings", "Account Settings", "Categories"]}
+      />
 
-      {/* ── Lot Sizes: Index Options ── */}
+      {/* ── Trading Settings ── */}
+      {tab === "trading" && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Account Settings ── */}
+      {tab === "accounts" && <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Categories ── */}
+      {tab === "categories" && <CategoriesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+    </div>
+  );
+}
+
+function TradingSettings({ data, update, cardStyle, sectionTitle }) {
+  const lotSizes = { ...DEFAULT_LOT_SIZES, ...(data.lotSizes || {}) };
+  const [form, setForm] = useState({ ...lotSizes });
+  const [saved, setSaved] = useState(false);
+  const [savedMsg, setSavedMsg] = useState("");
+  const custom = data.customInstruments || { "Index Options": [], "Stock Options": [], "Commodities": [] };
+  const [newInstrument, setNewInstrument] = useState({ category: "Index Options", name: "", lotSize: "" });
+  const indexItems = ["Nifty 50", "Bank Nifty", "Sensex"];
+  const commodityItems = ["Crude Oil", "Crude Oil M", "Natural Gas", "Natural Gas M", "Gold", "Gold M"];
+
+  function showSaved(msg) { setSavedMsg(msg); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  function handleSaveLotSizes() {
+    const parsed = {};
+    Object.entries(form).forEach(([k, v]) => { parsed[k] = Number(v) || 0; });
+    update(() => ({ lotSizes: parsed })); showSaved("Lot sizes saved!");
+  }
+  function handleReset() { setForm({ ...DEFAULT_LOT_SIZES }); update(() => ({ lotSizes: { ...DEFAULT_LOT_SIZES } })); showSaved("Reset to defaults!"); }
+  function handleAddInstrument() {
+    const name = newInstrument.name.trim(); if (!name) return;
+    const cat = newInstrument.category;
+    const already = [...(cat === "Index Options" ? indexItems : []), ...(cat === "Commodities" ? commodityItems : []), ...(custom[cat] || [])];
+    if (already.includes(name)) return;
+    const updatedCustom = { ...custom, [cat]: [...(custom[cat] || []), name] };
+    const updatedLotSizes = { ...lotSizes };
+    if (newInstrument.lotSize) updatedLotSizes[name] = Number(newInstrument.lotSize);
+    setForm(p => ({ ...p, [name]: newInstrument.lotSize || "" }));
+    update(() => ({ customInstruments: updatedCustom, lotSizes: updatedLotSizes }));
+    setNewInstrument({ category: cat, name: "", lotSize: "" }); showSaved(`"${name}" added!`);
+  }
+  function handleRemoveInstrument(cat, name) {
+    const updatedCustom = { ...custom, [cat]: (custom[cat] || []).filter(x => x !== name) };
+    const updatedLotSizes = { ...lotSizes }; delete updatedLotSizes[name];
+    setForm(p => { const next = { ...p }; delete next[name]; return next; });
+    update(() => ({ customInstruments: updatedCustom, lotSizes: updatedLotSizes })); showSaved(`"${name}" removed!`);
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
       <div style={cardStyle}>
-        {sectionTitle("◉", "Index Options — Lot Sizes")}
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>Default lot sizes for index contracts.</p>
+        {sectionTitle("◉", "Index Options — Lot Sizes", "Default lot sizes for index contracts.")}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
           {[...indexItems, ...(custom["Index Options"] || [])].map(name => (
             <div key={name}>
@@ -2057,11 +1824,8 @@ function SettingsPage({ data, update }) {
           ))}
         </div>
       </div>
-
-      {/* ── Lot Sizes: Commodities ── */}
       <div style={cardStyle}>
-        {sectionTitle("◈", "Commodities — Lot Sizes")}
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>Default lot sizes for commodity contracts on MCX.</p>
+        {sectionTitle("◈", "Commodities — Lot Sizes", "Default lot sizes for commodity contracts on MCX.")}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
           {[...commodityItems, ...(custom["Commodities"] || [])].map(name => (
             <div key={name}>
@@ -2077,27 +1841,18 @@ function SettingsPage({ data, update }) {
           ))}
         </div>
       </div>
-
-      {/* Save lot sizes */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 28 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
         <button onClick={handleSaveLotSizes} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "9px 24px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Save Lot Sizes</button>
         <button onClick={handleReset} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "9px 20px", cursor: "pointer", fontSize: 14, color: "var(--color-text-secondary)" }}>Reset to Defaults</button>
         {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ {savedMsg}</span>}
       </div>
-
-      {/* ── Manage Instruments ── */}
       <div style={cardStyle}>
-        {sectionTitle("⊕", "Manage Instruments")}
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>Add custom instruments to any category. They'll appear as options in the F&O trade form.</p>
-
-        {/* Add new instrument form */}
+        {sectionTitle("⊕", "Manage Instruments", "Add custom instruments to any category.")}
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.5fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 20 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
             <select value={newInstrument.category} onChange={e => setNewInstrument(p => ({ ...p, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
-              <option>Index Options</option>
-              <option>Stock Options</option>
-              <option>Commodities</option>
+              <option>Index Options</option><option>Stock Options</option><option>Commodities</option>
             </select>
           </div>
           <div>
@@ -2110,11 +1865,8 @@ function SettingsPage({ data, update }) {
           </div>
           <button onClick={handleAddInstrument} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
         </div>
-
-        {/* List existing custom instruments */}
         {["Index Options", "Stock Options", "Commodities"].map(cat => {
-          const items = custom[cat] || [];
-          if (items.length === 0) return null;
+          const items = custom[cat] || []; if (items.length === 0) return null;
           return (
             <div key={cat} style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{cat}</div>
@@ -2130,15 +1882,586 @@ function SettingsPage({ data, update }) {
             </div>
           );
         })}
-
         {["Index Options", "Stock Options", "Commodities"].every(cat => (custom[cat] || []).length === 0) && (
           <p style={{ fontSize: 13, color: "var(--color-text-secondary)", fontStyle: "italic" }}>No custom instruments added yet.</p>
         )}
       </div>
-
-      {/* Warning */}
       <div style={{ background: "#fef9e7", border: "0.5px solid #f0c040", borderRadius: 10, padding: "0.8rem 1rem", fontSize: 13, color: "#7a5a00" }}>
         ⚠ Lot size changes affect all future P&L calculations. Existing trades will recalculate automatically.
+      </div>
+    </div>
+  );
+}
+
+function AccountSettings({ data, update, cardStyle, sectionTitle }) {
+  const accounts = data.banks || [];
+  const [acctForm, setAcctForm] = useState({ name: "", type: "Bank", balance: "", creditLimit: "", dueDate: "" });
+  const [editAcct, setEditAcct] = useState(null);
+  const [adjusting, setAdjusting] = useState(null);
+  const [adjustAmt, setAdjustAmt] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+
+  function addAccount() {
+    if (!acctForm.name.trim()) return;
+    const opening = parseFloat(acctForm.balance) || 0;
+    update(p => ({ banks: [...(p.banks || []), { id: Date.now(), name: acctForm.name.trim(), type: acctForm.type, openingBalance: opening, balance: opening, creditLimit: acctForm.type === "Credit Card" ? parseFloat(acctForm.creditLimit) || 0 : undefined, dueDate: acctForm.type === "Credit Card" ? acctForm.dueDate : undefined }] }));
+    setAcctForm({ name: "", type: "Bank", balance: "", creditLimit: "", dueDate: "" });
+  }
+
+  function saveEditAcct() {
+    if (!editAcct || !editAcct.name.trim()) return;
+    update(p => ({ banks: (p.banks || []).map(b => b.id === editAcct.id ? { ...b, name: editAcct.name, openingBalance: editAcct.openingBalance ?? b.openingBalance, creditLimit: editAcct.creditLimit, dueDate: editAcct.dueDate } : b) }));
+    setEditAcct(null);
+  }
+
+  function deleteAccount(id) { update(p => ({ banks: (p.banks || []).filter(b => b.id !== id) })); }
+
+  function applyAdjustment(direction) {
+    if (!adjustAmt || !adjusting) return;
+    const amt = parseFloat(adjustAmt); if (isNaN(amt) || amt <= 0) return;
+    update(p => ({ transactions: [...p.transactions, { id: Date.now(), type: direction === "add" ? "income" : "expense", amount: amt, category: adjustNote || (direction === "add" ? "Balance Top-up" : "Balance Adjustment"), note: `${adjusting.name} manual adjustment`, date: new Date().toISOString().split("T")[0], bankId: adjusting.id }] }));
+    setAdjusting(null); setAdjustAmt(""); setAdjustNote("");
+  }
+
+  const banks = accounts.filter(a => a.type === "Bank");
+  const cards = accounts.filter(a => a.type === "Credit Card");
+  const cashAccounts = accounts.filter(a => a.type === "Cash");
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/* Edit Account Modal */}
+      {editAcct && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Account</div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account Name</label>
+              <input value={editAcct.name} onChange={e => setEditAcct(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            {editAcct.type === "Credit Card" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Outstanding Balance (₹)</label>
+                  <input type="number" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
+                  <input type="number" value={editAcct.creditLimit || ""} onChange={e => setEditAcct(p => ({ ...p, creditLimit: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Due Date (day)</label>
+                  <input type="number" min="1" max="31" value={editAcct.dueDate || ""} onChange={e => setEditAcct(p => ({ ...p, dueDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setEditAcct(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEditAcct} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Adjust Balance Modal */}
+      {adjusting && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Adjust Balance</div>
+            <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>{adjusting.name}</div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
+              <input type="number" placeholder="e.g. 5000" value={adjustAmt} onChange={e => setAdjustAmt(e.target.value)} style={{ width: "100%", boxSizing: "border-box", fontSize: 16, fontWeight: 600 }} autoFocus />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Note (optional)</label>
+              <input placeholder="e.g. Salary credit" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => applyAdjustment("add")} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>+ Add Money</button>
+              <button onClick={() => applyAdjustment("subtract")} style={{ flex: 1, background: "#d44", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>− Deduct</button>
+              <button onClick={() => { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Account */}
+      <div style={cardStyle}>
+        {sectionTitle("🏦", "Add Account", "Add bank accounts, credit cards or cash wallets.")}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "flex-end" }}>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account Name</label>
+            <input placeholder="e.g. HDFC Savings, SBI, Axis CC" value={acctForm.name} onChange={e => setAcctForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} onKeyDown={e => e.key === "Enter" && addAccount()} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
+            <select value={acctForm.type} onChange={e => setAcctForm(p => ({ ...p, type: e.target.value }))} style={{ boxSizing: "border-box" }}>
+              <option>Bank</option><option>Credit Card</option><option>Cash</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Opening Balance (₹)</label>
+            <input type="number" placeholder="e.g. 10000" value={acctForm.balance} onChange={e => setAcctForm(p => ({ ...p, balance: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <GreenBtn onClick={addAccount} label="+ Add" />
+        </div>
+        {acctForm.type === "Credit Card" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
+              <input type="number" placeholder="e.g. 1,00,000" value={acctForm.creditLimit} onChange={e => setAcctForm(p => ({ ...p, creditLimit: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Due Date (day of month)</label>
+              <input type="number" min="1" max="31" placeholder="e.g. 15" value={acctForm.dueDate} onChange={e => setAcctForm(p => ({ ...p, dueDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bank Accounts */}
+      {banks.length > 0 && (
+        <div style={cardStyle}>
+          {sectionTitle("🏦", "Bank Accounts")}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+            {banks.map(acct => {
+              const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const bal = (acct.openingBalance || 0) + txInc - txExp;
+              return (
+                <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
+                    <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: bal >= 0 ? "var(--color-text-primary)" : "#d44", marginBottom: 8 }}>{fmtCur(bal)}</div>
+                  <div style={{ display: "flex", gap: 8, fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 8 }}>
+                    <span style={{ color: "#1a6b3c" }}>↑ {fmtCur(txInc)}</span>
+                    <span style={{ color: "#d44" }}>↓ {fmtCur(txExp)}</span>
+                  </div>
+                  <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>± Adjust Balance</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Credit Cards */}
+      {cards.length > 0 && (
+        <div style={cardStyle}>
+          {sectionTitle("💳", "Credit Cards")}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+            {cards.map(acct => {
+              const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const bal = (acct.openingBalance || 0) + txExp - txInc;
+              const limit = acct.creditLimit || 0;
+              const usedPct = limit > 0 ? Math.min((bal / limit) * 100, 100) : 0;
+              const available = limit > 0 ? limit - bal : null;
+              const dueDay = acct.dueDate ? parseInt(acct.dueDate) : null;
+              let dueLabel = null;
+              if (dueDay) {
+                const now = new Date();
+                let dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay);
+                if (dueDate <= now) dueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDay);
+                const daysLeft = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+                dueLabel = { date: dueDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }), days: daysLeft };
+              }
+              return (
+                <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
+                      <span style={{ marginLeft: 6, fontSize: 10, background: "#fff3e0", color: "#e65100", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CC</span>
+                    </div>
+                    <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Outstanding</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: bal > 0 ? "#d44" : "var(--color-text-primary)", marginBottom: 6 }}>{fmtCur(bal)}</div>
+                  {limit > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>
+                        <span>Used {usedPct.toFixed(0)}%</span>
+                        <span style={{ color: "#1a6b3c" }}>Avail: {fmtCur(available)}</span>
+                      </div>
+                      <div style={{ background: "#f0f0f0", borderRadius: 4, height: 5, overflow: "hidden" }}>
+                        <div style={{ width: usedPct + "%", height: "100%", background: usedPct > 80 ? "#d44" : usedPct > 50 ? "#f0a020" : "#1a6b3c", borderRadius: 4, transition: "width 0.4s" }} />
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Limit: {fmtCur(limit)}</div>
+                    </div>
+                  )}
+                  {dueLabel && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, background: dueLabel.days <= 5 ? "#fff3e0" : "#f0fdf4", borderRadius: 8, padding: "5px 8px", marginBottom: 8, fontSize: 11 }}>
+                      <span>📅</span>
+                      <span style={{ color: dueLabel.days <= 5 ? "#e65100" : "#1a6b3c", fontWeight: 500 }}>Due {dueLabel.date} · {dueLabel.days === 0 ? "Today!" : `${dueLabel.days}d left`}</span>
+                    </div>
+                  )}
+                  <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>± Adjust Balance</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cash */}
+      {cashAccounts.length > 0 && (
+        <div style={cardStyle}>
+          {sectionTitle("💵", "Cash Accounts")}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+            {cashAccounts.map(acct => {
+              const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const bal = (acct.openingBalance || 0) + txInc - txExp;
+              return (
+                <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
+                      <span style={{ fontSize: 10, background: "#f0fdf4", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CASH</span>
+                    </div>
+                    <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: bal >= 0 ? "var(--color-text-primary)" : "#d44", marginBottom: 10 }}>{fmtCur(bal)}</div>
+                  <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>± Adjust Balance</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {accounts.length === 0 && <EmptyState msg="No accounts yet. Add your first account above." />}
+    </div>
+  );
+}
+
+function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
+  const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
+  const [newCat, setNewCat] = useState({ type: "expense", name: "" });
+  const [editCat, setEditCat] = useState(null);
+  const [editCatName, setEditCatName] = useState("");
+
+  function addCategory() {
+    if (!newCat.name.trim()) return;
+    const cats = data.categories || { expense: [], income: [] };
+    const list = cats[newCat.type] || [];
+    if (list.includes(newCat.name.trim())) return;
+    update(() => ({ categories: { ...cats, [newCat.type]: [...list, newCat.name.trim()] } }));
+    setNewCat(p => ({ ...p, name: "" }));
+  }
+
+  function saveEditCat() {
+    if (!editCat || !editCatName.trim()) return;
+    const cats = data.categories || { expense: [], income: [] };
+    const list = (cats[editCat.type] || []).map(c => c === editCat.oldName ? editCatName.trim() : c);
+    update(() => ({ categories: { ...cats, [editCat.type]: list }, transactions: data.transactions.map(t => t.category === editCat.oldName ? { ...t, category: editCatName.trim() } : t) }));
+    setEditCat(null); setEditCatName("");
+  }
+
+  function deleteCategory(type, name) {
+    const cats = data.categories || { expense: [], income: [] };
+    update(() => ({ categories: { ...cats, [type]: (cats[type] || []).filter(c => c !== name) } }));
+  }
+
+  return (
+    <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      {editCat && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(340px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>✏️ Rename Category</div>
+            <input value={editCatName} onChange={e => setEditCatName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEditCat()} style={{ width: "100%", boxSizing: "border-box", marginBottom: 14, fontSize: 14 }} autoFocus />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => { setEditCat(null); setEditCatName(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEditCat} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {["expense", "income"].map(type => (
+        <Card key={type} title={type === "expense" ? "🔴 Expense Categories" : "🟢 Income Categories"}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+            {(categories[type] || []).map(cat => (
+              <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "7px 12px" }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{cat}</span>
+                <ThreeDotMenu onEdit={() => { setEditCat({ type, oldName: cat }); setEditCatName(cat); }} onDelete={() => deleteCategory(type, cat)} />
+              </div>
+            ))}
+            {(categories[type] || []).length === 0 && <EmptyState msg="No categories yet." />}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input placeholder={`New ${type} category`} value={newCat.type === type ? newCat.name : ""} onFocus={() => setNewCat(p => ({ ...p, type }))} onChange={e => setNewCat({ type, name: e.target.value })} onKeyDown={e => e.key === "Enter" && addCategory()} style={{ flex: 1, boxSizing: "border-box" }} />
+            <button onClick={addCategory} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Scheduled Payments Tab ──────────────────────────────────────────────────
+function ScheduledPaymentsTab({ data, update, accounts }) {
+  const payments = data.scheduledPayments || [];
+  const [form, setForm] = useState({ name: "", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", tenure: "", notes: "", accountId: "" });
+  const [filterType, setFilterType] = useState("all");
+  const [view, setView] = useState("list");
+
+  function addPayment() {
+    if (!form.name.trim() || !form.amount || !form.day) return;
+    update(p => ({ scheduledPayments: [...(p.scheduledPayments || []), { id: Date.now(), ...form, amount: parseFloat(form.amount), day: parseInt(form.day), tenure: form.tenure ? parseInt(form.tenure) : null, paid: [] }] }));
+    setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
+  }
+
+  function deletePayment(id) { update(p => ({ scheduledPayments: (p.scheduledPayments || []).filter(x => x.id !== id) })); }
+
+  function togglePaid(id) {
+    update(p => ({
+      scheduledPayments: (p.scheduledPayments || []).map(pay => {
+        if (pay.id !== id) return pay;
+        const key = getNextDueKey(pay);
+        if (!key) return pay;
+        const paid = pay.paid.includes(key) ? pay.paid.filter(k => k !== key) : [...pay.paid, key];
+        return { ...pay, paid };
+      })
+    }));
+  }
+
+  function getNextDueKey(p) {
+    const now = new Date();
+    const [sy, sm] = p.startMonth.split("-").map(Number);
+    if (p.freq === "once") return p.startMonth;
+    if (p.freq === "annually") {
+      let y = sy;
+      while (new Date(y, sm - 1, p.day) < new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) y++;
+      return `${y}-${String(sm).padStart(2, "0")}`;
+    }
+    if (p.freq === "quarterly") {
+      let d = new Date(sy, sm - 1, p.day);
+      while (d < new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) d.setMonth(d.getMonth() + 3);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    }
+    // monthly — find first unpaid from start
+    let d = new Date(sy, sm - 1, p.day), ct = 0;
+    while (ct < 300) {
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!p.paid.includes(k)) return k;
+      d.setMonth(d.getMonth() + 1); ct++;
+    }
+    return null;
+  }
+
+  function getDueDate(p) {
+    const key = getNextDueKey(p);
+    if (!key) return null;
+    const [y, m] = key.split("-").map(Number);
+    return new Date(y, m - 1, p.day);
+  }
+
+  function daysDiff(d) {
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const t = new Date(d); t.setHours(0, 0, 0, 0);
+    return Math.round((t - now) / 86400000);
+  }
+
+  const now = new Date();
+  let list = payments.filter(p => filterType === "all" || p.type === filterType);
+  list = [...list].sort((a, b) => { const da = getDueDate(a), db = getDueDate(b); if (!da) return 1; if (!db) return -1; return da - db; });
+
+  const monthDue = payments.reduce((s, p) => { const d = getDueDate(p); const key = getNextDueKey(p); const isPaid = key && p.paid.includes(key); if (!isPaid && d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) return s + p.amount; return s; }, 0);
+  const overdue = payments.reduce((s, p) => { const d = getDueDate(p); const key = getNextDueKey(p); const isPaid = key && p.paid.includes(key); if (!isPaid && d && daysDiff(d) < 0) return s + p.amount; return s; }, 0);
+  const dueSoon = payments.reduce((s, p) => { const d = getDueDate(p); const key = getNextDueKey(p); const isPaid = key && p.paid.includes(key); if (!isPaid && d && daysDiff(d) >= 0 && daysDiff(d) <= 7) return s + p.amount; return s; }, 0);
+  const freqMult = { monthly: 12, quarterly: 4, annually: 1, once: 1 };
+  const annual = payments.reduce((s, p) => s + p.amount * (freqMult[p.freq] || 12), 0);
+
+  const typeColors = { "EMI": "#4da6ff", "Credit Card": "#f5a623", "Utility": "#ff4757", "Subscription": "#1a6b3c" };
+  const typeBg = { "EMI": "#e8f0ff", "Credit Card": "#fff3e0", "Utility": "#fdf0f0", "Subscription": "#e8f5ee" };
+
+  // Timeline view — next 6 months
+  const timelineMonths = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    timelineMonths.push({ year: d.getFullYear(), month: d.getMonth() });
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/* Summary strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Due This Month", val: fmtCur(monthDue), color: "#4da6ff" },
+          { label: "Overdue", val: fmtCur(overdue), color: "#d44" },
+          { label: "Due in 7 Days", val: fmtCur(dueSoon), color: "#f0a020" },
+          { label: "Annual Total", val: fmtCur(annual), color: "#1a6b3c" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
+        {/* Add form */}
+        <Card title="Add Payment">
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {["EMI", "Credit Card", "Utility", "Subscription"].map(t => (
+                <button key={t} onClick={() => setForm(p => ({ ...p, type: t }))}
+                  style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.type === t ? typeColors[t] : "var(--color-border-secondary)", background: form.type === t ? typeBg[t] : "transparent", color: form.type === t ? typeColors[t] : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.type === t ? 600 : 400 }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <LabelInput label="Name" placeholder="e.g. HDFC Home Loan, Netflix" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
+            <LabelInput label="Due Day (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
+              <input type="month" value={form.startMonth} onChange={e => setForm(p => ({ ...p, startMonth: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Frequency</label>
+              <select value={form.freq} onChange={e => setForm(p => ({ ...p, freq: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annually">Annually</option>
+                <option value="once">One-time</option>
+              </select>
+            </div>
+          </div>
+          {form.type === "EMI" && (
+            <LabelInput label="Tenure (months, optional)" placeholder="e.g. 24" value={form.tenure} onChange={v => setForm(p => ({ ...p, tenure: v }))} />
+          )}
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account (optional)</label>
+            <select value={form.accountId} onChange={e => setForm(p => ({ ...p, accountId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+              <option value="">— None —</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <LabelInput label="Notes (optional)" placeholder="e.g. Auto-debit from SBI" value={form.notes} onChange={v => setForm(p => ({ ...p, notes: v }))} />
+          <GreenBtn onClick={addPayment} label="+ Add Payment" />
+        </Card>
+
+        {/* List / Timeline */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+          <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontWeight: 500, fontSize: 15 }}>Payments</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {/* View toggle */}
+              <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, overflow: "hidden" }}>
+                {["list", "timeline"].map(v => (
+                  <button key={v} onClick={() => setView(v)} style={{ padding: "4px 12px", background: view === v ? "#1a6b3c" : "transparent", color: view === v ? "#fff" : "var(--color-text-secondary)", border: "none", cursor: "pointer", fontSize: 12, fontWeight: view === v ? 500 : 400 }}>
+                    {v === "list" ? "List" : "Timeline"}
+                  </button>
+                ))}
+              </div>
+              {/* Type filter */}
+              <div style={{ display: "flex", gap: 4 }}>
+                {["all", "EMI", "Credit Card", "Utility", "Subscription"].map(t => (
+                  <button key={t} onClick={() => setFilterType(t)}
+                    style={{ padding: "3px 9px", borderRadius: 6, border: "0.5px solid", borderColor: filterType === t ? "#1a6b3c" : "var(--color-border-secondary)", background: filterType === t ? "#e8f5ee" : "transparent", color: filterType === t ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 11, cursor: "pointer" }}>
+                    {t === "all" ? "All" : t === "Credit Card" ? "CC" : t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {view === "list" && (
+            <div style={{ padding: "0.8rem 1.1rem", display: "flex", flexDirection: "column", gap: 8, minHeight: 180 }}>
+              {list.length === 0 ? <EmptyState msg="No scheduled payments yet. Add one on the left." /> : list.map(p => {
+                const d = getDueDate(p);
+                const key = getNextDueKey(p);
+                const isPaid = key && p.paid.includes(key);
+                const days = d ? daysDiff(d) : null;
+                let badge = "", badgeColor = "var(--color-text-secondary)", badgeBg = "var(--color-background-secondary)";
+                if (d && days !== null) {
+                  if (days < 0) { badge = `${Math.abs(days)}d overdue`; badgeColor = "#d44"; badgeBg = "#fdf0f0"; }
+                  else if (days === 0) { badge = "Due today"; badgeColor = "#f0a020"; badgeBg = "#fff8e0"; }
+                  else if (days <= 7) { badge = `${days}d left`; badgeColor = "#f0a020"; badgeBg = "#fff8e0"; }
+                  else { badge = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }); }
+                }
+                const acct = accounts.find(a => a.id == p.accountId);
+                return (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: isPaid ? "var(--color-background-tertiary)" : "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)", opacity: isPaid ? 0.55 : 1, transition: "opacity 0.2s" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: typeColors[p.type] || "#1a6b3c", flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                        {p.type} · {p.freq}{p.tenure ? ` · ${p.tenure}mo` : ""}
+                        {acct ? ` · ${acct.name}` : ""}
+                        {p.notes ? ` · ${p.notes}` : ""}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{fmtCur(p.amount)}</div>
+                      <span style={{ fontSize: 10, background: isPaid ? "#e8f5ee" : badgeBg, color: isPaid ? "#1a6b3c" : badgeColor, borderRadius: 4, padding: "2px 7px", display: "inline-block", marginTop: 2, fontWeight: 500 }}>
+                        {isPaid ? "✓ Paid" : badge}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <button onClick={() => togglePaid(p.id)} title={isPaid ? "Mark Unpaid" : "Mark Paid"} style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
+                      <button onClick={() => deletePayment(p.id)} title="Delete" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#d44", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {view === "timeline" && (
+            <div style={{ padding: "0.8rem 1.1rem" }}>
+              {timelineMonths.map(({ year, month }) => {
+                const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+                const monthLabel = new Date(year, month, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+                const inMonth = payments.filter(p => {
+                  const [sy, sm] = p.startMonth.split("-").map(Number);
+                  const curr = new Date(year, month, 1);
+                  if (curr < new Date(sy, sm - 1, 1)) return false;
+                  if (p.freq === "once") return sy === year && (sm - 1) === month;
+                  if (p.freq === "annually") return (sm - 1) === month;
+                  if (p.freq === "quarterly") { const diff = (year * 12 + month) - (sy * 12 + (sm - 1)); return diff >= 0 && diff % 3 === 0; }
+                  if (p.tenure) { const diff = (year * 12 + month) - (sy * 12 + (sm - 1)); if (diff >= p.tenure) return false; }
+                  return true;
+                });
+                if (inMonth.length === 0) return null;
+                const total = inMonth.reduce((s, p) => s + p.amount, 0);
+                return (
+                  <div key={monthKey} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8, paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between" }}>
+                      <span>{monthLabel}</span>
+                      <span style={{ color: "#1a6b3c" }}>{fmtCur(total)}</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {inMonth.map(p => {
+                        const isPaid = p.paid.includes(monthKey);
+                        const dDate = new Date(year, month, p.day);
+                        const days = daysDiff(dDate);
+                        let badge = dDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+                        let badgeColor = "var(--color-text-secondary)";
+                        if (!isPaid) { if (days < 0) { badge = `${Math.abs(days)}d overdue`; badgeColor = "#d44"; } else if (days <= 7) { badge = days === 0 ? "Today" : `${days}d`; badgeColor = "#f0a020"; } }
+                        return (
+                          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: isPaid ? "var(--color-background-tertiary)" : "var(--color-background-secondary)", borderRadius: 8, padding: "8px 12px", opacity: isPaid ? 0.55 : 1 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: "50%", background: typeColors[p.type] || "#1a6b3c", flexShrink: 0 }} />
+                            <div style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.name}</div>
+                            <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtCur(p.amount)}</span>
+                            <span style={{ fontSize: 10, color: isPaid ? "#1a6b3c" : badgeColor, fontWeight: 500 }}>{isPaid ? "✓ Paid" : badge}</span>
+                            <button onClick={() => togglePaid(p.id)} style={{ width: 24, height: 24, borderRadius: 5, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 11, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
