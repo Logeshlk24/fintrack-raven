@@ -4944,14 +4944,38 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
 
   const NODE_COLORS = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
 
-  // ── Persist ──────────────────────────────────────────────────────────────
+  // ── Sticky notes on canvas ───────────────────────────────────────────────
+  const initStickies = note.mindmap?.stickies || [];
+  const [stickies, setStickies]         = useState(initStickies);
+  const [stickyDrag, setStickyDrag]     = useState(null); // { id, offsetX, offsetY }
+  const [editingSticky, setEditingSticky] = useState(null); // id
+  const stickiesRef = useRef(stickies);
+  useEffect(() => { stickiesRef.current = stickies; }, [stickies]);
+
+  const STICKY_COLORS = ["#fef9c3","#dcfce7","#dbeafe","#fce7f3","#ede9fe","#fee2e2","#ffedd5","#f0fdf4"];
+
+  function addSticky(x, y) {
+    const id = "s" + Date.now();
+    const newSticky = { id, title: "", body: "", x: x - pan.x - 90, y: y - pan.y - 50, color: STICKY_COLORS[Math.floor(Math.random() * STICKY_COLORS.length)] };
+    setStickies(p => [...p, newSticky]);
+    setEditingSticky(id);
+  }
+  function updateSticky(id, changes) {
+    setStickies(p => p.map(s => s.id === id ? { ...s, ...changes } : s));
+  }
+  function deleteSticky(id) {
+    setStickies(p => p.filter(s => s.id !== id));
+    if (editingSticky === id) setEditingSticky(null);
+  }
+
+  // Persist stickies too
   const saveTimer = useRef(null);
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      updateNote(note.id, { title, content, mindmap: { nodes, edges }, notePos });
+      updateNote(note.id, { title, content, mindmap: { nodes, edges, stickies }, notePos });
     }, 600);
-  }, [title, content, nodes, edges, notePos]); // eslint-disable-line
+  }, [title, content, nodes, edges, notePos, stickies]); // eslint-disable-line
 
   // ── Helper: get visible nodes (respects collapsed) ───────────────────────
   function getHiddenIds(collapsedSet) {
@@ -5033,6 +5057,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
 
   // ── Drag / pan ───────────────────────────────────────────────────────────
+  const lastClickTime = useRef(0);
   function onNodeMouseDown(e, nodeId) {
     e.stopPropagation();
     setSelected(nodeId);
@@ -5041,11 +5066,27 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
   function onCanvasMouseDown(e) {
     if (editingId) { commitEdit(); return; }
+    // Double-click on canvas = add sticky note
+    const now = Date.now();
+    if (now - lastClickTime.current < 300) {
+      addSticky(e.clientX, e.clientY);
+      lastClickTime.current = 0;
+      return;
+    }
+    lastClickTime.current = now;
     setSelected(null);
+    setEditingSticky(null);
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   }
   function onMouseMove(e) {
-    if (noteDragging) {
+    if (stickyDrag) {
+      setStickyDrag(d => {
+        const newX = e.clientX - d.offsetX - pan.x;
+        const newY = e.clientY - d.offsetY - pan.y;
+        setStickies(p => p.map(s => s.id === d.id ? { ...s, x: newX, y: newY } : s));
+        return d;
+      });
+    } else if (noteDragging) {
       setNotePos({ x: e.clientX - noteDragging.offsetX, y: e.clientY - noteDragging.offsetY });
     } else if (dragging) {
       const x = e.clientX - dragging.offsetX, y = e.clientY - dragging.offsetY;
@@ -5057,7 +5098,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
   function onMouseUp() {
     if (dragging?.moved) snapshot();
-    setDragging(null); setPanStart(null); setNoteDragging(null);
+    setDragging(null); setPanStart(null); setNoteDragging(null); setStickyDrag(null);
   }
 
   const selNode   = nodes.find(n => n.id === selected);
@@ -5102,6 +5143,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         )}
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button onClick={() => addSticky(400, 300)} title="Add sticky note to canvas" style={{ ...btnBase, background: "#fef9c3", border: "0.5px solid #d97706", color: "#92400e", fontWeight: 500 }}>📌 Add Note</button>
           <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btnBase, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
           <button onClick={() => deleteNote(note.id)} style={{ ...btnBase, color: "#d44", borderColor: "#d44" }}>🗑 Delete</button>
         </div>
@@ -5262,9 +5304,63 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
             })}
           </div>
 
+          {/* ── Sticky notes on canvas ── */}
+          <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)`, pointerEvents: "none" }}>
+            {stickies.map(sticky => (
+              <div
+                key={sticky.id}
+                onMouseDown={e => {
+                  e.stopPropagation();
+                  setEditingSticky(null);
+                  setStickyDrag({ id: sticky.id, offsetX: e.clientX - (sticky.x + pan.x), offsetY: e.clientY - (sticky.y + pan.y) });
+                }}
+                style={{
+                  position: "absolute", left: sticky.x, top: sticky.y,
+                  width: 180, minHeight: 120,
+                  background: sticky.color || "#fef9c3",
+                  borderRadius: 10,
+                  boxShadow: "2px 4px 14px rgba(0,0,0,0.13)",
+                  border: editingSticky === sticky.id ? "2px solid #d97706" : "1.5px solid rgba(0,0,0,0.08)",
+                  display: "flex", flexDirection: "column",
+                  cursor: stickyDrag?.id === sticky.id ? "grabbing" : "grab",
+                  zIndex: editingSticky === sticky.id ? 30 : 15,
+                  pointerEvents: "all",
+                  userSelect: "none",
+                }}>
+                {/* Sticky header bar */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 7px 2px", borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
+                  <div style={{ display: "flex", gap: 3 }}>
+                    {STICKY_COLORS.map(c => (
+                      <div key={c} onMouseDown={e => { e.stopPropagation(); updateSticky(sticky.id, { color: c }); }}
+                        style={{ width: 10, height: 10, borderRadius: "50%", background: c, border: sticky.color === c ? "1.5px solid #555" : "1px solid #ccc", cursor: "pointer" }} />
+                    ))}
+                  </div>
+                  <div onMouseDown={e => { e.stopPropagation(); deleteSticky(sticky.id); }}
+                    style={{ cursor: "pointer", fontSize: 12, color: "#999", lineHeight: 1, padding: "0 2px" }}>✕</div>
+                </div>
+                {/* Title */}
+                <input
+                  value={sticky.title}
+                  onChange={e => updateSticky(sticky.id, { title: e.target.value })}
+                  onMouseDown={e => { e.stopPropagation(); setEditingSticky(sticky.id); }}
+                  placeholder="Title…"
+                  style={{ border: "none", outline: "none", background: "transparent", fontSize: 12, fontWeight: 700, padding: "5px 8px 2px", fontFamily: "inherit", color: "#1a1a2e", width: "100%", boxSizing: "border-box", cursor: "text" }}
+                />
+                {/* Body */}
+                <textarea
+                  value={sticky.body}
+                  onChange={e => updateSticky(sticky.id, { body: e.target.value })}
+                  onMouseDown={e => { e.stopPropagation(); setEditingSticky(sticky.id); }}
+                  placeholder="Write here…"
+                  style={{ border: "none", outline: "none", background: "transparent", fontSize: 11.5, lineHeight: 1.6, padding: "2px 8px 8px", fontFamily: "inherit", color: "#2d2d3a", width: "100%", boxSizing: "border-box", flex: 1, resize: "none", cursor: "text", minHeight: 70 }}
+                />
+              </div>
+            ))}
+          </div>
+
           {/* Hint */}
           <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "#aaa", pointerEvents: "none", textAlign: "right", lineHeight: 1.5 }}>
-            Drag nodes · Double-click to rename<br/>
+            Drag nodes · Double-click to rename · Double-click canvas = add note<br/>
             <span style={{ color: "#a78bfa" }}>+</span> = add child &nbsp;·&nbsp; <span style={{ color: "#6d28d9" }}>●</span> = collapse
           </div>
         </div>
