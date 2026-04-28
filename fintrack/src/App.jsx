@@ -3910,7 +3910,7 @@ function BusinessPage({ data, update }) {
 
               {/* Chart */}
               <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
+                <div style={{ fontWeight: 500, fontSize: 12, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
                 <LineChart entries={yearEntries} />
               </div>
 
@@ -4590,14 +4590,8 @@ function ProjectsPage({ data, update }) {
                                 borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent",
                                 transition: "background 0.1s",
                               }}>
-                              <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {note.title || "Untitled"}
-                              </div>
-                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {note.content ? note.content.slice(0, 50) : "No content"}
-                              </div>
-                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 3, opacity: 0.7 }}>
-                                {new Date(note.updatedAt || note.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                               </div>
                             </div>
                           );
