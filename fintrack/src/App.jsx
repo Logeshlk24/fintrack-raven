@@ -68,6 +68,7 @@ const defaultData = {
   featureToggles: { fo: true },
   businessData: [],
   projectsData: [],
+  projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
 };
 
 
@@ -1763,11 +1764,11 @@ function SettingsPage({ data, update, tab, setTab }) {
   const effectiveTab = (!foOn && tab === "trading") ? "accounts" : tab;
 
   const settingsTabs = foOn
-    ? ["trading", "accounts", "categories", "features"]
-    : ["accounts", "categories", "features"];
+    ? ["trading", "accounts", "categories", "projects", "features"]
+    : ["accounts", "categories", "projects", "features"];
   const settingsLabels = foOn
-    ? ["Trading Settings", "Account Settings", "Categories", "Features"]
-    : ["Account Settings", "Categories", "Features"];
+    ? ["Trading Settings", "Account Settings", "Categories", "Projects", "Features"]
+    : ["Account Settings", "Categories", "Projects", "Features"];
 
   return (
     <div>
@@ -1788,6 +1789,9 @@ function SettingsPage({ data, update, tab, setTab }) {
 
       {/* ── Categories ── */}
       {effectiveTab === "categories" && <CategoriesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Projects ── */}
+      {effectiveTab === "projects" && <ProjectSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
       {/* ── Feature Toggles ── */}
       {effectiveTab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
@@ -1849,6 +1853,60 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
         </div>
         <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
           💡 Toggling a feature off hides it from the sidebar. All data (trades, records, history) is kept safe and will reappear the moment you turn it back on.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ProjectSettings({ data, update, cardStyle, sectionTitle }) {
+  const taskTypes = data.projectTaskTypes && data.projectTaskTypes.length > 0
+    ? data.projectTaskTypes
+    : ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
+  const [newType, setNewType] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function addType() {
+    const val = newType.trim();
+    if (!val || taskTypes.includes(val)) return;
+    update(() => ({ projectTaskTypes: [...taskTypes, val] }));
+    setNewType("");
+    setSaved(true); setTimeout(() => setSaved(false), 1500);
+  }
+
+  function deleteType(t) {
+    if (taskTypes.length <= 1) return;
+    update(() => ({ projectTaskTypes: taskTypes.filter(x => x !== t) }));
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={cardStyle}>
+        {sectionTitle("📋", "Project Task Types", "Customize the task type labels used across all your projects.")}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+          {taskTypes.map(t => (
+            <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, background: "#e8f5ee", border: "0.5px solid #1a6b3c33", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 }}>
+              <span style={{ fontWeight: 500, color: "#1a6b3c" }}>{t}</span>
+              <button onClick={() => deleteType(t)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2, opacity: 0.7 }} title="Remove">✕</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>New Task Type</label>
+            <input
+              placeholder="e.g. QA, Deployment, Client Call…"
+              value={newType}
+              onChange={e => setNewType(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addType()}
+              style={{ width: "100%", boxSizing: "border-box" }}
+            />
+          </div>
+          <button onClick={addType} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+          {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ Saved</span>}
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          💡 These types appear in the task type dropdown when adding or editing tasks in any project. Deleting a type won't remove it from existing tasks.
         </p>
       </div>
     </div>
@@ -3504,32 +3562,55 @@ function BusinessPage({ data, update }) {
     );
   }
 
-  // Year-on-year bar chart (for overview)
-  function YoYChart({ summaries, height = 120 }) {
+  // Year-on-year line chart (compact, replaces bar chart)
+  function YoYChart({ summaries, height = 90 }) {
     if (!summaries.length) return null;
     const displayed = [...summaries].sort((a, b) => a.year - b.year);
     const maxVal = Math.max(...displayed.map(s => Math.max(s.totalGross, s.totalNet)), 1);
-    const barW = 32;
-    const gap = barW + 4;
-    const chartW = displayed.length * (gap * 2 + 12) + 20;
+    const W = 480, pad = 32, chartH = height;
+    const n = displayed.length;
+    const xStep = n > 1 ? (W - pad * 2) / (n - 1) : 0;
+    const yOf = v => chartH - Math.round((v / maxVal) * (chartH - 10)) + 4;
+    const pts = (key) => displayed.map((s, i) => `${pad + i * xStep},${yOf(s[key])}`).join(" ");
+    const area = (key) => {
+      const line = displayed.map((s, i) => `${pad + i * xStep},${yOf(s[key])}`).join(" L ");
+      return `M ${pad + 0 * xStep},${chartH + 4} L ${line} L ${pad + (n - 1) * xStep},${chartH + 4} Z`;
+    };
     return (
-      <svg width="100%" viewBox={`0 0 ${chartW} ${height + 30}`} style={{ display: "block" }}>
-        {displayed.map((s, i) => {
-          const x = 10 + i * (gap * 2 + 12);
-          const gH = Math.round((s.totalGross / maxVal) * height);
-          const nH = Math.round((s.totalNet / maxVal) * height);
-          return (
-            <g key={s.year}>
-              <rect x={x} y={height - gH} width={barW} height={gH} fill="#1a6b3c" rx={3} opacity={0.85} />
-              <rect x={x + barW + 3} y={height - nH} width={barW} height={nH} fill="#4da6ff" rx={3} opacity={0.85} />
-              <text x={x + barW} y={height + 14} textAnchor="middle" fontSize={9} fill="#6b7280">{s.year}</text>
-            </g>
-          );
-        })}
-        <rect x={10} y={height + 22} width={8} height={8} fill="#1a6b3c" rx={2} />
-        <text x={22} y={height + 30} fontSize={8} fill="#6b7280">Gross Income</text>
-        <rect x={80} y={height + 22} width={8} height={8} fill="#4da6ff" rx={2} />
-        <text x={92} y={height + 30} fontSize={8} fill="#6b7280">Net Income</text>
+      <svg width="100%" viewBox={`0 0 ${W} ${chartH + 36}`} style={{ display: "block" }}>
+        <defs>
+          <linearGradient id="grossGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1a6b3c" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#1a6b3c" stopOpacity="0.01" />
+          </linearGradient>
+          <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4da6ff" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#4da6ff" stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+        {/* Grid lines */}
+        {[0, 0.5, 1].map(frac => (
+          <line key={frac} x1={pad} x2={W - pad} y1={yOf(maxVal * frac)} y2={yOf(maxVal * frac)} stroke="#e5e7eb" strokeWidth={0.5} />
+        ))}
+        {/* Area fills */}
+        <path d={area("totalGross")} fill="url(#grossGrad)" />
+        <path d={area("totalNet")} fill="url(#netGrad)" />
+        {/* Lines */}
+        <polyline points={pts("totalGross")} fill="none" stroke="#1a6b3c" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <polyline points={pts("totalNet")} fill="none" stroke="#4da6ff" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {/* Dots + year labels */}
+        {displayed.map((s, i) => (
+          <g key={s.year}>
+            <circle cx={pad + i * xStep} cy={yOf(s.totalGross)} r={3.5} fill="#1a6b3c" />
+            <circle cx={pad + i * xStep} cy={yOf(s.totalNet)} r={3.5} fill="#4da6ff" />
+            <text x={pad + i * xStep} y={chartH + 18} textAnchor="middle" fontSize={9} fill="#6b7280">{s.year}</text>
+          </g>
+        ))}
+        {/* Legend */}
+        <circle cx={pad} cy={chartH + 28} r={4} fill="#1a6b3c" />
+        <text x={pad + 8} y={chartH + 32} fontSize={8} fill="#6b7280">Gross Income</text>
+        <circle cx={pad + 80} cy={chartH + 28} r={4} fill="#4da6ff" />
+        <text x={pad + 88} y={chartH + 32} fontSize={8} fill="#6b7280">Net Income</text>
       </svg>
     );
   }
@@ -3762,16 +3843,21 @@ function BusinessPage({ data, update }) {
   );
 }
 // ─── Projects Page ───────────────────────────────────────────────────────────
-const TASK_TYPES = ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
+const DEFAULT_TASK_TYPES = ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
 
 function ProjectsPage({ data, update }) {
   const projects = data.projectsData || [];
+  const TASK_TYPES = (data.projectTaskTypes && data.projectTaskTypes.length > 0) ? data.projectTaskTypes : DEFAULT_TASK_TYPES;
   const [selectedProject, setSelectedProject] = useState(null);
   const [showAddProject, setShowAddProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
 
-  // Left panel tab: "tasks" | "files"
+  // Left panel tab: "tasks" | "files" | "notes"
   const [leftTab, setLeftTab] = useState("tasks");
+
+  // Notes state
+  const [noteContent, setNoteContent] = useState("");
+  const [notesSaved, setNotesSaved] = useState(false);
 
   // Task form state
   const [showAddTask, setShowAddTask] = useState(false);
@@ -3790,6 +3876,16 @@ function ProjectsPage({ data, update }) {
   const todos = project ? (project.todos || []) : [];
   const files = project ? (project.files || []) : [];
   const dayLog = project ? (project.dayLog || []) : [];
+  const notes = project ? (project.notes || []) : [];
+
+  // Sync noteContent to selected project's notes
+  const prevProjectRef = useRef(null);
+  useEffect(() => {
+    if (selectedProject !== prevProjectRef.current) {
+      prevProjectRef.current = selectedProject;
+      // Don't reset noteContent here – Notes tab manages its own blocks
+    }
+  }, [selectedProject]);
 
   function addProject() {
     if (!newProjectName.trim()) return;
@@ -4046,6 +4142,9 @@ function ProjectsPage({ data, update }) {
               <button style={tabStyle(leftTab === "files")} onClick={() => setLeftTab("files")}>
                 📎 Files {files.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({files.length})</span>}
               </button>
+              <button style={tabStyle(leftTab === "notes")} onClick={() => setLeftTab("notes")}>
+                📝 Notes {notes.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({notes.length})</span>}
+              </button>
             </div>
 
             {/* ── TASKS TAB ── */}
@@ -4124,15 +4223,42 @@ function ProjectsPage({ data, update }) {
                             </div>
                           ) : (
                             <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px" }}>
+                              <button
+                                onClick={() => toggleTodo(t.id)}
+                                style={{ width: 18, height: 18, borderRadius: 4, border: t.done ? "1.5px solid #1a6b3c" : "1.5px solid var(--color-border-secondary)", background: t.done ? "#e8f5ee" : "transparent", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}
+                              >{t.done ? "✓" : ""}</button>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 3, wordBreak: "break-word" }}>{t.text}</div>
-                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                                  {t.taskType && <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)", fontWeight: 500 }}>{t.taskType}</span>}
+                                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, wordBreak: "break-word" }}>{t.text}</div>
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: t.eta ? 6 : 0 }}>
+                                  {t.taskType && (
+                                    <span style={{ fontSize: 10, background: "#e8f5ee", border: "0.5px solid #1a6b3c22", borderRadius: 4, padding: "1px 6px", color: "#1a6b3c", fontWeight: 600 }}>{t.taskType}</span>
+                                  )}
                                   {t.eta
                                     ? <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>
                                     : <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>
                                   }
                                 </div>
+                                {/* Timeline progress bar — only shown when ETA is set */}
+                                {t.eta && (() => {
+                                  const created = new Date(t.createdAt || t.id);
+                                  const due = new Date(t.eta);
+                                  const now = new Date();
+                                  const total = due - created;
+                                  const elapsed = now - created;
+                                  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((elapsed / total) * 100))) : 0;
+                                  const barColor = pct >= 90 ? "#d44" : pct >= 70 ? "#f0a020" : "#4da6ff";
+                                  return (
+                                    <div>
+                                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
+                                        <span>Timeline</span>
+                                        <span style={{ color: barColor, fontWeight: 600 }}>{pct}%</span>
+                                      </div>
+                                      <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+                                        <div style={{ width: pct + "%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.4s" }} />
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                                 <button onClick={() => startEditTask(t)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "2px 4px" }} title="Edit">✏️</button>
@@ -4199,6 +4325,58 @@ function ProjectsPage({ data, update }) {
                 )}
               </div>
             )}
+            {/* ── NOTES TAB ── */}
+            {leftTab === "notes" && (() => {
+              function addNote() {
+                const note = {
+                  id: Date.now(),
+                  title: "",
+                  content: "",
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  color: "#ffffff",
+                };
+                update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+                  ? { ...pr, notes: [...(pr.notes || []), note] }
+                  : pr
+                )}));
+              }
+              function updateNote(noteId, changes) {
+                update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+                  ? { ...pr, notes: (pr.notes || []).map(n => n.id === noteId ? { ...n, ...changes, updatedAt: new Date().toISOString() } : n) }
+                  : pr
+                )}));
+              }
+              function deleteNote(noteId) {
+                update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+                  ? { ...pr, notes: (pr.notes || []).filter(n => n.id !== noteId) }
+                  : pr
+                )}));
+              }
+              const NOTE_COLORS = ["#ffffff", "#fef9c3", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe", "#fee2e2", "#ffedd5"];
+              return (
+                <div>
+                  <div style={{ padding: "8px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                      {notes.length} note{notes.length !== 1 ? "s" : ""}
+                    </span>
+                    <button onClick={addNote} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "4px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>+ New Note</button>
+                  </div>
+                  {notes.length === 0 ? (
+                    <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
+                      No notes yet. Click "+ New Note" to start.
+                    </div>
+                  ) : (
+                    <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10, maxHeight: 540, overflowY: "auto" }}>
+                      {notes.map(note => (
+                        <NoteBlock key={note.id} note={note} onUpdate={updateNote} onDelete={deleteNote} colors={NOTE_COLORS} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* RIGHT — Project summary / stats */}
@@ -4357,6 +4535,91 @@ function ProjectsPage({ data, update }) {
             })()}
           </div>
 
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── NoteBlock Component (OneNote-style) ─────────────────────────────────────
+function NoteBlock({ note, onUpdate, onDelete, colors }) {
+  const [editing, setEditing] = useState(!note.title && !note.content);
+  const [localTitle, setLocalTitle] = useState(note.title || "");
+  const [localContent, setLocalContent] = useState(note.content || "");
+  const [showColors, setShowColors] = useState(false);
+  const saveTimer = useRef(null);
+
+  function triggerSave(title, content) {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      onUpdate(note.id, { title, content });
+    }, 600);
+  }
+
+  const fmt = (iso) => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div style={{ borderRadius: 10, border: "0.5px solid var(--color-border-secondary)", background: note.color || "#fff", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+      {/* Note header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderBottom: editing ? "0.5px solid var(--color-border-tertiary)" : "none" }}>
+        {editing ? (
+          <input
+            placeholder="Note title…"
+            value={localTitle}
+            onChange={e => { setLocalTitle(e.target.value); triggerSave(e.target.value, localContent); }}
+            style={{ flex: 1, fontSize: 13, fontWeight: 600, border: "none", background: "transparent", outline: "none", color: "var(--color-text-primary)", padding: 0 }}
+            autoFocus={!note.title && !note.content}
+          />
+        ) : (
+          <div onClick={() => setEditing(true)} style={{ flex: 1, fontSize: 13, fontWeight: 600, cursor: "text", color: note.title ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontStyle: note.title ? "normal" : "italic" }}>
+            {note.title || "Untitled note"}
+          </div>
+        )}
+        {/* Color picker */}
+        <div style={{ position: "relative" }}>
+          <button onClick={() => setShowColors(s => !s)} style={{ width: 16, height: 16, borderRadius: "50%", background: note.color || "#fff", border: "1px solid var(--color-border-secondary)", cursor: "pointer", flexShrink: 0 }} title="Note color" />
+          {showColors && (
+            <>
+              <div onClick={() => setShowColors(false)} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
+              <div style={{ position: "absolute", right: 0, top: 22, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 6, zIndex: 100, display: "flex", gap: 5, flexWrap: "wrap", width: 114 }}>
+                {colors.map(c => (
+                  <button key={c} onClick={() => { onUpdate(note.id, { color: c }); setShowColors(false); }}
+                    style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid var(--color-border-secondary)", cursor: "pointer" }} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        {editing ? (
+          <button onClick={() => setEditing(false)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>Done</button>
+        ) : (
+          <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "0 2px" }} title="Edit">✏️</button>
+        )}
+        <button onClick={() => onDelete(note.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>🗑</button>
+      </div>
+      {/* Note body */}
+      {editing ? (
+        <textarea
+          placeholder="Write your note here… supports multiple lines, links, anything."
+          value={localContent}
+          onChange={e => { setLocalContent(e.target.value); triggerSave(localTitle, e.target.value); }}
+          rows={5}
+          style={{ width: "100%", boxSizing: "border-box", border: "none", background: "transparent", resize: "vertical", outline: "none", fontSize: 13, padding: "8px 10px", lineHeight: 1.6, fontFamily: "inherit", color: "var(--color-text-primary)" }}
+        />
+      ) : (
+        note.content ? (
+          <div onClick={() => setEditing(true)} style={{ padding: "8px 10px", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap", cursor: "text", minHeight: 32 }}>{note.content}</div>
+        ) : (
+          <div onClick={() => setEditing(true)} style={{ padding: "8px 10px", fontSize: 12, color: "var(--color-text-secondary)", fontStyle: "italic", cursor: "text" }}>Click to add content…</div>
+        )
+      )}
+      {/* Footer */}
+      {note.updatedAt && (
+        <div style={{ padding: "4px 10px 6px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+          Updated {fmt(note.updatedAt)}
         </div>
       )}
     </div>
