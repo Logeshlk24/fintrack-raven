@@ -2457,7 +2457,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
             <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account (optional)</label>
             <select value={form.accountId} onChange={e => setForm(p => ({ ...p, accountId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
               <option value="">— None —</option>
-              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
             </select>
           </div>
           <LabelInput label="Notes (optional)" placeholder="e.g. Auto-debit from SBI" value={form.notes} onChange={v => setForm(p => ({ ...p, notes: v }))} />
@@ -3100,10 +3100,24 @@ function GoalsPage({ data, update }) {
     update(p => ({ needsWants: (p.needsWants || []).map(x => x.id === id ? { ...x, completed: !x.completed } : x) }));
   }
 
-  function addSavings(id, amount) {
-    update(p => ({
-      needsWants: (p.needsWants || []).map(x => x.id === id ? { ...x, savedAmount: Math.min(x.savedAmount + parseFloat(amount), x.targetAmount) } : x)
-    }));
+  function addSavings(id, amount, txType, bankId, goalName) {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) return;
+    update(p => {
+      const updatedNeeds = (p.needsWants || []).map(x =>
+        x.id === id ? { ...x, savedAmount: Math.min(x.savedAmount + amt, x.targetAmount) } : x
+      );
+      const newTx = {
+        id: Date.now() + Math.random(),
+        type: txType,
+        amount: amt,
+        category: txType === "income" ? "Savings" : "Savings",
+        note: `Goal: ${goalName}`,
+        date: today(),
+        bankId: bankId || "",
+      };
+      return { needsWants: updatedNeeds, transactions: [...(p.transactions || []), newTx] };
+    });
   }
 
   const totalNeedsTarget = needs.reduce((s, i) => s + i.targetAmount, 0);
@@ -3122,11 +3136,11 @@ function GoalsPage({ data, update }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
-          <input type="number" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => onChange({ ...values, targetAmount: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          <input type="text" inputMode="numeric" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
-          <input type="number" placeholder="0" value={values.savedAmount} onChange={e => onChange({ ...values, savedAmount: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          <input type="text" inputMode="numeric" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
       </div>
       <div style={{ marginBottom: 10 }}>
@@ -3152,7 +3166,16 @@ function GoalsPage({ data, update }) {
     const remaining = item.targetAmount - item.savedAmount;
     const [addAmt, setAddAmt] = useState("");
     const [showAddSave, setShowAddSave] = useState(false);
+    const [saveTxType, setSaveTxType] = useState("income");
+    const [saveBankId, setSaveBankId] = useState("");
     const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
+    const accounts = data.banks || [];
+
+    function handleAddSavings() {
+      if (!addAmt || parseFloat(addAmt) <= 0) return;
+      addSavings(item.id, addAmt, saveTxType, saveBankId, item.name);
+      setAddAmt(""); setShowAddSave(false); setSaveBankId("");
+    }
 
     return (
       <div style={{
@@ -3205,10 +3228,53 @@ function GoalsPage({ data, update }) {
               + Add Savings
             </button>
           ) : (
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input type="number" placeholder="Amount" value={addAmt} onChange={e => setAddAmt(e.target.value)} style={{ flex: 1, fontSize: 12, padding: "4px 8px" }} autoFocus />
-              <button onClick={() => { if (addAmt) { addSavings(item.id, addAmt); setAddAmt(""); setShowAddSave(false); } }} style={{ background: cardAccent, color: "#fff", border: "none", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Add</button>
-              <button onClick={() => { setShowAddSave(false); setAddAmt(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "4px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
+              {/* Direction toggle */}
+              <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", marginBottom: 8 }}>
+                {[["income","📥 Income","#1a6b3c","#e8f5ee"],["expense","📤 Expense","#d44","#fdf0f0"]].map(([v, lbl, color, bg]) => (
+                  <button key={v} onClick={() => setSaveTxType(v)}
+                    style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", fontSize: 12, fontWeight: saveTxType === v ? 600 : 400, background: saveTxType === v ? bg : "transparent", color: saveTxType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              {/* Amount */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <input
+                  type="number"
+                  placeholder="Amount (₹)"
+                  value={addAmt}
+                  onChange={e => setAddAmt(e.target.value)}
+                  style={{ flex: 1, fontSize: 12, padding: "5px 8px", boxSizing: "border-box" }}
+                  autoFocus
+                />
+              </div>
+              {/* Account */}
+              {accounts.length > 0 && (
+                <select value={saveBankId} onChange={e => setSaveBankId(e.target.value)} style={{ width: "100%", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }}>
+                  <option value="">— No account —</option>
+                  {accounts.filter(a => a.type === "Bank").length > 0 && (
+                    <optgroup label="🏦 Bank Accounts">
+                      {accounts.filter(a => a.type === "Bank").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </optgroup>
+                  )}
+                  {accounts.filter(a => a.type === "Credit Card").length > 0 && (
+                    <optgroup label="💳 Credit Cards">
+                      {accounts.filter(a => a.type === "Credit Card").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </optgroup>
+                  )}
+                  {accounts.filter(a => a.type === "Cash").length > 0 && (
+                    <optgroup label="💵 Cash">
+                      {accounts.filter(a => a.type === "Cash").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+              )}
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={handleAddSavings} style={{ flex: 1, background: cardAccent, color: "#fff", border: "none", borderRadius: 7, padding: "5px 0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Log Savings</button>
+                <button onClick={() => { setShowAddSave(false); setAddAmt(""); setSaveBankId(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+              </div>
             </div>
           )
         )}
