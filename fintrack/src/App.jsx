@@ -3762,14 +3762,24 @@ function BusinessPage({ data, update }) {
   );
 }
 // ─── Projects Page ───────────────────────────────────────────────────────────
+const TASK_TYPES = ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
+
 function ProjectsPage({ data, update }) {
   const projects = data.projectsData || [];
   const [selectedProject, setSelectedProject] = useState(null);
   const [showAddProject, setShowAddProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
-  const [newTodo, setNewTodo] = useState("");
-  const [editTodoId, setEditTodoId] = useState(null);
-  const [editTodoText, setEditTodoText] = useState("");
+
+  // Left panel tab: "tasks" | "files"
+  const [leftTab, setLeftTab] = useState("tasks");
+
+  // Task form state
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [taskForm, setTaskForm] = useState({ name: "", type: "Development", eta: "" });
+
+  // Edit task state
+  const [editTaskId, setEditTaskId] = useState(null);
+  const [editTaskForm, setEditTaskForm] = useState({ name: "", type: "", eta: "" });
 
   // Get the full selected project object (always fresh from data)
   const project = selectedProject ? projects.find(p => p.id === selectedProject) : null;
@@ -3791,11 +3801,19 @@ function ProjectsPage({ data, update }) {
     if (selectedProject === id) setSelectedProject(null);
   }
 
-  function addTodo() {
-    if (!newTodo.trim() || !project) return;
-    const todo = { id: Date.now(), text: newTodo.trim(), done: false, createdAt: new Date().toISOString() };
+  function addTask() {
+    if (!taskForm.name.trim() || !project) return;
+    const todo = {
+      id: Date.now(),
+      text: taskForm.name.trim(),
+      taskType: taskForm.type,
+      eta: taskForm.eta,
+      done: false,
+      createdAt: new Date().toISOString(),
+    };
     update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id ? { ...pr, todos: [...(pr.todos || []), todo] } : pr) }));
-    setNewTodo("");
+    setTaskForm({ name: "", type: "Development", eta: "" });
+    setShowAddTask(false);
   }
 
   function toggleTodo(todoId) {
@@ -3812,13 +3830,18 @@ function ProjectsPage({ data, update }) {
     )}));
   }
 
-  function saveEditTodo() {
-    if (!editTodoText.trim()) return;
+  function startEditTask(t) {
+    setEditTaskId(t.id);
+    setEditTaskForm({ name: t.text, type: t.taskType || "Other", eta: t.eta || "" });
+  }
+
+  function saveEditTask() {
+    if (!editTaskForm.name.trim()) return;
     update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
-      ? { ...pr, todos: (pr.todos || []).map(t => t.id === editTodoId ? { ...t, text: editTodoText.trim() } : t) }
+      ? { ...pr, todos: (pr.todos || []).map(t => t.id === editTaskId ? { ...t, text: editTaskForm.name.trim(), taskType: editTaskForm.type, eta: editTaskForm.eta } : t) }
       : pr
     )}));
-    setEditTodoId(null); setEditTodoText("");
+    setEditTaskId(null);
   }
 
   function handleFileUpload(e) {
@@ -3867,7 +3890,34 @@ function ProjectsPage({ data, update }) {
     return "📎";
   }
 
+  function etaColor(etaStr) {
+    if (!etaStr) return "var(--color-text-secondary)";
+    const eta = new Date(etaStr);
+    const now = new Date();
+    const diff = (eta - now) / (1000 * 60 * 60 * 24);
+    if (diff < 0) return "#d44";
+    if (diff <= 2) return "#f0a020";
+    return "#1a6b3c";
+  }
+
+  function formatEta(etaStr) {
+    if (!etaStr) return null;
+    const d = new Date(etaStr);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  }
+
   const doneTodos = todos.filter(t => t.done).length;
+  const pendingTodos = todos.filter(t => !t.done);
+  const completedTodos = todos.filter(t => t.done);
+
+  // Tab styles helper
+  const tabStyle = (active) => ({
+    padding: "7px 16px", background: "none", border: "none", cursor: "pointer",
+    fontSize: 13, fontWeight: active ? 500 : 400,
+    color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+    borderBottom: active ? "2px solid #1a6b3c" : "2px solid transparent",
+    marginBottom: -1, whiteSpace: "nowrap",
+  });
 
   return (
     <div>
@@ -3875,7 +3925,7 @@ function ProjectsPage({ data, update }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {project && (
-            <button onClick={() => setSelectedProject(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+            <button onClick={() => { setSelectedProject(null); setShowAddTask(false); setEditTaskId(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
               ← Back
             </button>
           )}
@@ -3954,121 +4004,258 @@ function ProjectsPage({ data, update }) {
 
       {/* ── PROJECT DETAIL ── */}
       {project && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, alignItems: "start" }}>
 
-          {/* LEFT — Files */}
+          {/* LEFT PANEL — Tabbed: Tasks | Files */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-            <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontWeight: 500, fontSize: 15 }}>📎 Files <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 400 }}>({files.length})</span></span>
-              <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>
-                + Upload
-                <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
-              </label>
+
+            {/* Tab bar */}
+            <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px" }}>
+              <button style={tabStyle(leftTab === "tasks")} onClick={() => setLeftTab("tasks")}>
+                ✅ Tasks {todos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({doneTodos}/{todos.length})</span>}
+              </button>
+              <button style={tabStyle(leftTab === "files")} onClick={() => setLeftTab("files")}>
+                📎 Files {files.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({files.length})</span>}
+              </button>
             </div>
 
-            {files.length === 0 ? (
-              <label style={{ display: "block", cursor: "pointer" }}>
-                <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
-                <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
-                  Drop files here or click to upload
-                </div>
-              </label>
-            ) : (
-              <div style={{ padding: "0.5rem 0" }}>
-                {files.map(f => (
-                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>{fileIcon(f.type)}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {f.type.startsWith("image/") ? (
-                        <a href={f.dataUrl} download={f.name} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{f.name}</a>
-                      ) : (
-                        <a href={f.dataUrl} download={f.name} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{f.name}</a>
-                      )}
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
+            {/* ── TASKS TAB ── */}
+            {leftTab === "tasks" && (
+              <div>
+                {/* Progress bar */}
+                {todos.length > 0 && (
+                  <div style={{ padding: "8px 14px 6px", background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ background: "var(--color-border-secondary)", borderRadius: 4, height: 5, overflow: "hidden" }}>
+                      <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#4da6ff", borderRadius: 4, transition: "width 0.4s" }} />
                     </div>
-                    {f.type.startsWith("image/") && (
-                      <img src={f.dataUrl} alt={f.name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "0.5px solid var(--color-border-secondary)" }} />
-                    )}
-                    <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>{Math.round(doneTodos / todos.length * 100)}% complete · {doneTodos}/{todos.length} done</div>
                   </div>
-                ))}
+                )}
+
+                {/* Add Task button */}
+                <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  {!showAddTask ? (
+                    <button onClick={() => setShowAddTask(true)} style={{ width: "100%", background: "none", border: "1px dashed var(--color-border-secondary)", borderRadius: 8, padding: "7px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "left" }}>
+                      + Add task…
+                    </button>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Task Name *</label>
+                        <input
+                          placeholder="e.g. Design homepage mockup"
+                          value={taskForm.name}
+                          onChange={e => setTaskForm(f => ({ ...f, name: e.target.value }))}
+                          onKeyDown={e => e.key === "Enter" && addTask()}
+                          style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }}
+                          autoFocus
+                        />
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Task Type</label>
+                          <select value={taskForm.type} onChange={e => setTaskForm(f => ({ ...f, type: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }}>
+                            {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>ETA (Due Date)</label>
+                          <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button onClick={() => { setShowAddTask(false); setTaskForm({ name: "", type: "Development", eta: "" }); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                        <button onClick={addTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Add Task</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Task list */}
+                {todos.length === 0 ? (
+                  <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                    No tasks yet. Click "+ Add task…" to get started.
+                  </div>
+                ) : (
+                  <div>
+                    {/* Pending tasks */}
+                    {pendingTodos.map(t => (
+                      <div key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                        {editTaskId === t.id ? (
+                          <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7, background: "var(--color-background-secondary)" }}>
+                            <input value={editTaskForm.name} onChange={e => setEditTaskForm(f => ({ ...f, name: e.target.value }))} placeholder="Task name" style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }} autoFocus />
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                              <select value={editTaskForm.type} onChange={e => setEditTaskForm(f => ({ ...f, type: e.target.value }))} style={{ width: "100%", fontSize: 12 }}>
+                                {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                              <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                            </div>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                              <button onClick={() => setEditTaskId(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                              <button onClick={saveEditTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Save</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px" }}>
+                            <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, marginTop: 2 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 3, wordBreak: "break-word" }}>{t.text}</div>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                {t.taskType && (
+                                  <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)", fontWeight: 500 }}>{t.taskType}</span>
+                                )}
+                                {t.eta && (
+                                  <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                              <button onClick={() => startEditTask(t)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "2px 4px" }} title="Edit">✏️</button>
+                              <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Completed tasks */}
+                    {completedTodos.length > 0 && (
+                      <>
+                        <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>COMPLETED</div>
+                        {completedTodos.map(t => (
+                          <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.6 }}>
+                            <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10, marginTop: 2 }}>✓</button>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word" }}>{t.text}</div>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                                {t.taskType && <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)" }}>{t.taskType}</span>}
+                                {t.eta && <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>📅 {formatEta(t.eta)}</span>}
+                              </div>
+                            </div>
+                            <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, flexShrink: 0, padding: "2px 4px" }}>✕</button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── FILES TAB ── */}
+            {leftTab === "files" && (
+              <div>
+                <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "flex-end" }}>
+                  <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
+                    + Upload
+                    <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+                  </label>
+                </div>
+                {files.length === 0 ? (
+                  <label style={{ display: "block", cursor: "pointer" }}>
+                    <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+                    <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
+                      Drop files here or click to upload
+                    </div>
+                  </label>
+                ) : (
+                  <div style={{ padding: "0.5rem 0" }}>
+                    {files.map(f => (
+                      <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                        <span style={{ fontSize: 20, flexShrink: 0 }}>{fileIcon(f.type)}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <a href={f.dataUrl} download={f.name} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{f.name}</a>
+                          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
+                        </div>
+                        {f.type.startsWith("image/") && (
+                          <img src={f.dataUrl} alt={f.name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "0.5px solid var(--color-border-secondary)" }} />
+                        )}
+                        <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* RIGHT — To-Do List */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-            <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontWeight: 500, fontSize: 15 }}>
-                ✅ To-Do List
-                {todos.length > 0 && <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 400, marginLeft: 6 }}>{doneTodos}/{todos.length} done</span>}
-              </span>
+          {/* RIGHT — Project summary / stats */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Summary card */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.1rem 1.2rem" }}>
+              <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 12 }}>Project Overview</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 600, color: "#4da6ff" }}>{todos.length}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Total Tasks</div>
+                </div>
+                <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 600, color: "#1a6b3c" }}>{doneTodos}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Completed</div>
+                </div>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 600, color: "var(--color-text-secondary)" }}>{files.length}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Files</div>
+                </div>
+              </div>
+              {todos.length > 0 && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
+                    <span>Progress</span>
+                    <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{Math.round(doneTodos / todos.length * 100)}%</span>
+                  </div>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                    <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#4da6ff", borderRadius: 6, transition: "width 0.4s" }} />
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Progress bar */}
-            {todos.length > 0 && (
-              <div style={{ padding: "8px 14px 0", background: "var(--color-background-secondary)" }}>
-                <div style={{ background: "var(--color-border-secondary)", borderRadius: 4, height: 5, overflow: "hidden" }}>
-                  <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#4da6ff", borderRadius: 4, transition: "width 0.4s" }} />
+            {/* Upcoming / overdue tasks */}
+            {pendingTodos.filter(t => t.eta).length > 0 && (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 14 }}>📅 Deadlines</div>
+                <div style={{ padding: "0.5rem 0" }}>
+                  {pendingTodos
+                    .filter(t => t.eta)
+                    .sort((a, b) => new Date(a.eta) - new Date(b.eta))
+                    .map(t => (
+                      <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", gap: 10 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.text}</div>
+                          {t.taskType && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{t.taskType}</div>}
+                        </div>
+                        <span style={{ fontSize: 12, color: etaColor(t.eta), fontWeight: 500, flexShrink: 0 }}>{formatEta(t.eta)}</span>
+                      </div>
+                    ))
+                  }
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", paddingBottom: 8, marginTop: 3 }}>{Math.round(doneTodos / todos.length * 100)}% complete</div>
               </div>
             )}
 
-            {/* Add todo input */}
-            <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 }}>
-              <input
-                placeholder="Add a task…"
-                value={newTodo}
-                onChange={e => setNewTodo(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && addTodo()}
-                style={{ flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" }}
-              />
-              <button onClick={addTodo} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Add</button>
-            </div>
-
-            {/* Todo items */}
-            {todos.length === 0 ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                No tasks yet. Type above and press Enter to add one.
-              </div>
-            ) : (
-              <div>
-                {/* Pending */}
-                {todos.filter(t => !t.done).map(t => (
-                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                    <button onClick={() => toggleTodo(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }} />
-                    {editTodoId === t.id ? (
-                      <input
-                        value={editTodoText}
-                        onChange={e => setEditTodoText(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") saveEditTodo(); if (e.key === "Escape") { setEditTodoId(null); setEditTodoText(""); } }}
-                        style={{ flex: 1, fontSize: 13, padding: "2px 6px", boxSizing: "border-box" }}
-                        autoFocus
-                        onBlur={saveEditTodo}
-                      />
-                    ) : (
-                      <span onDoubleClick={() => { setEditTodoId(t.id); setEditTodoText(t.text); }} style={{ flex: 1, fontSize: 13, cursor: "text" }} title="Double-click to edit">{t.text}</span>
-                    )}
-                    <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, flexShrink: 0, padding: "0 2px" }}>✕</button>
-                  </div>
-                ))}
-                {/* Done */}
-                {todos.filter(t => t.done).length > 0 && (
-                  <>
-                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>COMPLETED</div>
-                    {todos.filter(t => t.done).map(t => (
-                      <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.6 }}>
-                        <button onClick={() => toggleTodo(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 11 }}>✓</button>
-                        <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{t.text}</span>
-                        <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, flexShrink: 0, padding: "0 2px" }}>✕</button>
+            {/* Task type breakdown */}
+            {todos.length > 0 && (() => {
+              const typeMap = {};
+              todos.forEach(t => { const k = t.taskType || "Other"; typeMap[k] = (typeMap[k] || 0) + 1; });
+              const entries = Object.entries(typeMap).sort((a, b) => b[1] - a[1]);
+              return entries.length > 1 ? (
+                <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                  <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 14 }}>Tasks by Type</div>
+                  <div style={{ padding: "0.6rem 1.1rem" }}>
+                    {entries.map(([type, count]) => (
+                      <div key={type} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)", width: 90, flexShrink: 0 }}>{type}</span>
+                        <div style={{ flex: 1, background: "var(--color-background-secondary)", borderRadius: 4, height: 6, overflow: "hidden" }}>
+                          <div style={{ width: (count / todos.length * 100) + "%", height: "100%", background: "#4da6ff", borderRadius: 4 }} />
+                        </div>
+                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)", width: 20, textAlign: "right" }}>{count}</span>
                       </div>
                     ))}
-                  </>
-                )}
-              </div>
-            )}
+                  </div>
+                </div>
+              ) : null;
+            })()}
           </div>
 
         </div>
