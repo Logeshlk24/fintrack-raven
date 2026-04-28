@@ -3131,39 +3131,41 @@ function GoalsPage({ data, update }) {
 
   const accentColor = activeTab === "needs" ? "#4da6ff" : "#9b59b6";
 
-  const FormFields = ({ values, onChange }) => (
-    <div>
-      <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name *</label>
-        <input placeholder="e.g. Emergency Fund, New Laptop" value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-        <div>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
-          <input type="text" inputMode="numeric" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
-          <input type="text" inputMode="numeric" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
-        </div>
-      </div>
-      <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Priority</label>
-        <div style={{ display: "flex", gap: 6 }}>
-          {PRIORITIES.map(([v, lbl]) => (
-            <button key={v} onClick={() => onChange({ ...values, priority: v })}
-              style={{ flex: 1, padding: "5px 0", borderRadius: 7, border: "0.5px solid", borderColor: values.priority === v ? "#1a6b3c" : "var(--color-border-secondary)", background: values.priority === v ? "#e8f5ee" : "transparent", color: values.priority === v ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: values.priority === v ? 600 : 400 }}>
-              {lbl}
-            </button>
-          ))}
-        </div>
-      </div>
+  function renderFormFields(values, onChange) {
+    return (
       <div>
-        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
-        <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name *</label>
+          <input placeholder="e.g. Emergency Fund, New Laptop" value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
+            <input type="text" inputMode="decimal" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
+            <input type="text" inputMode="decimal" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Priority</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            {PRIORITIES.map(([v, lbl]) => (
+              <button key={v} onClick={() => onChange({ ...values, priority: v })}
+                style={{ flex: 1, padding: "5px 0", borderRadius: 7, border: "0.5px solid", borderColor: values.priority === v ? "#1a6b3c" : "var(--color-border-secondary)", background: values.priority === v ? "#e8f5ee" : "transparent", color: values.priority === v ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: values.priority === v ? 600 : 400 }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
+          <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   const ItemCard = ({ item }) => {
     const pct = item.targetAmount > 0 ? Math.min((item.savedAmount / item.targetAmount) * 100, 100) : 0;
@@ -3295,7 +3297,7 @@ function GoalsPage({ data, update }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(460px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Goal</div>
-            <FormFields values={editItem} onChange={setEditItem} />
+            { renderFormFields(editItem, setEditItem) }
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
               <button onClick={() => setEditItem(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
               <button onClick={saveEdit} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
@@ -3343,7 +3345,7 @@ function GoalsPage({ data, update }) {
                 ))}
               </div>
             </div>
-            <FormFields values={form} onChange={setForm} />
+            { renderFormFields(form, setForm) }
             <button onClick={addItem} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, width: "100%" }}>+ Add Goal</button>
           </div>
         )}
