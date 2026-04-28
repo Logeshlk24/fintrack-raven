@@ -3781,10 +3781,15 @@ function ProjectsPage({ data, update }) {
   const [editTaskId, setEditTaskId] = useState(null);
   const [editTaskForm, setEditTaskForm] = useState({ name: "", type: "", eta: "" });
 
+  // Day tracking state
+  const [newDayEntry, setNewDayEntry] = useState("");
+  const [dayTrackDate, setDayTrackDate] = useState(new Date().toISOString().split("T")[0]);
+
   // Get the full selected project object (always fresh from data)
   const project = selectedProject ? projects.find(p => p.id === selectedProject) : null;
   const todos = project ? (project.todos || []) : [];
   const files = project ? (project.files || []) : [];
+  const dayLog = project ? (project.dayLog || []) : [];
 
   function addProject() {
     if (!newProjectName.trim()) return;
@@ -3871,6 +3876,30 @@ function ProjectsPage({ data, update }) {
   function deleteFile(fileId) {
     update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
       ? { ...pr, files: (pr.files || []).filter(f => f.id !== fileId) }
+      : pr
+    )}));
+  }
+
+  function addDayEntry() {
+    if (!newDayEntry.trim() || !project) return;
+    const entry = { id: Date.now(), text: newDayEntry.trim(), date: dayTrackDate, done: false, createdAt: new Date().toISOString() };
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, dayLog: [...(pr.dayLog || []), entry] }
+      : pr
+    )}));
+    setNewDayEntry("");
+  }
+
+  function toggleDayEntry(entryId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, dayLog: (pr.dayLog || []).map(e => e.id === entryId ? { ...e, done: !e.done } : e) }
+      : pr
+    )}));
+  }
+
+  function deleteDayEntry(entryId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, dayLog: (pr.dayLog || []).filter(e => e.id !== entryId) }
       : pr
     )}));
   }
@@ -4304,6 +4333,106 @@ function ProjectsPage({ data, update }) {
                 </div>
               )}
             </div>
+
+            {/* ── DAY TRACKING ── */}
+            {(() => {
+              const todayStr = new Date().toISOString().split("T")[0];
+              // Group dayLog entries by date
+              const grouped = {};
+              dayLog.forEach(e => {
+                const d = e.date || todayStr;
+                if (!grouped[d]) grouped[d] = [];
+                grouped[d].push(e);
+              });
+              const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+              const doneDayEntries = (grouped[dayTrackDate] || []).filter(e => e.done).length;
+              const totalDayEntries = (grouped[dayTrackDate] || []).length;
+
+              return (
+                <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                  {/* Header */}
+                  <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontWeight: 500, fontSize: 14 }}>🗓 Day Tracking</span>
+                    <input
+                      type="date"
+                      value={dayTrackDate}
+                      onChange={e => setDayTrackDate(e.target.value)}
+                      style={{ fontSize: 12, padding: "3px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", cursor: "pointer" }}
+                    />
+                  </div>
+
+                  {/* Date label */}
+                  <div style={{ padding: "7px 14px", background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>
+                      {dayTrackDate === todayStr ? "Today" : new Date(dayTrackDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                    {totalDayEntries > 0 && (
+                      <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{doneDayEntries}/{totalDayEntries} done</span>
+                    )}
+                  </div>
+
+                  {/* Add entry input */}
+                  <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 }}>
+                    <input
+                      placeholder="What did you work on today?"
+                      value={newDayEntry}
+                      onChange={e => setNewDayEntry(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addDayEntry()}
+                      style={{ flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" }}
+                    />
+                    <button onClick={addDayEntry} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+                  </div>
+
+                  {/* Entries for selected date */}
+                  {(grouped[dayTrackDate] || []).length === 0 ? (
+                    <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                      No entries for this day yet.
+                    </div>
+                  ) : (
+                    <div>
+                      {(grouped[dayTrackDate] || []).filter(e => !e.done).map(e => (
+                        <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                          <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0 }} />
+                          <span style={{ flex: 1, fontSize: 13 }}>{e.text}</span>
+                          <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                        </div>
+                      ))}
+                      {(grouped[dayTrackDate] || []).filter(e => e.done).map(e => (
+                        <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
+                          <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
+                          <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{e.text}</span>
+                          <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Past days log */}
+                  {sortedDates.filter(d => d !== dayTrackDate).length > 0 && (
+                    <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)" }}>PAST DAYS</div>
+                      {sortedDates.filter(d => d !== dayTrackDate).slice(0, 5).map(d => {
+                        const entries = grouped[d];
+                        const done = entries.filter(e => e.done).length;
+                        return (
+                          <div key={d}
+                            onClick={() => setDayTrackDate(d)}
+                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", cursor: "pointer" }}
+                            onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          >
+                            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                              {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                            </span>
+                            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{done}/{entries.length} done</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
         </div>
