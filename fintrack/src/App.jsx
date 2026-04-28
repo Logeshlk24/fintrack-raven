@@ -4527,40 +4527,35 @@ function ProjectsPage({ data, update }) {
                 )}
               </div>
             )}
-            {/* ── NOTES TAB — OneNote + MindMap ── */}
+            {/* ── NOTES TAB — Merged Note + MindMap + Undo/Redo ── */}
             {leftTab === "notes" && (() => {
-              function addNote(type = "text") {
+              function makeDefaultMindmap() {
+                return { nodes: [{ id: "root", label: "Central Idea", x: 300, y: 200, isRoot: true, color: "#ede9fe" }], edges: [] };
+              }
+              function addNote() {
                 const note = {
                   id: Date.now(),
-                  title: type === "mindmap" ? "New Mind Map" : "Untitled Note",
+                  title: "Untitled Note",
                   content: "",
-                  type,
-                  mindmap: type === "mindmap" ? {
-                    nodes: [
-                      { id: "root", label: "Central Idea", x: 320, y: 220, isRoot: true, color: "#ede9fe" },
-                    ],
-                    edges: [],
-                  } : null,
+                  noteView: "text", // "text" | "map"
+                  mindmap: makeDefaultMindmap(),
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   color: "#ffffff",
                 };
                 update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
-                  ? { ...pr, notes: [...(pr.notes || []), note] }
-                  : pr
+                  ? { ...pr, notes: [...(pr.notes || []), note] } : pr
                 )}));
                 setTimeout(() => setActiveNoteId(note.id), 0);
               }
               function updateNote(noteId, changes) {
                 update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
-                  ? { ...pr, notes: (pr.notes || []).map(n => n.id === noteId ? { ...n, ...changes, updatedAt: new Date().toISOString() } : n) }
-                  : pr
+                  ? { ...pr, notes: (pr.notes || []).map(n => n.id === noteId ? { ...n, ...changes, updatedAt: new Date().toISOString() } : n) } : pr
                 )}));
               }
               function deleteNote(noteId) {
                 update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
-                  ? { ...pr, notes: (pr.notes || []).filter(n => n.id !== noteId) }
-                  : pr
+                  ? { ...pr, notes: (pr.notes || []).filter(n => n.id !== noteId) } : pr
                 )}));
                 if (activeNoteId === noteId) setActiveNoteId(null);
               }
@@ -4569,76 +4564,41 @@ function ProjectsPage({ data, update }) {
               return (
                 <div style={{ display: "flex", height: 600 }}>
                   {/* LEFT sidebar */}
-                  <div style={{ width: 220, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}>
-                    <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>
-                        {notes.length} note{notes.length !== 1 ? "s" : ""}
-                      </span>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button onClick={() => addNote("text")} title="New text note" style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>+ Note</button>
-                        <button onClick={() => addNote("mindmap")} title="New mind map" style={{ background: "#6d28d9", color: "#fff", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>🧠 Map</button>
-                      </div>
+                  <div style={{ width: 200, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}>
+                    <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>{notes.length} note{notes.length !== 1 ? "s" : ""}</span>
+                      <button onClick={addNote} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>+ New</button>
                     </div>
                     <div style={{ flex: 1, overflowY: "auto" }}>
                       {notes.length === 0 ? (
                         <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12 }}>
-                          <div style={{ fontSize: 28, marginBottom: 6 }}>📝</div>
-                          No notes yet
+                          <div style={{ fontSize: 28, marginBottom: 6 }}>📝</div>No notes yet
                         </div>
-                      ) : (
-                        notes.map(note => {
-                          const isActive = (activeNote && activeNote.id === note.id);
-                          return (
-                            <div key={note.id} onClick={() => setActiveNoteId(note.id)}
-                              style={{ padding: "10px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", background: isActive ? "#e8f5ee" : "transparent", borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent", transition: "background 0.1s", display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ fontSize: 12, flexShrink: 0 }}>{note.type === "mindmap" ? "🧠" : "📝"}</span>
-                              <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {note.title || "Untitled"}
-                              </div>
+                      ) : notes.map(note => {
+                        const isActive = activeNote && activeNote.id === note.id;
+                        return (
+                          <div key={note.id} onClick={() => setActiveNoteId(note.id)}
+                            style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", background: isActive ? "#e8f5ee" : "transparent", borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent" }}>
+                            <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {note.title || "Untitled"}
                             </div>
-                          );
-                        })
-                      )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* RIGHT — editor or mind map */}
+                  {/* RIGHT — unified editor */}
                   {activeNote ? (
-                    activeNote.type === "mindmap"
-                      ? <MindMapEditor note={activeNote} updateNote={updateNote} deleteNote={deleteNote} onEsc={() => setActiveNoteId(null)} />
-                      : (
-                        <div style={{ flex: 1, display: "flex", flexDirection: "column", background: activeNote.color || "#fff", minWidth: 0 }}>
-                          <div style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.7)" }}>
-                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                              {NOTE_COLORS.map(c => (
-                                <button key={c} onClick={() => updateNote(activeNote.id, { color: c })}
-                                  style={{ width: 14, height: 14, borderRadius: "50%", background: c, border: activeNote.color === c ? "2px solid #1a6b3c" : "1px solid #d1d5db", cursor: "pointer", padding: 0, flexShrink: 0 }} />
-                              ))}
-                            </div>
-                            <div style={{ marginLeft: "auto" }}>
-                              <button onClick={() => deleteNote(activeNote.id)} style={{ background: "none", border: "0.5px solid #d4444444", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑 Delete</button>
-                            </div>
-                          </div>
-                          <input
-                            value={activeNote.title || ""}
-                            onChange={e => updateNote(activeNote.id, { title: e.target.value })}
-                            onKeyDown={e => { if (e.key === "Escape") { e.target.blur(); setActiveNoteId(null); } }}
-                            placeholder="Note title…"
-                            style={{ border: "none", outline: "none", background: "transparent", fontSize: 20, fontWeight: 600, padding: "16px 18px 6px", color: "var(--color-text-primary)", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
-                          />
-                          <div style={{ margin: "0 18px", height: "0.5px", background: "var(--color-border-tertiary)" }} />
-                          <textarea
-                            value={activeNote.content || ""}
-                            onChange={e => updateNote(activeNote.id, { content: e.target.value })}
-                            onKeyDown={e => { if (e.key === "Escape") { e.target.blur(); setActiveNoteId(null); } }}
-                            placeholder="Start writing…"
-                            style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14, padding: "12px 18px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.7, boxSizing: "border-box", width: "100%" }}
-                          />
-                          <div style={{ padding: "6px 18px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", background: "rgba(255,255,255,0.5)" }}>
-                            Last edited {new Date(activeNote.updatedAt || activeNote.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                          </div>
-                        </div>
-                      )
+                    <MergedNoteEditor
+                      key={activeNote.id}
+                      note={activeNote}
+                      updateNote={updateNote}
+                      deleteNote={deleteNote}
+                      onEsc={() => setActiveNoteId(null)}
+                      NOTE_COLORS={NOTE_COLORS}
+                      makeDefaultMindmap={makeDefaultMindmap}
+                    />
                   ) : (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", flexDirection: "column", gap: 10 }}>
                       <div style={{ fontSize: 36 }}>📝</div>
@@ -4899,199 +4859,262 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
   );
 }
 
-// ─── Mind Map Editor ─────────────────────────────────────────────────────────
-function MindMapEditor({ note, updateNote, deleteNote, onEsc }) {
-  const canvasRef = useRef(null);
-  const [nodes, setNodes] = useState(() => note.mindmap?.nodes || [{ id: "root", label: "Central Idea", x: 320, y: 220, isRoot: true, color: "#ede9fe" }]);
-  const [edges, setEdges] = useState(() => note.mindmap?.edges || []);
-  const [dragging, setDragging] = useState(null); // { nodeId, offsetX, offsetY }
+// ─── Merged Note + MindMap Editor (with Undo / Redo) ─────────────────────────
+function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, makeDefaultMindmap }) {
+  const MAX_HISTORY = 60;
+  const VIEW_TEXT = "text", VIEW_MAP = "map";
+
+  // ── State ────────────────────────────────────────────────────────────────
+  const [view, setView]         = useState(note.noteView || VIEW_TEXT);
+  const [title, setTitle]       = useState(note.title || "");
+  const [content, setContent]   = useState(note.content || "");
+
+  // Mind-map state with undo/redo stacks
+  const initMM = note.mindmap || makeDefaultMindmap();
+  const [nodes, setNodes]       = useState(initMM.nodes);
+  const [edges, setEdges]       = useState(initMM.edges);
+  const undoStack               = useRef([]);   // [{nodes,edges}, ...]
+  const redoStack               = useRef([]);
+
+  // Interaction state (never undone)
   const [selected, setSelected] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
-  const [connecting, setConnecting] = useState(null); // nodeId waiting for target
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(null);
+  const [pan, setPan]           = useState({ x: 0, y: 0 });
   const [panStart, setPanStart] = useState(null);
 
   const NODE_COLORS = ["#ede9fe", "#dbeafe", "#dcfce7", "#fef9c3", "#fce7f3", "#fee2e2", "#ffedd5", "#f0fdf4"];
 
-  // Persist to note whenever nodes/edges change
+  // ── Persist on change ────────────────────────────────────────────────────
+  const saveTimer = useRef(null);
   useEffect(() => {
-    updateNote(note.id, { mindmap: { nodes, edges } });
-  }, [nodes, edges]); // eslint-disable-line
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      updateNote(note.id, { title, content, noteView: view, mindmap: { nodes, edges } });
+    }, 600);
+  }, [title, content, view, nodes, edges]); // eslint-disable-line
 
+  // ── Undo / Redo helpers ──────────────────────────────────────────────────
+  function snapshot() {
+    undoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) });
+    if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
+    redoStack.current = [];
+  }
+  function undo() {
+    if (!undoStack.current.length) return;
+    redoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) });
+    const prev = undoStack.current.pop();
+    setNodes(prev.nodes); setEdges(prev.edges);
+  }
+  function redo() {
+    if (!redoStack.current.length) return;
+    undoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) });
+    const next = redoStack.current.pop();
+    setNodes(next.nodes); setEdges(next.edges);
+  }
+
+  // Keyboard shortcut Ctrl+Z / Ctrl+Y
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }); // runs every render so undo/redo closures are fresh
+
+  // ── Mind-map actions ─────────────────────────────────────────────────────
   function addChild(parentId) {
+    snapshot();
     const parent = nodes.find(n => n.id === parentId);
     if (!parent) return;
     const id = "n" + Date.now();
-    const angle = (Math.random() * 60 - 30) * (Math.PI / 180);
-    const dist = 180;
-    const newNode = {
-      id, label: "New Node",
-      x: parent.x + dist * Math.cos(angle),
-      y: parent.y + dist * Math.sin(angle),
-      color: NODE_COLORS[Math.floor(Math.random() * NODE_COLORS.length)],
-    };
-    setNodes(prev => [...prev, newNode]);
-    setEdges(prev => [...prev, { id: "e" + Date.now(), from: parentId, to: id }]);
-    setSelected(id);
-    setEditingId(id);
-    setEditLabel("New Node");
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const angle = (side * (20 + Math.random() * 30)) * (Math.PI / 180);
+    const newNode = { id, label: "New Node", x: parent.x + 190 * Math.cos(angle), y: parent.y + 190 * Math.sin(angle), color: NODE_COLORS[Math.floor(Math.random() * NODE_COLORS.length)] };
+    setNodes(p => [...p, newNode]);
+    setEdges(p => [...p, { id: "e" + Date.now(), from: parentId, to: id }]);
+    setSelected(id); setEditingId(id); setEditLabel("New Node");
   }
-
   function deleteNode(nodeId) {
     if (nodeId === "root") return;
-    setNodes(prev => prev.filter(n => n.id !== nodeId));
-    setEdges(prev => prev.filter(e => e.from !== nodeId && e.to !== nodeId));
+    snapshot();
+    setNodes(p => p.filter(n => n.id !== nodeId));
+    setEdges(p => p.filter(e => e.from !== nodeId && e.to !== nodeId));
     setSelected(null);
   }
-
-  function startEdit(node) {
-    setEditingId(node.id);
-    setEditLabel(node.label);
-  }
-
   function commitEdit() {
     if (!editingId) return;
-    setNodes(prev => prev.map(n => n.id === editingId ? { ...n, label: editLabel } : n));
+    snapshot();
+    setNodes(p => p.map(n => n.id === editingId ? { ...n, label: editLabel } : n));
     setEditingId(null);
   }
-
-  function onMouseDown(e, nodeId) {
-    e.stopPropagation();
-    if (connecting) {
-      if (connecting !== nodeId) {
-        setEdges(prev => [...prev, { id: "e" + Date.now(), from: connecting, to: nodeId }]);
-      }
-      setConnecting(null);
-      return;
-    }
-    setSelected(nodeId);
-    const node = nodes.find(n => n.id === nodeId);
-    setDragging({ nodeId, offsetX: e.clientX - node.x, offsetY: e.clientY - node.y });
+  function changeColor(nodeId, color) {
+    snapshot();
+    setNodes(p => p.map(n => n.id === nodeId ? { ...n, color } : n));
   }
 
+  // ── Drag ─────────────────────────────────────────────────────────────────
+  function onNodeMouseDown(e, nodeId) {
+    e.stopPropagation();
+    setSelected(nodeId);
+    const node = nodes.find(n => n.id === nodeId);
+    setDragging({ nodeId, offsetX: e.clientX - node.x, offsetY: e.clientY - node.y, moved: false });
+  }
   function onCanvasMouseDown(e) {
-    if (connecting) { setConnecting(null); return; }
     setSelected(null);
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   }
-
   function onMouseMove(e) {
     if (dragging) {
-      const x = e.clientX - dragging.offsetX;
-      const y = e.clientY - dragging.offsetY;
-      setNodes(prev => prev.map(n => n.id === dragging.nodeId ? { ...n, x, y } : n));
+      const x = e.clientX - dragging.offsetX, y = e.clientY - dragging.offsetY;
+      setNodes(p => p.map(n => n.id === dragging.nodeId ? { ...n, x, y } : n));
+      setDragging(d => ({ ...d, moved: true }));
     } else if (panStart) {
       setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
     }
   }
-
   function onMouseUp() {
-    setDragging(null);
-    setPanStart(null);
-  }
-
-  function changeNodeColor(nodeId, color) {
-    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, color } : n));
+    if (dragging?.moved) snapshot();
+    setDragging(null); setPanStart(null);
   }
 
   const selNode = nodes.find(n => n.id === selected);
+  const canUndo = undoStack.current.length > 0;
+  const canRedo = redoStack.current.length > 0;
+
+  // ── Toolbar ──────────────────────────────────────────────────────────────
+  const btnBase = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f8f8fc", minWidth: 0, position: "relative" }}>
-      {/* Toolbar */}
-      <div style={{ padding: "7px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 8, background: "#fff", flexShrink: 0, flexWrap: "wrap" }}>
-        <input
-          value={note.title || ""}
-          onChange={e => updateNote(note.id, { title: e.target.value })}
-          onKeyDown={e => e.key === "Escape" && onEsc()}
-          placeholder="Map title…"
-          style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", fontFamily: "inherit", width: 160, padding: 0 }}
-        />
-        <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
-        {selected && selNode && (
-          <>
-            <button onClick={() => addChild(selected)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>+ Child</button>
-            <button onClick={() => startEdit(selNode)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>✏️ Edit</button>
-            {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑</button>}
-            <div style={{ display: "flex", gap: 3 }}>
-              {NODE_COLORS.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #1a6b3c" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
-            </div>
-          </>
-        )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <button onClick={() => setPan({ x: 0, y: 0 })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>Reset View</button>
-          <button onClick={() => deleteNote(note.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑 Delete</button>
-        </div>
-      </div>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: note.color || "#fff" }}>
 
-      {/* Canvas */}
-      <div
-        ref={canvasRef}
-        onMouseDown={onCanvasMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
-        style={{ flex: 1, position: "relative", overflow: "hidden", cursor: dragging ? "grabbing" : panStart ? "grabbing" : "default" }}
-      >
-        <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
-          <g transform={`translate(${pan.x},${pan.y})`}>
-            {edges.map(edge => {
-              const from = nodes.find(n => n.id === edge.from);
-              const to = nodes.find(n => n.id === edge.to);
-              if (!from || !to) return null;
-              const mx = (from.x + to.x) / 2;
-              const my = (from.y + to.y) / 2;
-              return (
-                <path key={edge.id}
-                  d={`M ${from.x} ${from.y} Q ${mx} ${from.y} ${to.x} ${to.y}`}
-                  stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.7}
-                />
-              );
-            })}
-          </g>
-        </svg>
+      {/* ── Top toolbar ── */}
+      <div style={{ padding: "7px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,0.85)", flexShrink: 0, flexWrap: "wrap" }}>
 
-        <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
-          {nodes.map(node => (
-            <div key={node.id}
-              onMouseDown={e => onMouseDown(e, node.id)}
-              onDoubleClick={() => startEdit(node)}
-              style={{
-                position: "absolute",
-                left: node.x - 60, top: node.y - 18,
-                minWidth: 120, maxWidth: 180,
-                background: node.color || "#ede9fe",
-                border: selected === node.id ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.12)",
-                borderRadius: node.isRoot ? 10 : 8,
-                padding: "5px 12px",
-                cursor: dragging?.nodeId === node.id ? "grabbing" : "grab",
-                userSelect: "none",
-                boxShadow: selected === node.id ? "0 2px 10px rgba(109,40,217,0.18)" : "0 1px 4px rgba(0,0,0,0.08)",
-                transition: "box-shadow 0.1s",
-                zIndex: selected === node.id ? 10 : 1,
-              }}
-            >
-              {editingId === node.id ? (
-                <input
-                  autoFocus
-                  value={editLabel}
-                  onChange={e => setEditLabel(e.target.value)}
-                  onBlur={commitEdit}
-                  onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") commitEdit(); }}
-                  style={{ border: "none", outline: "none", background: "transparent", fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, width: "100%", fontFamily: "inherit", color: "#111" }}
-                />
-              ) : (
-                <span style={{ fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, color: "#111", whiteSpace: "nowrap" }}>{node.label}</span>
-              )}
-            </div>
+        {/* View toggle */}
+        <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 7, padding: 2, gap: 1 }}>
+          {[VIEW_TEXT, VIEW_MAP].map(v => (
+            <button key={v} onClick={() => setView(v)} style={{ padding: "3px 10px", borderRadius: 5, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 500, background: view === v ? "#fff" : "transparent", color: view === v ? "#1a6b3c" : "var(--color-text-secondary)", boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>
+              {v === VIEW_TEXT ? "📝 Note" : "🧠 Map"}
+            </button>
           ))}
         </div>
 
-        {/* Hint */}
-        <div style={{ position: "absolute", bottom: 10, right: 14, fontSize: 10, color: "var(--color-text-secondary)", pointerEvents: "none" }}>
-          Click node to select • Double-click to edit • Drag to move • "+ Child" to branch
+        <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
+
+        {/* Undo / Redo */}
+        <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" style={{ ...btnBase, opacity: canUndo ? 1 : 0.35, color: "var(--color-text-primary)" }}>↩ Undo</button>
+        <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" style={{ ...btnBase, opacity: canRedo ? 1 : 0.35, color: "var(--color-text-primary)" }}>↪ Redo</button>
+
+        {/* Map node actions — shown only in map view when a node is selected */}
+        {view === VIEW_MAP && selNode && (
+          <>
+            <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
+            <button onClick={() => addChild(selected)} style={{ ...btnBase, background: "#1a6b3c", color: "#fff", border: "none" }}>+ Child</button>
+            <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btnBase }}>✏️</button>
+            {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btnBase, color: "#d44", borderColor: "#d44" }}>🗑</button>}
+            <div style={{ display: "flex", gap: 3 }}>
+              {NODE_COLORS.map(c => <button key={c} onClick={() => changeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #1a6b3c" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
+            </div>
+          </>
+        )}
+
+        {/* Note color picker — shown in text view */}
+        {view === VIEW_TEXT && (
+          <>
+            <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
+            {NOTE_COLORS.map(c => <button key={c} onClick={() => updateNote(note.id, { color: c })} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
+          </>
+        )}
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {view === VIEW_MAP && <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btnBase, color: "var(--color-text-secondary)" }}>⊙ Reset</button>}
+          <button onClick={() => deleteNote(note.id)} style={{ ...btnBase, color: "#d44", borderColor: "#d44" }}>🗑 Delete</button>
         </div>
+      </div>
+
+      {/* ── Title (shared) ── */}
+      <input
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        onKeyDown={e => e.key === "Escape" && onEsc()}
+        placeholder="Note title…"
+        style={{ border: "none", outline: "none", background: "transparent", fontSize: 18, fontWeight: 600, padding: "12px 18px 6px", color: "var(--color-text-primary)", fontFamily: "inherit", width: "100%", boxSizing: "border-box", flexShrink: 0 }}
+      />
+      <div style={{ margin: "0 18px 0", height: "0.5px", background: "var(--color-border-tertiary)", flexShrink: 0 }} />
+
+      {/* ── TEXT view ── */}
+      {view === VIEW_TEXT && (
+        <textarea
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          onKeyDown={e => e.key === "Escape" && onEsc()}
+          placeholder="Start writing…"
+          style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14, padding: "12px 18px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.75, boxSizing: "border-box", width: "100%" }}
+        />
+      )}
+
+      {/* ── MAP view ── */}
+      {view === VIEW_MAP && (
+        <div
+          onMouseDown={onCanvasMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          style={{ flex: 1, position: "relative", overflow: "hidden", background: "#f5f4fe", cursor: panStart ? "grabbing" : "default" }}
+        >
+          {/* SVG edges */}
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+            <g transform={`translate(${pan.x},${pan.y})`}>
+              {edges.map(edge => {
+                const f = nodes.find(n => n.id === edge.from), t = nodes.find(n => n.id === edge.to);
+                if (!f || !t) return null;
+                return <path key={edge.id} d={`M ${f.x} ${f.y} Q ${(f.x + t.x) / 2} ${f.y} ${t.x} ${t.y}`} stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.65} />;
+              })}
+            </g>
+          </svg>
+
+          {/* Nodes */}
+          <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
+            {nodes.map(node => (
+              <div key={node.id}
+                onMouseDown={e => onNodeMouseDown(e, node.id)}
+                onDoubleClick={() => { setEditingId(node.id); setEditLabel(node.label); }}
+                style={{
+                  position: "absolute", left: node.x - 62, top: node.y - 18,
+                  minWidth: 124, maxWidth: 190,
+                  background: node.color || "#ede9fe",
+                  border: selected === node.id ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.1)",
+                  borderRadius: node.isRoot ? 12 : 8,
+                  padding: "5px 13px", cursor: dragging?.nodeId === node.id ? "grabbing" : "grab",
+                  userSelect: "none", zIndex: selected === node.id ? 10 : 1,
+                  boxShadow: selected === node.id ? "0 3px 12px rgba(109,40,217,0.18)" : "0 1px 4px rgba(0,0,0,0.07)",
+                }}>
+                {editingId === node.id ? (
+                  <input autoFocus value={editLabel}
+                    onChange={e => setEditLabel(e.target.value)}
+                    onBlur={commitEdit}
+                    onKeyDown={e => (e.key === "Enter" || e.key === "Escape") && commitEdit()}
+                    style={{ border: "none", outline: "none", background: "transparent", fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, width: "100%", fontFamily: "inherit", color: "#111" }}
+                  />
+                ) : (
+                  <span style={{ fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, color: "#111", whiteSpace: "nowrap" }}>{node.label}</span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ position: "absolute", bottom: 8, right: 12, fontSize: 10, color: "#999", pointerEvents: "none" }}>
+            Click to select · Double-click to edit · Drag to move · "+ Child" to branch
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ padding: "5px 18px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", background: "rgba(255,255,255,0.5)", flexShrink: 0 }}>
+        Last edited {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
       </div>
     </div>
   );
