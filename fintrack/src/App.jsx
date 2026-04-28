@@ -3529,36 +3529,99 @@ function BusinessPage({ data, update }) {
     if (selectedYear === yr) setSelectedYear(null);
   }
 
-  // Simple SVG bar chart
-  function BarChart({ entries, height = 160 }) {
+  // Minimal SVG line chart (replaces bar chart)
+  function LineChart({ entries, height = 120 }) {
+    const [hoveredIdx, setHoveredIdx] = useState(null);
+    const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
     if (!entries.length) return null;
-    const maxVal = Math.max(...entries.map(e => Math.max(e.grossIncome, e.netIncome)), 1);
-    const barW = Math.min(36, Math.floor(560 / entries.length / 2 - 4));
-    const gap = barW + 4;
-    const chartW = entries.length * (gap * 2 + 8) + 20;
+    const sorted = [...entries].sort((a, b) => (a.monthIndex ?? 0) - (b.monthIndex ?? 0));
+    const maxVal = Math.max(...sorted.map(e => Math.max(e.grossIncome, e.netIncome)), 1);
+    const W = 520, pad = { l: 10, r: 10, t: 8, b: 28 };
+    const chartW = W - pad.l - pad.r;
+    const chartH = height;
+    const n = sorted.length;
+    const xOf = i => pad.l + (n > 1 ? (i / (n - 1)) * chartW : chartW / 2);
+    const yOf = v => pad.t + chartH - Math.round((v / maxVal) * chartH);
+    const pts = key => sorted.map((e, i) => `${xOf(i)},${yOf(e[key])}`).join(" ");
+    const area = key => {
+      const line = sorted.map((e, i) => `${xOf(i)},${yOf(e[key])}`).join(" L ");
+      return `M ${xOf(0)},${pad.t + chartH} L ${line} L ${xOf(n - 1)},${pad.t + chartH} Z`;
+    };
+    const hovered = hoveredIdx !== null ? sorted[hoveredIdx] : null;
     return (
-      <svg width="100%" viewBox={`0 0 ${chartW} ${height + 30}`} style={{ display: "block" }}>
-        {entries.map((e, i) => {
-          const x = 10 + i * (gap * 2 + 8);
-          const gH = Math.round((e.grossIncome / maxVal) * height);
-          const nH = Math.round((e.netIncome / maxVal) * height);
-          return (
+      <div style={{ position: "relative" }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${height + pad.t + pad.b}`} style={{ display: "block" }}
+          onMouseLeave={() => setHoveredIdx(null)}>
+          <defs>
+            <linearGradient id="lgGross" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1a6b3c" stopOpacity="0.13" />
+              <stop offset="100%" stopColor="#1a6b3c" stopOpacity="0.01" />
+            </linearGradient>
+            <linearGradient id="lgNet" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4da6ff" stopOpacity="0.13" />
+              <stop offset="100%" stopColor="#4da6ff" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+          {/* Subtle grid */}
+          {[0, 0.5, 1].map(f => (
+            <line key={f} x1={pad.l} x2={W - pad.r} y1={yOf(maxVal * f)} y2={yOf(maxVal * f)}
+              stroke="#e5e7eb" strokeWidth={0.5} />
+          ))}
+          {/* Area fills */}
+          <path d={area("grossIncome")} fill="url(#lgGross)" />
+          <path d={area("netIncome")} fill="url(#lgNet)" />
+          {/* Lines */}
+          <polyline points={pts("grossIncome")} fill="none" stroke="#1a6b3c" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={pts("netIncome")} fill="none" stroke="#4da6ff" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+          {/* Hover vertical line */}
+          {hoveredIdx !== null && (
+            <line x1={xOf(hoveredIdx)} x2={xOf(hoveredIdx)} y1={pad.t} y2={pad.t + chartH}
+              stroke="#6b7280" strokeWidth={1} strokeDasharray="3,3" />
+          )}
+          {/* Dots + hover targets + month labels */}
+          {sorted.map((e, i) => (
             <g key={e.id}>
-              {/* Gross bar */}
-              <rect x={x} y={height - gH} width={barW} height={gH} fill="#1a6b3c" rx={3} opacity={0.85} />
-              {/* Net bar */}
-              <rect x={x + barW + 3} y={height - nH} width={barW} height={nH} fill="#4da6ff" rx={3} opacity={0.85} />
-              {/* Month label */}
-              <text x={x + barW} y={height + 14} textAnchor="middle" fontSize={9} fill="#6b7280">{e.month.slice(0, 3)}</text>
+              <rect x={xOf(i) - (n > 1 ? chartW / (n - 1) / 2 : 20)} y={pad.t}
+                width={n > 1 ? chartW / (n - 1) : 40} height={chartH}
+                fill="transparent" style={{ cursor: "crosshair" }}
+                onMouseEnter={ev => { setHoveredIdx(i); setTooltipPos({ x: ev.nativeEvent.offsetX, y: ev.nativeEvent.offsetY }); }}
+                onMouseMove={ev => setTooltipPos({ x: ev.nativeEvent.offsetX, y: ev.nativeEvent.offsetY })}
+              />
+              <circle cx={xOf(i)} cy={yOf(e.grossIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#1a6b3c" style={{ transition: "r 0.1s" }} />
+              <circle cx={xOf(i)} cy={yOf(e.netIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#4da6ff" style={{ transition: "r 0.1s" }} />
+              <text x={xOf(i)} y={pad.t + chartH + 14} textAnchor="middle" fontSize={8.5}
+                fill={hoveredIdx === i ? "#111" : "#6b7280"} fontWeight={hoveredIdx === i ? "600" : "400"}>
+                {e.month.slice(0, 3)}
+              </text>
             </g>
-          );
-        })}
-        {/* Legend */}
-        <rect x={10} y={height + 22} width={8} height={8} fill="#1a6b3c" rx={2} />
-        <text x={22} y={height + 30} fontSize={8} fill="#6b7280">Gross</text>
-        <rect x={52} y={height + 22} width={8} height={8} fill="#4da6ff" rx={2} />
-        <text x={64} y={height + 30} fontSize={8} fill="#6b7280">Net</text>
-      </svg>
+          ))}
+          {/* Legend */}
+          <circle cx={pad.l} cy={pad.t + chartH + 24} r={3.5} fill="#1a6b3c" />
+          <text x={pad.l + 8} y={pad.t + chartH + 28} fontSize={8} fill="#6b7280">Gross</text>
+          <circle cx={pad.l + 46} cy={pad.t + chartH + 24} r={3.5} fill="#4da6ff" />
+          <text x={pad.l + 54} y={pad.t + chartH + 28} fontSize={8} fill="#6b7280">Net</text>
+        </svg>
+        {hovered && (
+          <div style={{
+            position: "absolute", top: Math.max(0, tooltipPos.y - 65), left: tooltipPos.x + 10,
+            background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: 8, padding: "7px 12px", boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
+            zIndex: 50, pointerEvents: "none", minWidth: 140,
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 5 }}>{hovered.month}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Gross:</span>
+              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(hovered.grossIncome)}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4da6ff", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Net:</span>
+              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(hovered.netIncome)}</span>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -3745,9 +3808,9 @@ function BusinessPage({ data, update }) {
             </div>
           ) : (
             <>
-              {/* Year folder grid — sorted newest first */}
+              {/* Year folder grid — sorted oldest first */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
-                {[...yearSummary].sort((a, b) => b.year - a.year).map(s => (
+                {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
                   <div key={s.year}
                     onClick={() => setSelectedYear(s.year)}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", transition: "box-shadow 0.15s", borderTop: "3px solid #1a6b3c", position: "relative" }}
@@ -3770,7 +3833,7 @@ function BusinessPage({ data, update }) {
 
               {/* Summary stats */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
-                {[...yearSummary].sort((a, b) => b.year - a.year).map(s => (
+                {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
                   <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{s.year} — Gross</div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
@@ -3848,7 +3911,7 @@ function BusinessPage({ data, update }) {
               {/* Chart */}
               <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
                 <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
-                <BarChart entries={yearEntries} />
+                <LineChart entries={yearEntries} />
               </div>
 
               {/* Monthly data table */}
@@ -3910,6 +3973,9 @@ function ProjectsPage({ data, update }) {
 
   // Left panel tab: "tasks" | "files" | "notes"
   const [leftTab, setLeftTab] = useState("tasks");
+
+  // Active note for OneNote-style view
+  const [activeNoteId, setActiveNoteId] = useState(null);
 
   // Notes state
   const [noteContent, setNoteContent] = useState("");
@@ -4197,10 +4263,10 @@ function ProjectsPage({ data, update }) {
 
       {/* ── PROJECT DETAIL ── */}
       {project && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start" }}>
 
-          {/* LEFT PANEL — Tabbed: Tasks | Files */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+          {/* LEFT PANEL — Tabbed: Tasks | Files | Notes */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1" } : {}) }}>
 
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px" }}>
@@ -4461,12 +4527,12 @@ function ProjectsPage({ data, update }) {
                 )}
               </div>
             )}
-            {/* ── NOTES TAB ── */}
+            {/* ── NOTES TAB — OneNote-style ── */}
             {leftTab === "notes" && (() => {
               function addNote() {
                 const note = {
                   id: Date.now(),
-                  title: "",
+                  title: "Untitled Note",
                   content: "",
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
@@ -4476,6 +4542,8 @@ function ProjectsPage({ data, update }) {
                   ? { ...pr, notes: [...(pr.notes || []), note] }
                   : pr
                 )}));
+                // Auto-select the new note
+                setTimeout(() => setActiveNoteId(note.id), 0);
               }
               function updateNote(noteId, changes) {
                 update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
@@ -4488,26 +4556,96 @@ function ProjectsPage({ data, update }) {
                   ? { ...pr, notes: (pr.notes || []).filter(n => n.id !== noteId) }
                   : pr
                 )}));
+                if (activeNoteId === noteId) setActiveNoteId(notes.filter(n => n.id !== noteId)[0]?.id || null);
               }
+              const activeNote = notes.find(n => n.id === activeNoteId) || notes[0] || null;
               const NOTE_COLORS = ["#ffffff", "#fef9c3", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe", "#fee2e2", "#ffedd5"];
               return (
-                <div>
-                  <div style={{ padding: "8px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>
-                      {notes.length} note{notes.length !== 1 ? "s" : ""}
-                    </span>
-                    <button onClick={addNote} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "4px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>+ New Note</button>
+                <div style={{ display: "flex", height: 600 }}>
+                  {/* LEFT sidebar — note list */}
+                  <div style={{ width: 220, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}>
+                    {/* Sidebar header */}
+                    <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>
+                        {notes.length} note{notes.length !== 1 ? "s" : ""}
+                      </span>
+                      <button onClick={addNote} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>+ New</button>
+                    </div>
+                    {/* Note list */}
+                    <div style={{ flex: 1, overflowY: "auto" }}>
+                      {notes.length === 0 ? (
+                        <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12 }}>
+                          <div style={{ fontSize: 28, marginBottom: 6 }}>📝</div>
+                          No notes yet
+                        </div>
+                      ) : (
+                        notes.map(note => {
+                          const isActive = (activeNote && activeNote.id === note.id);
+                          return (
+                            <div key={note.id}
+                              onClick={() => setActiveNoteId(note.id)}
+                              style={{
+                                padding: "10px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
+                                background: isActive ? "#e8f5ee" : "transparent",
+                                borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent",
+                                transition: "background 0.1s",
+                              }}>
+                              <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {note.title || "Untitled"}
+                              </div>
+                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {note.content ? note.content.slice(0, 50) : "No content"}
+                              </div>
+                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 3, opacity: 0.7 }}>
+                                {new Date(note.updatedAt || note.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
-                  {notes.length === 0 ? (
-                    <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                      <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
-                      No notes yet. Click "+ New Note" to start.
+
+                  {/* RIGHT — Note editor */}
+                  {activeNote ? (
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: activeNote.color || "#fff", minWidth: 0 }}>
+                      {/* Note toolbar */}
+                      <div style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.7)", backdropFilter: "blur(4px)" }}>
+                        {/* Color picker */}
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          {NOTE_COLORS.map(c => (
+                            <button key={c} onClick={() => updateNote(activeNote.id, { color: c })}
+                              style={{ width: 14, height: 14, borderRadius: "50%", background: c, border: activeNote.color === c ? "2px solid #1a6b3c" : "1px solid #d1d5db", cursor: "pointer", padding: 0, flexShrink: 0 }} />
+                          ))}
+                        </div>
+                        <div style={{ marginLeft: "auto" }}>
+                          <button onClick={() => deleteNote(activeNote.id)} style={{ background: "none", border: "0.5px solid #d4444444", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑 Delete</button>
+                        </div>
+                      </div>
+                      {/* Title */}
+                      <input
+                        value={activeNote.title || ""}
+                        onChange={e => updateNote(activeNote.id, { title: e.target.value })}
+                        placeholder="Note title…"
+                        style={{ border: "none", outline: "none", background: "transparent", fontSize: 20, fontWeight: 600, padding: "16px 18px 6px", color: "var(--color-text-primary)", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
+                      />
+                      {/* Divider */}
+                      <div style={{ margin: "0 18px", height: "0.5px", background: "var(--color-border-tertiary)" }} />
+                      {/* Content */}
+                      <textarea
+                        value={activeNote.content || ""}
+                        onChange={e => updateNote(activeNote.id, { content: e.target.value })}
+                        placeholder="Start writing…"
+                        style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14, padding: "12px 18px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.7, boxSizing: "border-box", width: "100%" }}
+                      />
+                      <div style={{ padding: "6px 18px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", background: "rgba(255,255,255,0.5)" }}>
+                        Last edited {new Date(activeNote.updatedAt || activeNote.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </div>
                     </div>
                   ) : (
-                    <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10, maxHeight: 540, overflowY: "auto" }}>
-                      {notes.map(note => (
-                        <NoteBlock key={note.id} note={note} onUpdate={updateNote} onDelete={deleteNote} colors={NOTE_COLORS} />
-                      ))}
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", flexDirection: "column", gap: 10 }}>
+                      <div style={{ fontSize: 36 }}>📝</div>
+                      <div style={{ fontSize: 13 }}>Click "+ New" to create your first note</div>
                     </div>
                   )}
                 </div>
@@ -4515,7 +4653,8 @@ function ProjectsPage({ data, update }) {
             })()}
           </div>
 
-          {/* RIGHT — Project summary / stats */}
+          {/* RIGHT — Project summary / stats (hidden when viewing Notes) */}
+          {leftTab !== "notes" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* Summary card */}
             <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.1rem 1.2rem" }}>
@@ -4670,6 +4809,7 @@ function ProjectsPage({ data, update }) {
               );
             })()}
           </div>
+          )}
 
         </div>
       )}
