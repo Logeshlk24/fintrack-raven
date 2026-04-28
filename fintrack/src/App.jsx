@@ -3910,7 +3910,7 @@ function BusinessPage({ data, update }) {
 
               {/* Chart */}
               <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-                <div style={{ fontWeight: 500, fontSize: 12, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
+                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
                 <LineChart entries={yearEntries} />
               </div>
 
@@ -4620,6 +4620,7 @@ function ProjectsPage({ data, update }) {
                       <input
                         value={activeNote.title || ""}
                         onChange={e => updateNote(activeNote.id, { title: e.target.value })}
+                        onKeyDown={e => { if (e.key === "Escape") { e.target.blur(); setActiveNoteId(null); } }}
                         placeholder="Note title…"
                         style={{ border: "none", outline: "none", background: "transparent", fontSize: 20, fontWeight: 600, padding: "16px 18px 6px", color: "var(--color-text-primary)", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
                       />
@@ -4629,6 +4630,7 @@ function ProjectsPage({ data, update }) {
                       <textarea
                         value={activeNote.content || ""}
                         onChange={e => updateNote(activeNote.id, { content: e.target.value })}
+                        onKeyDown={e => { if (e.key === "Escape") { e.target.blur(); setActiveNoteId(null); } }}
                         placeholder="Start writing…"
                         style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14, padding: "12px 18px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.7, boxSizing: "border-box", width: "100%" }}
                       />
