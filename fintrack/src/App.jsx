@@ -5101,174 +5101,148 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         </div>
       </div>
 
-      {/* ── UNIFIED CANVAS: Map fills entire area, Note floats on top ── */}
-      <div style={{ flex: 1, position: "relative", minHeight: 0, overflow: "hidden" }}>
-
-        {/* ── FULL-AREA Mind map canvas (background layer) ── */}
-        <div style={{ position: "absolute", inset: 0, overflow: "auto", background: "#f5f4fe" }}>
+      {/* ── ONE INFINITE CANVAS — note text + mind map nodes live together ── */}
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", background: note.color || "#f5f4fe", position: "relative" }}>
+        <div
+          onMouseDown={onCanvasMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
+        >
+          {/* ── NOTE TEXT BLOCK — lives on the canvas at top-left ── */}
           <div
-            onMouseDown={onCanvasMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
-            style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
+            onMouseDown={e => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              left: pan.x + 32, top: pan.y + 32,
+              width: 340,
+              zIndex: 5,
+            }}
           >
-            {/* SVG edges */}
-            <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
-              <g transform={`translate(${pan.x},${pan.y})`}>
-                {visibleEdges.map(edge => {
-                  const f = nodes.find(n => n.id === edge.from);
-                  const t = nodes.find(n => n.id === edge.to);
-                  if (!f || !t) return null;
-                  const mx = (f.x + t.x) / 2;
-                  return (
-                    <path key={edge.id}
-                      d={`M ${f.x} ${f.y} C ${mx} ${f.y} ${mx} ${t.y} ${t.x} ${t.y}`}
-                      stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.6} />
-                  );
-                })}
-              </g>
-            </svg>
+            {/* Title */}
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => e.key === "Escape" && onEsc()}
+              placeholder="Untitled Note"
+              style={{
+                border: "none", outline: "none", background: "transparent",
+                fontSize: 22, fontWeight: 700,
+                padding: "0 0 6px 0",
+                color: "#1a1a2e",
+                fontFamily: "inherit", width: "100%",
+                boxSizing: "border-box",
+                display: "block",
+                borderBottom: "2px solid rgba(109,40,217,0.18)",
+                marginBottom: 10,
+              }}
+            />
+            {/* Body — auto-grows like OneNote */}
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              onKeyDown={e => e.key === "Escape" && onEsc()}
+              placeholder="Start writing… your notes live right here on the canvas alongside your mind map."
+              rows={6}
+              style={{
+                border: "none", outline: "none",
+                background: "transparent",
+                fontSize: 13.5, lineHeight: 1.85,
+                padding: 0,
+                color: "#2d2d3a",
+                fontFamily: "inherit",
+                width: "100%",
+                boxSizing: "border-box",
+                resize: "none",
+                display: "block",
+                overflow: "hidden",
+              }}
+              onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+            />
+            {/* Subtle timestamp */}
+            <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.45)", fontStyle: "italic" }}>
+              {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+            </div>
+          </div>
 
-            {/* Nodes */}
-            <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
-              {visibleNodes.map(node => {
-                const isSel = selected === node.id;
-                const hasChildren = edges.some(e => e.from === node.id);
-                const isCollapsed = collapsed.has(node.id);
-                const childCount = edges.filter(e => e.from === node.id).length;
-                const NODE_W = 130;
-                const NODE_H = 36;
-
+          {/* ── SVG edges ── */}
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+            <g transform={`translate(${pan.x},${pan.y})`}>
+              {visibleEdges.map(edge => {
+                const f = nodes.find(n => n.id === edge.from);
+                const t = nodes.find(n => n.id === edge.to);
+                if (!f || !t) return null;
+                const mx = (f.x + t.x) / 2;
                 return (
-                  <div key={node.id} style={{ position: "absolute", left: node.x - NODE_W / 2, top: node.y - NODE_H / 2 }}>
-                    <div
-                      onMouseDown={e => onNodeMouseDown(e, node.id)}
-                      onDoubleClick={() => { setEditingId(node.id); setEditLabel(node.label); }}
-                      style={{
-                        width: NODE_W, minHeight: NODE_H,
-                        background: node.color || "#ede9fe",
-                        border: isSel ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.1)",
-                        borderRadius: node.isRoot ? 14 : 9,
-                        padding: "5px 12px",
-                        cursor: dragging?.nodeId === node.id ? "grabbing" : "grab",
-                        userSelect: "none", zIndex: isSel ? 10 : 2,
-                        boxShadow: isSel ? "0 3px 14px rgba(109,40,217,0.22)" : "0 1px 5px rgba(0,0,0,0.08)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        position: "relative",
-                      }}>
-                      {editingId === node.id ? (
-                        <input autoFocus value={editLabel}
-                          onChange={e => setEditLabel(e.target.value)}
-                          onBlur={commitEdit}
-                          onKeyDown={e => (e.key === "Enter" || e.key === "Escape") && commitEdit()}
-                          onMouseDown={e => e.stopPropagation()}
-                          style={{ border: "none", outline: "none", background: "transparent", fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, width: "100%", fontFamily: "inherit", color: "#111", textAlign: "center" }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, color: "#111", wordBreak: "break-word", textAlign: "center", lineHeight: 1.35 }}>
-                          {node.label}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* + Add child */}
-                    <div
-                      onMouseDown={e => { e.stopPropagation(); addChild(node.id); }}
-                      title="Add child node"
-                      style={{
-                        position: "absolute", right: -11, top: "50%", transform: "translateY(-50%)",
-                        width: 20, height: 20, borderRadius: "50%",
-                        background: "#1a6b3c", color: "#fff",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 14, fontWeight: 700, cursor: "pointer", zIndex: 20,
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1,
-                      }}>+</div>
-
-                    {/* Collapse toggle */}
-                    {hasChildren && (
-                      <div
-                        onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }}
-                        title={isCollapsed ? `Show ${childCount} children` : "Collapse children"}
-                        style={{
-                          position: "absolute", bottom: -11, left: "50%", transform: "translateX(-50%)",
-                          width: 20, height: 20, borderRadius: "50%",
-                          background: isCollapsed ? "#6d28d9" : "#e5e7eb",
-                          color: isCollapsed ? "#fff" : "#6b7280",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 10, fontWeight: 700, cursor: "pointer", zIndex: 20,
-                          boxShadow: "0 1px 4px rgba(0,0,0,0.14)",
-                          border: "1.5px solid " + (isCollapsed ? "#5b21b6" : "#d1d5db"),
-                        }}>
-                        {isCollapsed ? `+${childCount}` : "−"}
-                      </div>
-                    )}
-                  </div>
+                  <path key={edge.id}
+                    d={`M ${f.x} ${f.y} C ${mx} ${f.y} ${mx} ${t.y} ${t.x} ${t.y}`}
+                    stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.6} />
                 );
               })}
-            </div>
+            </g>
+          </svg>
 
-            {/* Map hint */}
-            <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "#aaa", pointerEvents: "none", textAlign: "right", lineHeight: 1.5 }}>
-              Drag to move · Double-click to rename<br/>
-              <span style={{ color: "#a78bfa" }}>+</span> = add child &nbsp;·&nbsp; <span style={{ color: "#6d28d9" }}>●</span> = collapse
-            </div>
+          {/* ── Map nodes ── */}
+          <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
+            {visibleNodes.map(node => {
+              const isSel = selected === node.id;
+              const hasChildren = edges.some(e => e.from === node.id);
+              const isCollapsed = collapsed.has(node.id);
+              const childCount = edges.filter(e => e.from === node.id).length;
+              const NODE_W = 130, NODE_H = 36;
+              return (
+                <div key={node.id} style={{ position: "absolute", left: node.x - NODE_W / 2, top: node.y - NODE_H / 2 }}>
+                  <div
+                    onMouseDown={e => onNodeMouseDown(e, node.id)}
+                    onDoubleClick={() => { setEditingId(node.id); setEditLabel(node.label); }}
+                    style={{
+                      width: NODE_W, minHeight: NODE_H,
+                      background: node.color || "#ede9fe",
+                      border: isSel ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.1)",
+                      borderRadius: node.isRoot ? 14 : 9,
+                      padding: "5px 12px",
+                      cursor: dragging?.nodeId === node.id ? "grabbing" : "grab",
+                      userSelect: "none", zIndex: isSel ? 10 : 2,
+                      boxShadow: isSel ? "0 3px 14px rgba(109,40,217,0.22)" : "0 1px 5px rgba(0,0,0,0.08)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      position: "relative",
+                    }}>
+                    {editingId === node.id ? (
+                      <input autoFocus value={editLabel}
+                        onChange={e => setEditLabel(e.target.value)}
+                        onBlur={commitEdit}
+                        onKeyDown={e => (e.key === "Enter" || e.key === "Escape") && commitEdit()}
+                        onMouseDown={e => e.stopPropagation()}
+                        style={{ border: "none", outline: "none", background: "transparent", fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, width: "100%", fontFamily: "inherit", color: "#111", textAlign: "center" }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, color: "#111", wordBreak: "break-word", textAlign: "center", lineHeight: 1.35 }}>
+                        {node.label}
+                      </span>
+                    )}
+                  </div>
+                  {/* + child */}
+                  <div onMouseDown={e => { e.stopPropagation(); addChild(node.id); }} title="Add child"
+                    style={{ position: "absolute", right: -11, top: "50%", transform: "translateY(-50%)", width: 20, height: 20, borderRadius: "50%", background: "#1a6b3c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, cursor: "pointer", zIndex: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1 }}>+</div>
+                  {/* Collapse */}
+                  {hasChildren && (
+                    <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCollapsed ? `Show ${childCount}` : "Collapse"}
+                      style={{ position: "absolute", bottom: -11, left: "50%", transform: "translateX(-50%)", width: 20, height: 20, borderRadius: "50%", background: isCollapsed ? "#6d28d9" : "#e5e7eb", color: isCollapsed ? "#fff" : "#6b7280", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, cursor: "pointer", zIndex: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.14)", border: "1.5px solid " + (isCollapsed ? "#5b21b6" : "#d1d5db") }}>
+                      {isCollapsed ? `+${childCount}` : "−"}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Hint */}
+          <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "#aaa", pointerEvents: "none", textAlign: "right", lineHeight: 1.5 }}>
+            Drag nodes · Double-click to rename<br/>
+            <span style={{ color: "#a78bfa" }}>+</span> = add child &nbsp;·&nbsp; <span style={{ color: "#6d28d9" }}>●</span> = collapse
           </div>
         </div>
-
-        {/* ── FLOATING Note panel (top-left, glass effect, over the map) ── */}
-        <div
-          onMouseDown={e => e.stopPropagation()}
-          style={{
-            position: "absolute", top: 16, left: 16,
-            width: 280, maxHeight: "calc(100% - 32px)",
-            display: "flex", flexDirection: "column",
-            background: note.color ? note.color + "ee" : "rgba(255,255,255,0.92)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
-            borderRadius: 14,
-            border: "1px solid rgba(255,255,255,0.7)",
-            boxShadow: "0 4px 24px rgba(109,40,217,0.13), 0 1.5px 6px rgba(0,0,0,0.08)",
-            zIndex: 30,
-            overflow: "hidden",
-          }}
-        >
-          {/* Note title */}
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            onKeyDown={e => e.key === "Escape" && onEsc()}
-            placeholder="Note title…"
-            style={{
-              border: "none", outline: "none", background: "transparent",
-              fontSize: 15, fontWeight: 700, padding: "12px 14px 6px",
-              color: "var(--color-text-primary)", fontFamily: "inherit",
-              width: "100%", boxSizing: "border-box", flexShrink: 0,
-            }}
-          />
-          <div style={{ margin: "0 14px", height: "0.5px", background: "rgba(0,0,0,0.08)", flexShrink: 0 }} />
-          {/* Note body */}
-          <textarea
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            onKeyDown={e => e.key === "Escape" && onEsc()}
-            placeholder="Start writing…"
-            style={{
-              flex: 1, border: "none", outline: "none", background: "transparent",
-              fontSize: 13, padding: "8px 14px 10px",
-              color: "var(--color-text-primary)", resize: "none",
-              fontFamily: "inherit", lineHeight: 1.75,
-              boxSizing: "border-box", width: "100%",
-              minHeight: 120, maxHeight: 320,
-              overflowY: "auto",
-            }}
-          />
-          {/* Footer */}
-          <div style={{ padding: "4px 14px 6px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid rgba(0,0,0,0.07)", background: "rgba(255,255,255,0.4)", flexShrink: 0 }}>
-            ✏️ Last edited {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-          </div>
-        </div>
-
       </div>
     </div>
   );
