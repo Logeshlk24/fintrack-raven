@@ -67,6 +67,7 @@ const defaultData = {
   needsWants: [],
   featureToggles: { fo: true },
   businessData: [],
+  projectsData: [],
 };
 
 
@@ -196,6 +197,7 @@ export default function App() {
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
     { id: "goals", label: "Goals", icon: "◎" },
     { id: "business", label: "Business", icon: "🏢" },
+    { id: "projects", label: "Projects", icon: "📋" },
   ];
 
   return (
@@ -302,6 +304,7 @@ export default function App() {
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
         {page === "business" && <BusinessPage data={data} update={update} />}
+        {page === "projects" && <ProjectsPage data={data} update={update} />}
         {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} />}
       </main>
     </div>
@@ -3047,6 +3050,77 @@ function LiabilitiesTab({ data, update }) {
   );
 }
 
+// ─── AddSavingsInline — stable component so input focus is never lost ────────
+function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
+  const [addAmt, setAddAmt] = useState("");
+  const [showAddSave, setShowAddSave] = useState(false);
+  const [saveTxType, setSaveTxType] = useState("income");
+  const [saveBankId, setSaveBankId] = useState("");
+
+  function handleAddSavings() {
+    if (!addAmt || parseFloat(addAmt) <= 0) return;
+    addSavings(item.id, addAmt, saveTxType, saveBankId, item.name);
+    setAddAmt(""); setShowAddSave(false); setSaveBankId("");
+  }
+
+  if (!showAddSave) {
+    return (
+      <button onClick={() => setShowAddSave(true)} style={{ fontSize: 12, color: cardAccent, background: cardAccent + "14", border: `0.5px solid ${cardAccent}44`, borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 }}>
+        + Add Savings
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
+      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>Log this saving as:</div>
+      <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", marginBottom: 8 }}>
+        {[["income","📥 Income","#1a6b3c","#e8f5ee"],["expense","📤 Expense","#d44","#fdf0f0"],["savings","💰 Savings","#7c3aed","#f3e8ff"]].map(([v, lbl, color, bg]) => (
+          <button key={v} onClick={() => setSaveTxType(v)}
+            style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", fontSize: 11, fontWeight: saveTxType === v ? 600 : 400, background: saveTxType === v ? bg : "transparent", color: saveTxType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="Amount (₹)"
+          value={addAmt}
+          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setAddAmt(v); }}
+          style={{ flex: 1, fontSize: 12, padding: "5px 8px", boxSizing: "border-box" }}
+          autoFocus
+        />
+      </div>
+      {accounts.length > 0 && (
+        <select value={saveBankId} onChange={e => setSaveBankId(e.target.value)} style={{ width: "100%", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }}>
+          <option value="">— No account —</option>
+          {accounts.filter(a => a.type === "Bank").length > 0 && (
+            <optgroup label="🏦 Bank Accounts">
+              {accounts.filter(a => a.type === "Bank").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+          )}
+          {accounts.filter(a => a.type === "Credit Card").length > 0 && (
+            <optgroup label="💳 Credit Cards">
+              {accounts.filter(a => a.type === "Credit Card").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+          )}
+          {accounts.filter(a => a.type === "Cash").length > 0 && (
+            <optgroup label="💵 Cash">
+              {accounts.filter(a => a.type === "Cash").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+          )}
+        </select>
+      )}
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={handleAddSavings} style={{ flex: 1, background: cardAccent, color: "#fff", border: "none", borderRadius: 7, padding: "5px 0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Log Savings</button>
+        <button onClick={() => { setShowAddSave(false); setAddAmt(""); setSaveBankId(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Goals Page ───────────────────────────────────────────────────────────────
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
@@ -3167,21 +3241,11 @@ function GoalsPage({ data, update }) {
     );
   }
 
-  const ItemCard = ({ item }) => {
+  function renderItemCard(item) {
     const pct = item.targetAmount > 0 ? Math.min((item.savedAmount / item.targetAmount) * 100, 100) : 0;
     const remaining = item.targetAmount - item.savedAmount;
-    const [addAmt, setAddAmt] = useState("");
-    const [showAddSave, setShowAddSave] = useState(false);
-    const [saveTxType, setSaveTxType] = useState("income");
-    const [saveBankId, setSaveBankId] = useState("");
     const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
     const accounts = data.banks || [];
-
-    function handleAddSavings() {
-      if (!addAmt || parseFloat(addAmt) <= 0) return;
-      addSavings(item.id, addAmt, saveTxType, saveBankId, item.name);
-      setAddAmt(""); setShowAddSave(false); setSaveBankId("");
-    }
 
     return (
       <div style={{
@@ -3227,68 +3291,11 @@ function GoalsPage({ data, update }) {
           </div>
         </div>
 
-        {/* Add savings */}
-        {!item.completed && remaining > 0 && (
-          !showAddSave ? (
-            <button onClick={() => setShowAddSave(true)} style={{ fontSize: 12, color: cardAccent, background: cardAccent + "14", border: `0.5px solid ${cardAccent}44`, borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 }}>
-              + Add Savings
-            </button>
-          ) : (
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
-              {/* Direction toggle */}
-              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>Log this saving as:</div>
-              <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", marginBottom: 8 }}>
-                {[["income","📥 Income","#1a6b3c","#e8f5ee"],["expense","📤 Expense","#d44","#fdf0f0"],["savings","💰 Savings","#7c3aed","#f3e8ff"]].map(([v, lbl, color, bg]) => (
-                  <button key={v} onClick={() => setSaveTxType(v)}
-                    style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", fontSize: 11, fontWeight: saveTxType === v ? 600 : 400, background: saveTxType === v ? bg : "transparent", color: saveTxType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
-                    {lbl}
-                  </button>
-                ))}
-              </div>
-              {/* Amount */}
-              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="Amount (₹)"
-                  value={addAmt}
-                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setAddAmt(v); }}
-                  style={{ flex: 1, fontSize: 12, padding: "5px 8px", boxSizing: "border-box" }}
-                  autoFocus
-                />
-              </div>
-              {/* Account */}
-              {accounts.length > 0 && (
-                <select value={saveBankId} onChange={e => setSaveBankId(e.target.value)} style={{ width: "100%", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }}>
-                  <option value="">— No account —</option>
-                  {accounts.filter(a => a.type === "Bank").length > 0 && (
-                    <optgroup label="🏦 Bank Accounts">
-                      {accounts.filter(a => a.type === "Bank").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </optgroup>
-                  )}
-                  {accounts.filter(a => a.type === "Credit Card").length > 0 && (
-                    <optgroup label="💳 Credit Cards">
-                      {accounts.filter(a => a.type === "Credit Card").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </optgroup>
-                  )}
-                  {accounts.filter(a => a.type === "Cash").length > 0 && (
-                    <optgroup label="💵 Cash">
-                      {accounts.filter(a => a.type === "Cash").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </optgroup>
-                  )}
-                </select>
-              )}
-              {/* Actions */}
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={handleAddSavings} style={{ flex: 1, background: cardAccent, color: "#fff", border: "none", borderRadius: 7, padding: "5px 0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Log Savings</button>
-                <button onClick={() => { setShowAddSave(false); setAddAmt(""); setSaveBankId(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
-              </div>
-            </div>
-          )
-        )}
+        {/* Add savings — state lives in a separate stable child component */}
+        {!item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
       </div>
     );
-  };
+  }
 
   return (
     <div>
@@ -3370,7 +3377,7 @@ function GoalsPage({ data, update }) {
                 const pOrder = { high: 0, medium: 1, low: 2 };
                 if (a.completed !== b.completed) return a.completed ? 1 : -1;
                 return pOrder[a.priority] - pOrder[b.priority];
-              }).map(item => <ItemCard key={item.id} item={item} />)}
+              }).map(item => <div key={item.id}>{renderItemCard(item)}</div>)}
             </div>
           )}
         </div>
@@ -3754,6 +3761,322 @@ function BusinessPage({ data, update }) {
     </div>
   );
 }
+// ─── Projects Page ───────────────────────────────────────────────────────────
+function ProjectsPage({ data, update }) {
+  const projects = data.projectsData || [];
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [showAddProject, setShowAddProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newTodo, setNewTodo] = useState("");
+  const [editTodoId, setEditTodoId] = useState(null);
+  const [editTodoText, setEditTodoText] = useState("");
+
+  // Get the full selected project object (always fresh from data)
+  const project = selectedProject ? projects.find(p => p.id === selectedProject) : null;
+  const todos = project ? (project.todos || []) : [];
+  const files = project ? (project.files || []) : [];
+
+  function addProject() {
+    if (!newProjectName.trim()) return;
+    const id = Date.now();
+    update(p => ({ projectsData: [...(p.projectsData || []), { id, name: newProjectName.trim(), todos: [], files: [], createdAt: new Date().toISOString() }] }));
+    setNewProjectName("");
+    setShowAddProject(false);
+    setSelectedProject(id);
+  }
+
+  function deleteProject(id) {
+    if (!confirm("Delete this project and all its data?")) return;
+    update(p => ({ projectsData: (p.projectsData || []).filter(pr => pr.id !== id) }));
+    if (selectedProject === id) setSelectedProject(null);
+  }
+
+  function addTodo() {
+    if (!newTodo.trim() || !project) return;
+    const todo = { id: Date.now(), text: newTodo.trim(), done: false, createdAt: new Date().toISOString() };
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id ? { ...pr, todos: [...(pr.todos || []), todo] } : pr) }));
+    setNewTodo("");
+  }
+
+  function toggleTodo(todoId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).map(t => t.id === todoId ? { ...t, done: !t.done } : t) }
+      : pr
+    )}));
+  }
+
+  function deleteTodo(todoId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).filter(t => t.id !== todoId) }
+      : pr
+    )}));
+  }
+
+  function saveEditTodo() {
+    if (!editTodoText.trim()) return;
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).map(t => t.id === editTodoId ? { ...t, text: editTodoText.trim() } : t) }
+      : pr
+    )}));
+    setEditTodoId(null); setEditTodoText("");
+  }
+
+  function handleFileUpload(e) {
+    const fileList = Array.from(e.target.files);
+    if (!fileList.length || !project) return;
+    fileList.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const fileEntry = {
+          id: Date.now() + Math.random(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataUrl: ev.target.result,
+          uploadedAt: new Date().toISOString(),
+        };
+        update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+          ? { ...pr, files: [...(pr.files || []), fileEntry] }
+          : pr
+        )}));
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  }
+
+  function deleteFile(fileId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, files: (pr.files || []).filter(f => f.id !== fileId) }
+      : pr
+    )}));
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function fileIcon(type) {
+    if (type.startsWith("image/")) return "🖼️";
+    if (type === "application/pdf") return "📄";
+    if (type.includes("word") || type.includes("document")) return "📝";
+    if (type.includes("sheet") || type.includes("excel") || type.includes("csv")) return "📊";
+    if (type.includes("zip") || type.includes("rar")) return "🗜️";
+    return "📎";
+  }
+
+  const doneTodos = todos.filter(t => t.done).length;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {project && (
+            <button onClick={() => setSelectedProject(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+              ← Back
+            </button>
+          )}
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>
+            {project ? project.name : "Projects"}
+          </h1>
+        </div>
+        {!project && (
+          <button onClick={() => setShowAddProject(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            {showAddProject ? "✕ Cancel" : "+ New Project"}
+          </button>
+        )}
+      </div>
+
+      {/* Add project form */}
+      {showAddProject && !project && (
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Project Name</label>
+            <input
+              placeholder="e.g. Website Redesign, Q3 Campaign…"
+              value={newProjectName}
+              onChange={e => setNewProjectName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addProject()}
+              style={{ width: "100%", boxSizing: "border-box" }}
+              autoFocus
+            />
+          </div>
+          <button onClick={addProject} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>Create Project</button>
+        </div>
+      )}
+
+      {/* ── PROJECT LIST (overview) ── */}
+      {!project && (
+        <>
+          {projects.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+              No projects yet. Click "+ New Project" to create your first one.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+              {projects.map(pr => {
+                const done = (pr.todos || []).filter(t => t.done).length;
+                const total = (pr.todos || []).length;
+                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                return (
+                  <div key={pr.id}
+                    onClick={() => setSelectedProject(pr.id)}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "1.2rem", cursor: "pointer", position: "relative", transition: "box-shadow 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+                  >
+                    <button onClick={ev => { ev.stopPropagation(); deleteProject(pr.id); }}
+                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>🗑</button>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+                    <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 }}>{pr.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
+                      {total} task{total !== 1 ? "s" : ""} · {(pr.files || []).length} file{(pr.files || []).length !== 1 ? "s" : ""}
+                    </div>
+                    {total > 0 && (
+                      <>
+                        <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 4 }}>
+                          <div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 4, transition: "width 0.4s" }} />
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{done}/{total} done · {pct}%</div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── PROJECT DETAIL ── */}
+      {project && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16, alignItems: "start" }}>
+
+          {/* LEFT — Files */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+            <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 500, fontSize: 15 }}>📎 Files <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 400 }}>({files.length})</span></span>
+              <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>
+                + Upload
+                <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+              </label>
+            </div>
+
+            {files.length === 0 ? (
+              <label style={{ display: "block", cursor: "pointer" }}>
+                <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+                <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
+                  Drop files here or click to upload
+                </div>
+              </label>
+            ) : (
+              <div style={{ padding: "0.5rem 0" }}>
+                {files.map(f => (
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                    <span style={{ fontSize: 20, flexShrink: 0 }}>{fileIcon(f.type)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {f.type.startsWith("image/") ? (
+                        <a href={f.dataUrl} download={f.name} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{f.name}</a>
+                      ) : (
+                        <a href={f.dataUrl} download={f.name} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{f.name}</a>
+                      )}
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
+                    </div>
+                    {f.type.startsWith("image/") && (
+                      <img src={f.dataUrl} alt={f.name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "0.5px solid var(--color-border-secondary)" }} />
+                    )}
+                    <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT — To-Do List */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+            <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 500, fontSize: 15 }}>
+                ✅ To-Do List
+                {todos.length > 0 && <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 400, marginLeft: 6 }}>{doneTodos}/{todos.length} done</span>}
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            {todos.length > 0 && (
+              <div style={{ padding: "8px 14px 0", background: "var(--color-background-secondary)" }}>
+                <div style={{ background: "var(--color-border-secondary)", borderRadius: 4, height: 5, overflow: "hidden" }}>
+                  <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#4da6ff", borderRadius: 4, transition: "width 0.4s" }} />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", paddingBottom: 8, marginTop: 3 }}>{Math.round(doneTodos / todos.length * 100)}% complete</div>
+              </div>
+            )}
+
+            {/* Add todo input */}
+            <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 }}>
+              <input
+                placeholder="Add a task…"
+                value={newTodo}
+                onChange={e => setNewTodo(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && addTodo()}
+                style={{ flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" }}
+              />
+              <button onClick={addTodo} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Add</button>
+            </div>
+
+            {/* Todo items */}
+            {todos.length === 0 ? (
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                No tasks yet. Type above and press Enter to add one.
+              </div>
+            ) : (
+              <div>
+                {/* Pending */}
+                {todos.filter(t => !t.done).map(t => (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                    <button onClick={() => toggleTodo(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }} />
+                    {editTodoId === t.id ? (
+                      <input
+                        value={editTodoText}
+                        onChange={e => setEditTodoText(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") saveEditTodo(); if (e.key === "Escape") { setEditTodoId(null); setEditTodoText(""); } }}
+                        style={{ flex: 1, fontSize: 13, padding: "2px 6px", boxSizing: "border-box" }}
+                        autoFocus
+                        onBlur={saveEditTodo}
+                      />
+                    ) : (
+                      <span onDoubleClick={() => { setEditTodoId(t.id); setEditTodoText(t.text); }} style={{ flex: 1, fontSize: 13, cursor: "text" }} title="Double-click to edit">{t.text}</span>
+                    )}
+                    <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, flexShrink: 0, padding: "0 2px" }}>✕</button>
+                  </div>
+                ))}
+                {/* Done */}
+                {todos.filter(t => t.done).length > 0 && (
+                  <>
+                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>COMPLETED</div>
+                    {todos.filter(t => t.done).map(t => (
+                      <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.6 }}>
+                        <button onClick={() => toggleTodo(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 11 }}>✓</button>
+                        <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{t.text}</span>
+                        <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, flexShrink: 0, padding: "0 2px" }}>✕</button>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Shared Components ────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, icon, danger, pnl, big, accent }) {
   const color = pnl !== undefined ? (pnl >= 0 ? "#1a6b3c" : "#d44") : danger ? "#d44" : "var(--color-text-primary)";
