@@ -4233,28 +4233,6 @@ function ProjectsPage({ data, update }) {
               )}
             </div>
 
-            {/* Upcoming / overdue tasks */}
-            {pendingTodos.filter(t => t.eta).length > 0 && (
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 14 }}>📅 Deadlines</div>
-                <div style={{ padding: "0.5rem 0" }}>
-                  {pendingTodos
-                    .filter(t => t.eta)
-                    .sort((a, b) => new Date(a.eta) - new Date(b.eta))
-                    .map(t => (
-                      <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", gap: 10 }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.text}</div>
-                          {t.taskType && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{t.taskType}</div>}
-                        </div>
-                        <span style={{ fontSize: 12, color: etaColor(t.eta), fontWeight: 500, flexShrink: 0 }}>{formatEta(t.eta)}</span>
-                      </div>
-                    ))
-                  }
-                </div>
-              </div>
-            )}
-
             {/* Task type breakdown */}
             {todos.length > 0 && (() => {
               const typeMap = {};
@@ -4277,54 +4255,6 @@ function ProjectsPage({ data, update }) {
                 </div>
               ) : null;
             })()}
-
-            {/* ── TO-DO LIST ── */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-              <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 500, fontSize: 14 }}>
-                  ✅ To-Do List
-                  {todos.length > 0 && <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 400, marginLeft: 6 }}>{doneTodos}/{todos.length} done</span>}
-                </span>
-              </div>
-
-              {todos.length === 0 ? (
-                <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                  No tasks yet. Use the Tasks tab on the left to add one.
-                </div>
-              ) : (
-                <div>
-                  {pendingTodos.map(t => (
-                    <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                      <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, marginTop: 2 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, wordBreak: "break-word" }}>{t.text}</div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 3, alignItems: "center" }}>
-                          {t.taskType && <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)" }}>{t.taskType}</span>}
-                          {t.eta && <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {completedTodos.length > 0 && (
-                    <>
-                      <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>COMPLETED</div>
-                      {completedTodos.map(t => (
-                        <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.6 }}>
-                          <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10, marginTop: 2 }}>✓</button>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word" }}>{t.text}</div>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 3 }}>
-                              {t.taskType && <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)" }}>{t.taskType}</span>}
-                              {t.eta && <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>📅 {formatEta(t.eta)}</span>}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
 
             {/* ── DAY TRACKING ── */}
             {(() => {
