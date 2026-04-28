@@ -4865,7 +4865,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   const VIEW_TEXT = "text", VIEW_MAP = "map";
 
   // ── State ────────────────────────────────────────────────────────────────
-  const [view, setView]         = useState(note.noteView || VIEW_TEXT);
+  const [view, setView]         = useState(note.noteView || VIEW_MAP);
   const [title, setTitle]       = useState(note.title || "");
   const [content, setContent]   = useState(note.content || "");
 
@@ -4925,17 +4925,30 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }); // runs every render so undo/redo closures are fresh
 
   // ── Mind-map actions ─────────────────────────────────────────────────────
-  function addChild(parentId) {
+  function addChildren(parentId, count) {
     snapshot();
     const parent = nodes.find(n => n.id === parentId);
     if (!parent) return;
-    const id = "n" + Date.now();
-    const side = Math.random() > 0.5 ? 1 : -1;
-    const angle = (side * (20 + Math.random() * 30)) * (Math.PI / 180);
-    const newNode = { id, label: "New Node", x: parent.x + 190 * Math.cos(angle), y: parent.y + 190 * Math.sin(angle), color: NODE_COLORS[Math.floor(Math.random() * NODE_COLORS.length)] };
-    setNodes(p => [...p, newNode]);
-    setEdges(p => [...p, { id: "e" + Date.now(), from: parentId, to: id }]);
-    setSelected(id); setEditingId(id); setEditLabel("New Node");
+    const newNodes = [], newEdges = [];
+    // Find existing children to avoid overlap
+    const existingChildAngles = edges
+      .filter(e => e.from === parentId)
+      .map(e => { const c = nodes.find(n => n.id === e.to); return c ? Math.atan2(c.y - parent.y, c.x - parent.x) : null; })
+      .filter(Boolean);
+    const baseAngle = existingChildAngles.length ? Math.max(...existingChildAngles) + 0.5 : -0.3;
+    const spread = count === 1 ? 0 : 0.55; // radians between siblings
+    const startAngle = baseAngle - (spread * (count - 1)) / 2;
+    for (let i = 0; i < count; i++) {
+      const angle = startAngle + i * spread;
+      const dist = 180 + Math.random() * 20;
+      const id = "n" + (Date.now() + i);
+      newNodes.push({ id, label: "Node " + (i + 1), x: parent.x + dist * Math.cos(angle), y: parent.y + dist * Math.sin(angle), color: NODE_COLORS[(nodes.length + i) % NODE_COLORS.length] });
+      newEdges.push({ id: "e" + (Date.now() + i), from: parentId, to: id });
+    }
+    setNodes(p => [...p, ...newNodes]);
+    setEdges(p => [...p, ...newEdges]);
+    if (count === 1) { setSelected(newNodes[0].id); setEditingId(newNodes[0].id); setEditLabel(newNodes[0].label); }
+    else { setSelected(newNodes[0].id); }
   }
   function deleteNode(nodeId) {
     if (nodeId === "root") return;
@@ -5012,7 +5025,10 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         {view === VIEW_MAP && selNode && (
           <>
             <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
-            <button onClick={() => addChild(selected)} style={{ ...btnBase, background: "#1a6b3c", color: "#fff", border: "none" }}>+ Child</button>
+            <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Add children:</span>
+            {[1, 2, 3, 4].map(n => (
+              <button key={n} onClick={() => addChildren(selected, n)} style={{ ...btnBase, background: "#1a6b3c", color: "#fff", border: "none", padding: "3px 7px", minWidth: 24 }}>+{n}</button>
+            ))}
             <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btnBase }}>✏️</button>
             {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btnBase, color: "#d44", borderColor: "#d44" }}>🗑</button>}
             <div style={{ display: "flex", gap: 3 }}>
