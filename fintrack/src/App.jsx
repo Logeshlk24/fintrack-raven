@@ -66,6 +66,7 @@ const defaultData = {
   scheduledPayments: [],
   needsWants: [],
   featureToggles: { fo: true },
+  businessData: [],
 };
 
 
@@ -194,6 +195,7 @@ export default function App() {
     { id: "money", label: "Money", icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
     { id: "goals", label: "Goals", icon: "◎" },
+    { id: "business", label: "Business", icon: "🏢" },
   ];
 
   return (
@@ -299,6 +301,7 @@ export default function App() {
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
+        {page === "business" && <BusinessPage data={data} update={update} />}
         {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} />}
       </main>
     </div>
@@ -3103,15 +3106,16 @@ function GoalsPage({ data, update }) {
   function addSavings(id, amount, txType, bankId, goalName) {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) return;
+    const actualType = txType === "savings" ? "income" : txType;
     update(p => {
       const updatedNeeds = (p.needsWants || []).map(x =>
         x.id === id ? { ...x, savedAmount: Math.min(x.savedAmount + amt, x.targetAmount) } : x
       );
       const newTx = {
         id: Date.now() + Math.random(),
-        type: txType,
+        type: actualType,
         amount: amt,
-        category: txType === "income" ? "Savings" : "Savings",
+        category: "Savings",
         note: `Goal: ${goalName}`,
         date: today(),
         bankId: bankId || "",
@@ -3230,10 +3234,11 @@ function GoalsPage({ data, update }) {
           ) : (
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
               {/* Direction toggle */}
+              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>Log this saving as:</div>
               <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", marginBottom: 8 }}>
-                {[["income","📥 Income","#1a6b3c","#e8f5ee"],["expense","📤 Expense","#d44","#fdf0f0"]].map(([v, lbl, color, bg]) => (
+                {[["income","📥 Income","#1a6b3c","#e8f5ee"],["expense","📤 Expense","#d44","#fdf0f0"],["savings","💰 Savings","#7c3aed","#f3e8ff"]].map(([v, lbl, color, bg]) => (
                   <button key={v} onClick={() => setSaveTxType(v)}
-                    style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", fontSize: 12, fontWeight: saveTxType === v ? 600 : 400, background: saveTxType === v ? bg : "transparent", color: saveTxType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                    style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", fontSize: 11, fontWeight: saveTxType === v ? 600 : 400, background: saveTxType === v ? bg : "transparent", color: saveTxType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
                     {lbl}
                   </button>
                 ))}
@@ -3241,10 +3246,11 @@ function GoalsPage({ data, update }) {
               {/* Amount */}
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="Amount (₹)"
                   value={addAmt}
-                  onChange={e => setAddAmt(e.target.value)}
+                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setAddAmt(v); }}
                   style={{ flex: 1, fontSize: 12, padding: "5px 8px", boxSizing: "border-box" }}
                   autoFocus
                 />
@@ -3371,6 +3377,381 @@ function GoalsPage({ data, update }) {
   );
 }
 
+
+// ─── Business Page ────────────────────────────────────────────────────────────
+function BusinessPage({ data, update }) {
+  const businessData = data.businessData || [];
+  // Get unique years from data
+  const years = [...new Set(businessData.map(e => e.year))].sort((a, b) => b - a);
+  const [selectedYear, setSelectedYear] = useState(null);
+  const [showAddYear, setShowAddYear] = useState(false);
+  const [newYear, setNewYear] = useState("");
+  const [showAddMonth, setShowAddMonth] = useState(false);
+  const [monthForm, setMonthForm] = useState({ month: "", grossIncome: "", netIncome: "" });
+  const [editEntry, setEditEntry] = useState(null);
+
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  // Entries for selected year
+  const yearEntries = selectedYear
+    ? businessData.filter(e => e.year === selectedYear).sort((a, b) => a.monthIndex - b.monthIndex)
+    : [];
+
+  // All-year summary (for overview)
+  const yearSummary = years.map(yr => {
+    const entries = businessData.filter(e => e.year === yr);
+    return {
+      year: yr,
+      totalGross: entries.reduce((s, e) => s + (e.grossIncome || 0), 0),
+      totalNet: entries.reduce((s, e) => s + (e.netIncome || 0), 0),
+      months: entries.length,
+    };
+  });
+
+  function addYear() {
+    const y = parseInt(newYear);
+    if (!y || years.includes(y)) return;
+    // Just set selected year — no entries needed yet
+    setSelectedYear(y);
+    setShowAddYear(false);
+    setNewYear("");
+  }
+
+  function addMonthEntry() {
+    const monthIdx = MONTHS.indexOf(monthForm.month);
+    if (monthIdx === -1 || !monthForm.grossIncome || !monthForm.netIncome) return;
+    const existing = businessData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
+    if (existing) {
+      // Update existing
+      update(p => ({ businessData: (p.businessData || []).map(e =>
+        e.year === selectedYear && e.monthIndex === monthIdx
+          ? { ...e, grossIncome: parseFloat(monthForm.grossIncome), netIncome: parseFloat(monthForm.netIncome) }
+          : e
+      )}));
+    } else {
+      update(p => ({ businessData: [...(p.businessData || []), {
+        id: Date.now(),
+        year: selectedYear,
+        month: monthForm.month,
+        monthIndex: monthIdx,
+        grossIncome: parseFloat(monthForm.grossIncome),
+        netIncome: parseFloat(monthForm.netIncome),
+      }]}));
+    }
+    setMonthForm({ month: "", grossIncome: "", netIncome: "" });
+    setShowAddMonth(false);
+  }
+
+  function saveEdit() {
+    if (!editEntry) return;
+    update(p => ({ businessData: (p.businessData || []).map(e =>
+      e.id === editEntry.id
+        ? { ...e, grossIncome: parseFloat(editEntry.grossIncome), netIncome: parseFloat(editEntry.netIncome) }
+        : e
+    )}));
+    setEditEntry(null);
+  }
+
+  function deleteEntry(id) {
+    update(p => ({ businessData: (p.businessData || []).filter(e => e.id !== id) }));
+  }
+
+  function deleteYear(yr) {
+    if (!confirm(`Delete all data for ${yr}?`)) return;
+    update(p => ({ businessData: (p.businessData || []).filter(e => e.year !== yr) }));
+    if (selectedYear === yr) setSelectedYear(null);
+  }
+
+  // Simple SVG bar chart
+  function BarChart({ entries, height = 160 }) {
+    if (!entries.length) return null;
+    const maxVal = Math.max(...entries.map(e => Math.max(e.grossIncome, e.netIncome)), 1);
+    const barW = Math.min(36, Math.floor(560 / entries.length / 2 - 4));
+    const gap = barW + 4;
+    const chartW = entries.length * (gap * 2 + 8) + 20;
+    return (
+      <svg width="100%" viewBox={`0 0 ${chartW} ${height + 30}`} style={{ display: "block" }}>
+        {entries.map((e, i) => {
+          const x = 10 + i * (gap * 2 + 8);
+          const gH = Math.round((e.grossIncome / maxVal) * height);
+          const nH = Math.round((e.netIncome / maxVal) * height);
+          return (
+            <g key={e.id}>
+              {/* Gross bar */}
+              <rect x={x} y={height - gH} width={barW} height={gH} fill="#1a6b3c" rx={3} opacity={0.85} />
+              {/* Net bar */}
+              <rect x={x + barW + 3} y={height - nH} width={barW} height={nH} fill="#4da6ff" rx={3} opacity={0.85} />
+              {/* Month label */}
+              <text x={x + barW} y={height + 14} textAnchor="middle" fontSize={9} fill="#6b7280">{e.month.slice(0, 3)}</text>
+            </g>
+          );
+        })}
+        {/* Legend */}
+        <rect x={10} y={height + 22} width={8} height={8} fill="#1a6b3c" rx={2} />
+        <text x={22} y={height + 30} fontSize={8} fill="#6b7280">Gross</text>
+        <rect x={52} y={height + 22} width={8} height={8} fill="#4da6ff" rx={2} />
+        <text x={64} y={height + 30} fontSize={8} fill="#6b7280">Net</text>
+      </svg>
+    );
+  }
+
+  // Year-on-year bar chart (for overview)
+  function YoYChart({ summaries, height = 120 }) {
+    if (!summaries.length) return null;
+    const displayed = [...summaries].sort((a, b) => a.year - b.year);
+    const maxVal = Math.max(...displayed.map(s => Math.max(s.totalGross, s.totalNet)), 1);
+    const barW = 32;
+    const gap = barW + 4;
+    const chartW = displayed.length * (gap * 2 + 12) + 20;
+    return (
+      <svg width="100%" viewBox={`0 0 ${chartW} ${height + 30}`} style={{ display: "block" }}>
+        {displayed.map((s, i) => {
+          const x = 10 + i * (gap * 2 + 12);
+          const gH = Math.round((s.totalGross / maxVal) * height);
+          const nH = Math.round((s.totalNet / maxVal) * height);
+          return (
+            <g key={s.year}>
+              <rect x={x} y={height - gH} width={barW} height={gH} fill="#1a6b3c" rx={3} opacity={0.85} />
+              <rect x={x + barW + 3} y={height - nH} width={barW} height={nH} fill="#4da6ff" rx={3} opacity={0.85} />
+              <text x={x + barW} y={height + 14} textAnchor="middle" fontSize={9} fill="#6b7280">{s.year}</text>
+            </g>
+          );
+        })}
+        <rect x={10} y={height + 22} width={8} height={8} fill="#1a6b3c" rx={2} />
+        <text x={22} y={height + 30} fontSize={8} fill="#6b7280">Gross Income</text>
+        <rect x={80} y={height + 22} width={8} height={8} fill="#4da6ff" rx={2} />
+        <text x={92} y={height + 30} fontSize={8} fill="#6b7280">Net Income</text>
+      </svg>
+    );
+  }
+
+  return (
+    <div>
+      {/* Edit modal */}
+      {editEntry && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit {editEntry.month} {editEntry.year}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹)</label>
+                <input type="text" inputMode="decimal" value={editEntry.grossIncome}
+                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditEntry(p => ({ ...p, grossIncome: v })); }}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹)</label>
+                <input type="text" inputMode="decimal" value={editEntry.netIncome}
+                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditEntry(p => ({ ...p, netIncome: v })); }}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditEntry(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEdit} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {selectedYear && (
+            <button onClick={() => setSelectedYear(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+              ← Back
+            </button>
+          )}
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>
+            {selectedYear ? `Business · ${selectedYear}` : "Business"}
+          </h1>
+        </div>
+        {!selectedYear && (
+          <button onClick={() => setShowAddYear(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            {showAddYear ? "✕ Cancel" : "+ Add Year"}
+          </button>
+        )}
+        {selectedYear && (
+          <button onClick={() => setShowAddMonth(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            {showAddMonth ? "✕ Cancel" : "+ Add Month"}
+          </button>
+        )}
+      </div>
+
+      {/* Add Year inline form */}
+      {showAddYear && !selectedYear && (
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Year</label>
+            <input type="text" inputMode="numeric" placeholder="e.g. 2025" value={newYear}
+              onChange={e => setNewYear(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <button onClick={addYear} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create Year</button>
+        </div>
+      )}
+
+      {/* ── OVERVIEW: Year folders ── */}
+      {!selectedYear && (
+        <>
+          {yearSummary.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No business data yet. Click "+ Add Year" to create your first year folder.
+            </div>
+          ) : (
+            <>
+              {/* Year-on-year chart */}
+              {yearSummary.length > 1 && (
+                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Year-on-Year Performance</div>
+                  <YoYChart summaries={yearSummary} />
+                </div>
+              )}
+
+              {/* Summary stats */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+                {yearSummary.map(s => (
+                  <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Gross (Total)</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 2 }}>Net (Total)</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#4da6ff" }}>{fmtCur(s.totalNet)}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Year folder grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+                {yearSummary.map(s => (
+                  <div key={s.year}
+                    onClick={() => setSelectedYear(s.year)}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", transition: "box-shadow 0.15s", borderTop: "3px solid #1a6b3c", position: "relative" }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+                  >
+                    <button onClick={ev => { ev.stopPropagation(); deleteYear(s.year); }}
+                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}
+                      title="Delete year">🗑</button>
+                    <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
+                    <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
+                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(s.totalNet)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── YEAR DRILL-DOWN ── */}
+      {selectedYear && (
+        <>
+          {/* Add Month form */}
+          {showAddMonth && (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Month Data</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
+                  <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                    <option value="">Select month</option>
+                    {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹) *</label>
+                  <input type="text" inputMode="decimal" placeholder="e.g. 500000" value={monthForm.grossIncome}
+                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, grossIncome: v })); }}
+                    style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹) *</label>
+                  <input type="text" inputMode="decimal" placeholder="e.g. 300000" value={monthForm.netIncome}
+                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, netIncome: v })); }}
+                    style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>+ Add Month</button>
+            </div>
+          )}
+
+          {yearEntries.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No months added yet for {selectedYear}. Click "+ Add Month" to start.
+            </div>
+          ) : (
+            <>
+              {/* Summary stats for year */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+                {[
+                  { label: "Total Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0)), color: "#1a6b3c" },
+                  { label: "Total Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0)), color: "#4da6ff" },
+                  { label: "Avg Monthly Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0) / yearEntries.length), color: "#f0a020" },
+                  { label: "Avg Monthly Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0) / yearEntries.length), color: "#9b59b6" },
+                ].map(c => (
+                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Chart */}
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
+                <BarChart entries={yearEntries} />
+              </div>
+
+              {/* Monthly data table */}
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15 }}>Monthly Breakdown</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "var(--color-background-secondary)" }}>
+                      {["Month","Gross Income","Net Income","Margin",""].map(h => (
+                        <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yearEntries.map((e, i) => {
+                      const margin = e.grossIncome > 0 ? ((e.netIncome / e.grossIncome) * 100).toFixed(1) : "0.0";
+                      return (
+                        <tr key={e.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
+                          <td style={{ padding: "9px 14px", fontWeight: 500 }}>{e.month}</td>
+                          <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</td>
+                          <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</td>
+                          <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
+                          <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                              <button onClick={() => setEditEntry({ ...e })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️</button>
+                              <button onClick={() => deleteEntry(e.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "#d44" }}>🗑</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
+                      <td style={{ padding: "9px 14px", fontWeight: 600 }}>Total</td>
+                      <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0))}</td>
+                      <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0))}</td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 // ─── Shared Components ────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, icon, danger, pnl, big, accent }) {
   const color = pnl !== undefined ? (pnl >= 0 ? "#1a6b3c" : "#d44") : danger ? "#d44" : "var(--color-text-primary)";
