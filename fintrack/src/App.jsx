@@ -4527,13 +4527,20 @@ function ProjectsPage({ data, update }) {
                 )}
               </div>
             )}
-            {/* ── NOTES TAB — OneNote-style ── */}
+            {/* ── NOTES TAB — OneNote + MindMap ── */}
             {leftTab === "notes" && (() => {
-              function addNote() {
+              function addNote(type = "text") {
                 const note = {
                   id: Date.now(),
-                  title: "Untitled Note",
+                  title: type === "mindmap" ? "New Mind Map" : "Untitled Note",
                   content: "",
+                  type,
+                  mindmap: type === "mindmap" ? {
+                    nodes: [
+                      { id: "root", label: "Central Idea", x: 320, y: 220, isRoot: true, color: "#ede9fe" },
+                    ],
+                    edges: [],
+                  } : null,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   color: "#ffffff",
@@ -4542,7 +4549,6 @@ function ProjectsPage({ data, update }) {
                   ? { ...pr, notes: [...(pr.notes || []), note] }
                   : pr
                 )}));
-                // Auto-select the new note
                 setTimeout(() => setActiveNoteId(note.id), 0);
               }
               function updateNote(noteId, changes) {
@@ -4556,22 +4562,23 @@ function ProjectsPage({ data, update }) {
                   ? { ...pr, notes: (pr.notes || []).filter(n => n.id !== noteId) }
                   : pr
                 )}));
-                if (activeNoteId === noteId) setActiveNoteId(notes.filter(n => n.id !== noteId)[0]?.id || null);
+                if (activeNoteId === noteId) setActiveNoteId(null);
               }
               const activeNote = notes.find(n => n.id === activeNoteId) || null;
               const NOTE_COLORS = ["#ffffff", "#fef9c3", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe", "#fee2e2", "#ffedd5"];
               return (
                 <div style={{ display: "flex", height: 600 }}>
-                  {/* LEFT sidebar — note list */}
+                  {/* LEFT sidebar */}
                   <div style={{ width: 220, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}>
-                    {/* Sidebar header */}
-                    <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
                       <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>
                         {notes.length} note{notes.length !== 1 ? "s" : ""}
                       </span>
-                      <button onClick={addNote} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>+ New</button>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => addNote("text")} title="New text note" style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>+ Note</button>
+                        <button onClick={() => addNote("mindmap")} title="New mind map" style={{ background: "#6d28d9", color: "#fff", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>🧠 Map</button>
+                      </div>
                     </div>
-                    {/* Note list */}
                     <div style={{ flex: 1, overflowY: "auto" }}>
                       {notes.length === 0 ? (
                         <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12 }}>
@@ -4582,22 +4589,11 @@ function ProjectsPage({ data, update }) {
                         notes.map(note => {
                           const isActive = (activeNote && activeNote.id === note.id);
                           return (
-                            <div key={note.id}
-                              onClick={() => setActiveNoteId(note.id)}
-                              style={{
-                                padding: "10px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
-                                background: isActive ? "#e8f5ee" : "transparent",
-                                borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent",
-                                transition: "background 0.1s",
-                              }}>
-                              <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <div key={note.id} onClick={() => setActiveNoteId(note.id)}
+                              style={{ padding: "10px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", background: isActive ? "#e8f5ee" : "transparent", borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent", transition: "background 0.1s", display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontSize: 12, flexShrink: 0 }}>{note.type === "mindmap" ? "🧠" : "📝"}</span>
+                              <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {note.title || "Untitled"}
-                              </div>
-                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {note.content ? note.content.slice(0, 50) : "No content"}
-                              </div>
-                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 3, opacity: 0.7 }}>
-                                {new Date(note.updatedAt || note.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                               </div>
                             </div>
                           );
@@ -4606,46 +4602,47 @@ function ProjectsPage({ data, update }) {
                     </div>
                   </div>
 
-                  {/* RIGHT — Note editor */}
+                  {/* RIGHT — editor or mind map */}
                   {activeNote ? (
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: activeNote.color || "#fff", minWidth: 0 }}>
-                      {/* Note toolbar */}
-                      <div style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.7)", backdropFilter: "blur(4px)" }}>
-                        {/* Color picker */}
-                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                          {NOTE_COLORS.map(c => (
-                            <button key={c} onClick={() => updateNote(activeNote.id, { color: c })}
-                              style={{ width: 14, height: 14, borderRadius: "50%", background: c, border: activeNote.color === c ? "2px solid #1a6b3c" : "1px solid #d1d5db", cursor: "pointer", padding: 0, flexShrink: 0 }} />
-                          ))}
+                    activeNote.type === "mindmap"
+                      ? <MindMapEditor note={activeNote} updateNote={updateNote} deleteNote={deleteNote} onEsc={() => setActiveNoteId(null)} />
+                      : (
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", background: activeNote.color || "#fff", minWidth: 0 }}>
+                          <div style={{ padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.7)" }}>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              {NOTE_COLORS.map(c => (
+                                <button key={c} onClick={() => updateNote(activeNote.id, { color: c })}
+                                  style={{ width: 14, height: 14, borderRadius: "50%", background: c, border: activeNote.color === c ? "2px solid #1a6b3c" : "1px solid #d1d5db", cursor: "pointer", padding: 0, flexShrink: 0 }} />
+                              ))}
+                            </div>
+                            <div style={{ marginLeft: "auto" }}>
+                              <button onClick={() => deleteNote(activeNote.id)} style={{ background: "none", border: "0.5px solid #d4444444", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑 Delete</button>
+                            </div>
+                          </div>
+                          <input
+                            value={activeNote.title || ""}
+                            onChange={e => updateNote(activeNote.id, { title: e.target.value })}
+                            onKeyDown={e => { if (e.key === "Escape") { e.target.blur(); setActiveNoteId(null); } }}
+                            placeholder="Note title…"
+                            style={{ border: "none", outline: "none", background: "transparent", fontSize: 20, fontWeight: 600, padding: "16px 18px 6px", color: "var(--color-text-primary)", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
+                          />
+                          <div style={{ margin: "0 18px", height: "0.5px", background: "var(--color-border-tertiary)" }} />
+                          <textarea
+                            value={activeNote.content || ""}
+                            onChange={e => updateNote(activeNote.id, { content: e.target.value })}
+                            onKeyDown={e => { if (e.key === "Escape") { e.target.blur(); setActiveNoteId(null); } }}
+                            placeholder="Start writing…"
+                            style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14, padding: "12px 18px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.7, boxSizing: "border-box", width: "100%" }}
+                          />
+                          <div style={{ padding: "6px 18px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", background: "rgba(255,255,255,0.5)" }}>
+                            Last edited {new Date(activeNote.updatedAt || activeNote.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                          </div>
                         </div>
-                        <div style={{ marginLeft: "auto" }}>
-                          <button onClick={() => deleteNote(activeNote.id)} style={{ background: "none", border: "0.5px solid #d4444444", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑 Delete</button>
-                        </div>
-                      </div>
-                      {/* Title */}
-                      <input
-                        value={activeNote.title || ""}
-                        onChange={e => updateNote(activeNote.id, { title: e.target.value })}
-                        placeholder="Note title…"
-                        style={{ border: "none", outline: "none", background: "transparent", fontSize: 20, fontWeight: 600, padding: "16px 18px 6px", color: "var(--color-text-primary)", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
-                      />
-                      {/* Divider */}
-                      <div style={{ margin: "0 18px", height: "0.5px", background: "var(--color-border-tertiary)" }} />
-                      {/* Content */}
-                      <textarea
-                        value={activeNote.content || ""}
-                        onChange={e => updateNote(activeNote.id, { content: e.target.value })}
-                        placeholder="Start writing…"
-                        style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 14, padding: "12px 18px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.7, boxSizing: "border-box", width: "100%" }}
-                      />
-                      <div style={{ padding: "6px 18px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", background: "rgba(255,255,255,0.5)" }}>
-                        Last edited {new Date(activeNote.updatedAt || activeNote.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                    </div>
+                      )
                   ) : (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", flexDirection: "column", gap: 10 }}>
                       <div style={{ fontSize: 36 }}>📝</div>
-                      <div style={{ fontSize: 13 }}>Click "+ New" to create your first note</div>
+                      <div style={{ fontSize: 13 }}>Select a note or create one</div>
                     </div>
                   )}
                 </div>
@@ -4898,6 +4895,204 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
           Updated {fmt(note.updatedAt)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Mind Map Editor ─────────────────────────────────────────────────────────
+function MindMapEditor({ note, updateNote, deleteNote, onEsc }) {
+  const canvasRef = useRef(null);
+  const [nodes, setNodes] = useState(() => note.mindmap?.nodes || [{ id: "root", label: "Central Idea", x: 320, y: 220, isRoot: true, color: "#ede9fe" }]);
+  const [edges, setEdges] = useState(() => note.mindmap?.edges || []);
+  const [dragging, setDragging] = useState(null); // { nodeId, offsetX, offsetY }
+  const [selected, setSelected] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [connecting, setConnecting] = useState(null); // nodeId waiting for target
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [panStart, setPanStart] = useState(null);
+
+  const NODE_COLORS = ["#ede9fe", "#dbeafe", "#dcfce7", "#fef9c3", "#fce7f3", "#fee2e2", "#ffedd5", "#f0fdf4"];
+
+  // Persist to note whenever nodes/edges change
+  useEffect(() => {
+    updateNote(note.id, { mindmap: { nodes, edges } });
+  }, [nodes, edges]); // eslint-disable-line
+
+  function addChild(parentId) {
+    const parent = nodes.find(n => n.id === parentId);
+    if (!parent) return;
+    const id = "n" + Date.now();
+    const angle = (Math.random() * 60 - 30) * (Math.PI / 180);
+    const dist = 180;
+    const newNode = {
+      id, label: "New Node",
+      x: parent.x + dist * Math.cos(angle),
+      y: parent.y + dist * Math.sin(angle),
+      color: NODE_COLORS[Math.floor(Math.random() * NODE_COLORS.length)],
+    };
+    setNodes(prev => [...prev, newNode]);
+    setEdges(prev => [...prev, { id: "e" + Date.now(), from: parentId, to: id }]);
+    setSelected(id);
+    setEditingId(id);
+    setEditLabel("New Node");
+  }
+
+  function deleteNode(nodeId) {
+    if (nodeId === "root") return;
+    setNodes(prev => prev.filter(n => n.id !== nodeId));
+    setEdges(prev => prev.filter(e => e.from !== nodeId && e.to !== nodeId));
+    setSelected(null);
+  }
+
+  function startEdit(node) {
+    setEditingId(node.id);
+    setEditLabel(node.label);
+  }
+
+  function commitEdit() {
+    if (!editingId) return;
+    setNodes(prev => prev.map(n => n.id === editingId ? { ...n, label: editLabel } : n));
+    setEditingId(null);
+  }
+
+  function onMouseDown(e, nodeId) {
+    e.stopPropagation();
+    if (connecting) {
+      if (connecting !== nodeId) {
+        setEdges(prev => [...prev, { id: "e" + Date.now(), from: connecting, to: nodeId }]);
+      }
+      setConnecting(null);
+      return;
+    }
+    setSelected(nodeId);
+    const node = nodes.find(n => n.id === nodeId);
+    setDragging({ nodeId, offsetX: e.clientX - node.x, offsetY: e.clientY - node.y });
+  }
+
+  function onCanvasMouseDown(e) {
+    if (connecting) { setConnecting(null); return; }
+    setSelected(null);
+    setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  }
+
+  function onMouseMove(e) {
+    if (dragging) {
+      const x = e.clientX - dragging.offsetX;
+      const y = e.clientY - dragging.offsetY;
+      setNodes(prev => prev.map(n => n.id === dragging.nodeId ? { ...n, x, y } : n));
+    } else if (panStart) {
+      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+    }
+  }
+
+  function onMouseUp() {
+    setDragging(null);
+    setPanStart(null);
+  }
+
+  function changeNodeColor(nodeId, color) {
+    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, color } : n));
+  }
+
+  const selNode = nodes.find(n => n.id === selected);
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f8f8fc", minWidth: 0, position: "relative" }}>
+      {/* Toolbar */}
+      <div style={{ padding: "7px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 8, background: "#fff", flexShrink: 0, flexWrap: "wrap" }}>
+        <input
+          value={note.title || ""}
+          onChange={e => updateNote(note.id, { title: e.target.value })}
+          onKeyDown={e => e.key === "Escape" && onEsc()}
+          placeholder="Map title…"
+          style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", fontFamily: "inherit", width: 160, padding: 0 }}
+        />
+        <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
+        {selected && selNode && (
+          <>
+            <button onClick={() => addChild(selected)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>+ Child</button>
+            <button onClick={() => startEdit(selNode)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>✏️ Edit</button>
+            {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑</button>}
+            <div style={{ display: "flex", gap: 3 }}>
+              {NODE_COLORS.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #1a6b3c" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
+            </div>
+          </>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button onClick={() => setPan({ x: 0, y: 0 })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>Reset View</button>
+          <button onClick={() => deleteNote(note.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑 Delete</button>
+        </div>
+      </div>
+
+      {/* Canvas */}
+      <div
+        ref={canvasRef}
+        onMouseDown={onCanvasMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        style={{ flex: 1, position: "relative", overflow: "hidden", cursor: dragging ? "grabbing" : panStart ? "grabbing" : "default" }}
+      >
+        <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+          <g transform={`translate(${pan.x},${pan.y})`}>
+            {edges.map(edge => {
+              const from = nodes.find(n => n.id === edge.from);
+              const to = nodes.find(n => n.id === edge.to);
+              if (!from || !to) return null;
+              const mx = (from.x + to.x) / 2;
+              const my = (from.y + to.y) / 2;
+              return (
+                <path key={edge.id}
+                  d={`M ${from.x} ${from.y} Q ${mx} ${from.y} ${to.x} ${to.y}`}
+                  stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.7}
+                />
+              );
+            })}
+          </g>
+        </svg>
+
+        <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
+          {nodes.map(node => (
+            <div key={node.id}
+              onMouseDown={e => onMouseDown(e, node.id)}
+              onDoubleClick={() => startEdit(node)}
+              style={{
+                position: "absolute",
+                left: node.x - 60, top: node.y - 18,
+                minWidth: 120, maxWidth: 180,
+                background: node.color || "#ede9fe",
+                border: selected === node.id ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.12)",
+                borderRadius: node.isRoot ? 10 : 8,
+                padding: "5px 12px",
+                cursor: dragging?.nodeId === node.id ? "grabbing" : "grab",
+                userSelect: "none",
+                boxShadow: selected === node.id ? "0 2px 10px rgba(109,40,217,0.18)" : "0 1px 4px rgba(0,0,0,0.08)",
+                transition: "box-shadow 0.1s",
+                zIndex: selected === node.id ? 10 : 1,
+              }}
+            >
+              {editingId === node.id ? (
+                <input
+                  autoFocus
+                  value={editLabel}
+                  onChange={e => setEditLabel(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") commitEdit(); }}
+                  style={{ border: "none", outline: "none", background: "transparent", fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, width: "100%", fontFamily: "inherit", color: "#111" }}
+                />
+              ) : (
+                <span style={{ fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, color: "#111", whiteSpace: "nowrap" }}>{node.label}</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Hint */}
+        <div style={{ position: "absolute", bottom: 10, right: 14, fontSize: 10, color: "var(--color-text-secondary)", pointerEvents: "none" }}>
+          Click node to select • Double-click to edit • Drag to move • "+ Child" to branch
+        </div>
+      </div>
     </div>
   );
 }
