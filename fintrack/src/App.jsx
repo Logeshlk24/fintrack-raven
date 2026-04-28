@@ -64,6 +64,7 @@ const defaultData = {
   goals: [],
   snapshots: [],
   scheduledPayments: [],
+  needsWants: [],
   featureToggles: { fo: true },
 };
 
@@ -192,6 +193,7 @@ export default function App() {
     { id: "overview", label: "Overview", icon: "⊞" },
     { id: "money", label: "Money", icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
+    { id: "goals", label: "Goals", icon: "◎" },
   ];
 
   return (
@@ -296,7 +298,7 @@ export default function App() {
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
-
+        {page === "goals" && <GoalsPage data={data} update={update} />}
         {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} />}
       </main>
     </div>
@@ -2279,6 +2281,7 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
 // ─── Scheduled Payments Tab ──────────────────────────────────────────────────
 function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
+  const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
   const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", tenure: "", notes: "", accountId: "" });
   const [filterType, setFilterType] = useState("all");
   const [view, setView] = useState("list");
@@ -2429,12 +2432,9 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
           <div style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {(form.flowType === "income"
-                ? [["Salary", "#1a6b3c", "#e8f5ee"], ["Freelance", "#2d9e5f", "#e8f5ee"], ["Rent Income", "#4da6ff", "#e8f0ff"], ["Dividend", "#9b59b6", "#f3e8ff"], ["Other", "#888", "#f5f5f5"]]
-                : [["EMI", "#4da6ff", "#e8f0ff"], ["Credit Card", "#f5a623", "#fff3e0"], ["Utility", "#ff4757", "#fdf0f0"], ["Subscription", "#1a6b3c", "#e8f5ee"], ["Rent", "#9b59b6", "#f3e8ff"], ["Insurance", "#888", "#f5f5f5"]]
-              ).map(([t, color, bg]) => (
+              {(form.flowType === "income" ? (categories.income || []) : (categories.expense || [])).map(t => (
                 <button key={t} onClick={() => setForm(p => ({ ...p, type: t }))}
-                  style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.type === t ? color : "var(--color-border-secondary)", background: form.type === t ? bg : "transparent", color: form.type === t ? color : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.type === t ? 600 : 400 }}>
+                  style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.type === t ? "#1a6b3c" : "var(--color-border-secondary)", background: form.type === t ? "#e8f5ee" : "transparent", color: form.type === t ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.type === t ? 600 : 400 }}>
                   {t}
                 </button>
               ))}
@@ -2501,11 +2501,11 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 ))}
               </div>
               {/* Type filter */}
-              <div style={{ display: "flex", gap: 4 }}>
-                {["all", "expense", "income", "EMI", "Credit Card", "Utility", "Subscription", "Salary"].map(t => (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {["all", "expense", "income", ...(categories.expense || []), ...(categories.income || [])].filter((v, i, arr) => arr.indexOf(v) === i).map(t => (
                   <button key={t} onClick={() => setFilterType(t)}
                     style={{ padding: "3px 9px", borderRadius: 6, border: "0.5px solid", borderColor: filterType === t ? "#1a6b3c" : "var(--color-border-secondary)", background: filterType === t ? "#e8f5ee" : "transparent", color: filterType === t ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 11, cursor: "pointer" }}>
-                    {t === "all" ? "All" : t === "Credit Card" ? "CC" : t === "expense" ? "📤 Expense" : t === "income" ? "📥 Income" : t}
+                    {t === "all" ? "All" : t === "expense" ? "📤 Expense" : t === "income" ? "📥 Income" : t}
                   </button>
                 ))}
               </div>
@@ -3075,6 +3075,299 @@ function LiabilitiesTab({ data, update }) {
           <EmptyState msg="No liabilities added yet. Add your first liability above to start tracking auto-payments." />
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Goals Page ───────────────────────────────────────────────────────────────
+function GoalsPage({ data, update }) {
+  const items = data.needsWants || [];
+  const [activeTab, setActiveTab] = useState("needs");
+  const [form, setForm] = useState({ name: "", targetAmount: "", savedAmount: "", notes: "", priority: "medium", icon: "🎯", color: "#1a6b3c" });
+  const [editItem, setEditItem] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const ICONS = ["🎯","🏠","🚗","✈️","💻","📱","🎓","💍","🏖️","🏋️","🎸","📚","🛒","💊","🍽️","🎁","🐾","🔧","💰","🌱"];
+  const COLORS = ["#1a6b3c","#2d9e5f","#4da6ff","#f5a623","#9b59b6","#e74c3c","#e67e22","#16a085","#2980b9","#8e44ad"];
+  const PRIORITIES = [["high","🔴 High"],["medium","🟡 Medium"],["low","🟢 Low"]];
+
+  const needs = items.filter(i => i.kind === "need");
+  const wants = items.filter(i => i.kind === "want");
+  const displayed = activeTab === "needs" ? needs : wants;
+
+  function addItem() {
+    if (!form.name.trim() || !form.targetAmount) return;
+    update(p => ({
+      needsWants: [...(p.needsWants || []), {
+        id: Date.now(),
+        kind: activeTab === "needs" ? "need" : "want",
+        name: form.name.trim(),
+        targetAmount: parseFloat(form.targetAmount),
+        savedAmount: parseFloat(form.savedAmount) || 0,
+        notes: form.notes,
+        priority: form.priority,
+        icon: form.icon,
+        color: form.color,
+        createdAt: today(),
+        completed: false,
+      }]
+    }));
+    setForm({ name: "", targetAmount: "", savedAmount: "", notes: "", priority: "medium", icon: "🎯", color: "#1a6b3c" });
+    setShowAdd(false);
+  }
+
+  function saveEdit() {
+    if (!editItem) return;
+    update(p => ({
+      needsWants: (p.needsWants || []).map(x => x.id === editItem.id ? {
+        ...x,
+        name: editItem.name,
+        targetAmount: parseFloat(editItem.targetAmount),
+        savedAmount: parseFloat(editItem.savedAmount) || 0,
+        notes: editItem.notes,
+        priority: editItem.priority,
+        icon: editItem.icon,
+        color: editItem.color,
+      } : x)
+    }));
+    setEditItem(null);
+  }
+
+  function deleteItem(id) {
+    update(p => ({ needsWants: (p.needsWants || []).filter(x => x.id !== id) }));
+  }
+
+  function toggleComplete(id) {
+    update(p => ({ needsWants: (p.needsWants || []).map(x => x.id === id ? { ...x, completed: !x.completed } : x) }));
+  }
+
+  function addSavings(id, amount) {
+    update(p => ({
+      needsWants: (p.needsWants || []).map(x => x.id === id ? { ...x, savedAmount: Math.min(x.savedAmount + parseFloat(amount), x.targetAmount) } : x)
+    }));
+  }
+
+  const totalNeedsTarget = needs.reduce((s, i) => s + i.targetAmount, 0);
+  const totalNeedsSaved = needs.reduce((s, i) => s + i.savedAmount, 0);
+  const totalWantsTarget = wants.reduce((s, i) => s + i.targetAmount, 0);
+  const totalWantsSaved = wants.reduce((s, i) => s + i.savedAmount, 0);
+
+  const ItemCard = ({ item }) => {
+    const pct = item.targetAmount > 0 ? Math.min((item.savedAmount / item.targetAmount) * 100, 100) : 0;
+    const remaining = item.targetAmount - item.savedAmount;
+    const [addAmt, setAddAmt] = useState("");
+    const [showAddSave, setShowAddSave] = useState(false);
+
+    return (
+      <div style={{
+        background: item.completed ? "var(--color-background-tertiary)" : "var(--color-background-primary)",
+        borderRadius: 14, border: `0.5px solid ${item.completed ? "var(--color-border-tertiary)" : item.color + "44"}`,
+        padding: "1rem 1.1rem", position: "relative", opacity: item.completed ? 0.7 : 1,
+        boxShadow: item.completed ? "none" : `0 2px 12px ${item.color}18`,
+        transition: "all 0.2s",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: item.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+            {item.icon}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
+                {item.name}
+              </span>
+              <span style={{ fontSize: 10, background: item.priority === "high" ? "#fdf0f0" : item.priority === "medium" ? "#fffbe0" : "#e8f5ee", color: item.priority === "high" ? "#d44" : item.priority === "medium" ? "#b8860b" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500 }}>
+                {item.priority === "high" ? "🔴" : item.priority === "medium" ? "🟡" : "🟢"} {item.priority}
+              </span>
+            </div>
+            {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
+          </div>
+          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {item.completed ? "↩" : "✓"}
+            </button>
+            <ThreeDotMenu onEdit={() => setEditItem({ ...item })} onDelete={() => deleteItem(item.id)} />
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
+            <span style={{ color: "var(--color-text-secondary)" }}>Saved: <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{fmtCur(item.savedAmount)}</span></span>
+            <span style={{ color: "var(--color-text-secondary)" }}>Target: <span style={{ fontWeight: 600, color: item.color }}>{fmtCur(item.targetAmount)}</span></span>
+          </div>
+          <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 8, overflow: "hidden" }}>
+            <div style={{ width: pct + "%", height: "100%", background: pct >= 100 ? "#1a6b3c" : item.color, borderRadius: 6, transition: "width 0.5s ease" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, color: "var(--color-text-secondary)" }}>
+            <span>{pct.toFixed(1)}% complete</span>
+            {remaining > 0 && <span>{fmtCur(remaining)} remaining</span>}
+            {remaining <= 0 && <span style={{ color: "#1a6b3c", fontWeight: 500 }}>🎉 Goal reached!</span>}
+          </div>
+        </div>
+
+        {/* Add savings */}
+        {!item.completed && remaining > 0 && (
+          <div>
+            {!showAddSave ? (
+              <button onClick={() => setShowAddSave(true)} style={{ fontSize: 12, color: item.color, background: item.color + "14", border: `0.5px solid ${item.color}44`, borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 }}>
+                + Add Savings
+              </button>
+            ) : (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input type="number" placeholder="Amount" value={addAmt} onChange={e => setAddAmt(e.target.value)} style={{ flex: 1, fontSize: 12, padding: "4px 8px" }} />
+                <button onClick={() => { if (addAmt) { addSavings(item.id, addAmt); setAddAmt(""); setShowAddSave(false); } }} style={{ background: item.color, color: "#fff", border: "none", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Add</button>
+                <button onClick={() => { setShowAddSave(false); setAddAmt(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "4px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const FormFields = ({ values, onChange }) => (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ gridColumn: "span 2" }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name *</label>
+          <input placeholder="e.g. Emergency Fund, New Laptop" value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
+          <input type="number" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => onChange({ ...values, targetAmount: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
+          <input type="number" placeholder="0" value={values.savedAmount} onChange={e => onChange({ ...values, savedAmount: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Priority</label>
+        <div style={{ display: "flex", gap: 6 }}>
+          {PRIORITIES.map(([v, lbl]) => (
+            <button key={v} onClick={() => onChange({ ...values, priority: v })}
+              style={{ flex: 1, padding: "5px 0", borderRadius: 7, border: "0.5px solid", borderColor: values.priority === v ? "#1a6b3c" : "var(--color-border-secondary)", background: values.priority === v ? "#e8f5ee" : "transparent", color: values.priority === v ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: values.priority === v ? 600 : 400 }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Icon</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {ICONS.map(ic => (
+            <button key={ic} onClick={() => onChange({ ...values, icon: ic })}
+              style={{ width: 32, height: 32, borderRadius: 7, border: "0.5px solid", borderColor: values.icon === ic ? "#1a6b3c" : "var(--color-border-secondary)", background: values.icon === ic ? "#e8f5ee" : "transparent", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {ic}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Color</label>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {COLORS.map(c => (
+            <button key={c} onClick={() => onChange({ ...values, color: c })}
+              style={{ width: 26, height: 26, borderRadius: "50%", border: values.color === c ? "2.5px solid #111" : "2px solid transparent", background: c, cursor: "pointer", outline: values.color === c ? "2px solid " + c : "none", outlineOffset: 2 }} />
+          ))}
+        </div>
+      </div>
+      <div>
+        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
+        <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Edit modal */}
+      {editItem && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(500px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Goal</div>
+            <FormFields values={editItem} onChange={setEditItem} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+              <button onClick={() => setEditItem(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEdit} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
+        <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+          {showAdd ? "✕ Cancel" : "+ Add Goal"}
+        </button>
+      </div>
+
+      {/* Summary strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
+          { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
+          { label: "Wants Goals", val: wants.length, sub: `${wants.filter(i => i.completed).length} completed`, color: "#9b59b6" },
+          { label: "Wants Progress", val: fmtCur(totalWantsSaved), sub: `of ${fmtCur(totalWantsTarget)}`, color: "#f5a623" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "320px 1fr" : "1fr", gap: 16, alignItems: "start" }}>
+        {/* Add form */}
+        {showAdd && (
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+            <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Goal</div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
+              <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
+                {[["needs", "🏠 Need", "#4da6ff", "#e8f0ff"], ["wants", "✨ Want", "#9b59b6", "#f3e8ff"]].map(([v, lbl, color, bg]) => (
+                  <button key={v} onClick={() => setActiveTab(v)}
+                    style={{ flex: 1, padding: "7px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: activeTab === v ? 600 : 400, background: activeTab === v ? bg : "transparent", color: activeTab === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <FormFields values={form} onChange={setForm} />
+            <button onClick={addItem} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, width: "100%" }}>+ Add Goal</button>
+          </div>
+        )}
+
+        {/* Goals list */}
+        <div>
+          {/* Tab bar */}
+          <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+            {[["needs","🏠 Needs"], ["wants","✨ Wants"]].map(([v, lbl]) => (
+              <button key={v} onClick={() => setActiveTab(v)} style={{ padding: "8px 20px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: activeTab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: activeTab === v ? 500 : 400, borderBottom: activeTab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
+                {lbl} <span style={{ fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: 4, color: "var(--color-text-secondary)" }}>{activeTab === v ? displayed.length : (v === "needs" ? needs.length : wants.length)}</span>
+              </button>
+            ))}
+          </div>
+
+          {displayed.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>{activeTab === "needs" ? "🏠" : "✨"}</div>
+              No {activeTab} goals yet. Click "+ Add Goal" to create one.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+              {displayed.sort((a, b) => {
+                const pOrder = { high: 0, medium: 1, low: 2 };
+                if (a.completed !== b.completed) return a.completed ? 1 : -1;
+                return pOrder[a.priority] - pOrder[b.priority];
+              }).map(item => <ItemCard key={item.id} item={item} />)}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
