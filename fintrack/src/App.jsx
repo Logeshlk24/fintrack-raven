@@ -4938,6 +4938,10 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   const [pan, setPan]             = useState({ x: 0, y: 0 });
   const [panStart, setPanStart]   = useState(null);
 
+  // ── Note block: draggable position on canvas ─────────────────────────────
+  const [notePos, setNotePos]           = useState(note.notePos || { x: 32, y: 32 });
+  const [noteDragging, setNoteDragging] = useState(null); // { offsetX, offsetY }
+
   const NODE_COLORS = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
 
   // ── Persist ──────────────────────────────────────────────────────────────
@@ -4945,9 +4949,9 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      updateNote(note.id, { title, content, mindmap: { nodes, edges } });
+      updateNote(note.id, { title, content, mindmap: { nodes, edges }, notePos });
     }, 600);
-  }, [title, content, nodes, edges]); // eslint-disable-line
+  }, [title, content, nodes, edges, notePos]); // eslint-disable-line
 
   // ── Helper: get visible nodes (respects collapsed) ───────────────────────
   function getHiddenIds(collapsedSet) {
@@ -5041,7 +5045,9 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   }
   function onMouseMove(e) {
-    if (dragging) {
+    if (noteDragging) {
+      setNotePos({ x: e.clientX - noteDragging.offsetX, y: e.clientY - noteDragging.offsetY });
+    } else if (dragging) {
       const x = e.clientX - dragging.offsetX, y = e.clientY - dragging.offsetY;
       setNodes(p => p.map(n => n.id === dragging.nodeId ? { ...n, x, y } : n));
       setDragging(d => ({ ...d, moved: true }));
@@ -5051,7 +5057,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
   function onMouseUp() {
     if (dragging?.moved) snapshot();
-    setDragging(null); setPanStart(null);
+    setDragging(null); setPanStart(null); setNoteDragging(null);
   }
 
   const selNode   = nodes.find(n => n.id === selected);
@@ -5110,21 +5116,39 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           onMouseLeave={onMouseUp}
           style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
         >
-          {/* ── NOTE TEXT BLOCK — lives on the canvas at top-left ── */}
+          {/* ── NOTE TEXT BLOCK — draggable, lives on canvas ── */}
           <div
-            onMouseDown={e => e.stopPropagation()}
             style={{
               position: "absolute",
-              left: pan.x + 32, top: pan.y + 32,
-              width: 340,
+              left: notePos.x + pan.x,
+              top: notePos.y + pan.y,
+              width: 320,
               zIndex: 5,
+              cursor: noteDragging ? "grabbing" : "default",
             }}
           >
+            {/* Drag handle bar */}
+            <div
+              onMouseDown={e => {
+                e.stopPropagation();
+                setNoteDragging({ offsetX: e.clientX - (notePos.x + pan.x), offsetY: e.clientY - (notePos.y + pan.y) });
+              }}
+              title="Drag to move note"
+              style={{
+                cursor: "grab", height: 18, marginBottom: 6,
+                display: "flex", alignItems: "center", gap: 5,
+                userSelect: "none",
+              }}
+            >
+              <span style={{ fontSize: 11, color: "rgba(109,40,217,0.4)", letterSpacing: 2 }}>⠿</span>
+              <span style={{ fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>drag to move</span>
+            </div>
             {/* Title */}
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
               onKeyDown={e => e.key === "Escape" && onEsc()}
+              onMouseDown={e => e.stopPropagation()}
               placeholder="Untitled Note"
               style={{
                 border: "none", outline: "none", background: "transparent",
@@ -5138,13 +5162,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
                 marginBottom: 10,
               }}
             />
-            {/* Body — auto-grows like OneNote */}
+            {/* Body */}
             <textarea
               value={content}
               onChange={e => setContent(e.target.value)}
               onKeyDown={e => e.key === "Escape" && onEsc()}
-              placeholder="Start writing… your notes live right here on the canvas alongside your mind map."
-              rows={6}
+              onMouseDown={e => e.stopPropagation()}
+              placeholder="Start writing…"
+              rows={4}
               style={{
                 border: "none", outline: "none",
                 background: "transparent",
@@ -5160,8 +5185,8 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
               }}
               onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
             />
-            {/* Subtle timestamp */}
-            <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.45)", fontStyle: "italic" }}>
+            {/* Timestamp */}
+            <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>
               {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
             </div>
           </div>
