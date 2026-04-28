@@ -4051,16 +4051,6 @@ function ProjectsPage({ data, update }) {
             {/* ── TASKS TAB ── */}
             {leftTab === "tasks" && (
               <div>
-                {/* Progress bar */}
-                {todos.length > 0 && (
-                  <div style={{ padding: "8px 14px 6px", background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                    <div style={{ background: "var(--color-border-secondary)", borderRadius: 4, height: 5, overflow: "hidden" }}>
-                      <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#4da6ff", borderRadius: 4, transition: "width 0.4s" }} />
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>{Math.round(doneTodos / todos.length * 100)}% complete · {doneTodos}/{todos.length} done</div>
-                  </div>
-                )}
-
                 {/* Add Task button */}
                 <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                   {!showAddTask ? (
@@ -4100,68 +4090,70 @@ function ProjectsPage({ data, update }) {
                   )}
                 </div>
 
-                {/* Task list */}
-                {todos.length === 0 ? (
+                {/* Deadlines */}
+                {pendingTodos.length === 0 ? (
                   <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
                     No tasks yet. Click "+ Add task…" to get started.
                   </div>
                 ) : (
                   <div>
-                    {/* Pending tasks */}
-                    {pendingTodos.map(t => (
-                      <div key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                        {editTaskId === t.id ? (
-                          <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7, background: "var(--color-background-secondary)" }}>
-                            <input value={editTaskForm.name} onChange={e => setEditTaskForm(f => ({ ...f, name: e.target.value }))} placeholder="Task name" style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }} autoFocus />
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                              <select value={editTaskForm.type} onChange={e => setEditTaskForm(f => ({ ...f, type: e.target.value }))} style={{ width: "100%", fontSize: 12 }}>
-                                {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                              </select>
-                              <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
-                            </div>
-                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                              <button onClick={() => setEditTaskId(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
-                              <button onClick={saveEditTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Save</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px" }}>
-                            <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, marginTop: 2 }} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 3, wordBreak: "break-word" }}>{t.text}</div>
-                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                                {t.taskType && (
-                                  <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)", fontWeight: 500 }}>{t.taskType}</span>
-                                )}
-                                {t.eta && (
-                                  <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>
-                                )}
+                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>DEADLINES</div>
+                    {pendingTodos
+                      .slice()
+                      .sort((a, b) => {
+                        if (!a.eta && !b.eta) return 0;
+                        if (!a.eta) return 1;
+                        if (!b.eta) return -1;
+                        return new Date(a.eta) - new Date(b.eta);
+                      })
+                      .map(t => (
+                        <div key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                          {editTaskId === t.id ? (
+                            <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7, background: "var(--color-background-secondary)" }}>
+                              <input value={editTaskForm.name} onChange={e => setEditTaskForm(f => ({ ...f, name: e.target.value }))} placeholder="Task name" style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }} autoFocus />
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                                <select value={editTaskForm.type} onChange={e => setEditTaskForm(f => ({ ...f, type: e.target.value }))} style={{ width: "100%", fontSize: 12 }}>
+                                  {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                              </div>
+                              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                <button onClick={() => setEditTaskId(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                                <button onClick={saveEditTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Save</button>
                               </div>
                             </div>
-                            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                              <button onClick={() => startEditTask(t)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "2px 4px" }} title="Edit">✏️</button>
-                              <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px" }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 3, wordBreak: "break-word" }}>{t.text}</div>
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                  {t.taskType && <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)", fontWeight: 500 }}>{t.taskType}</span>}
+                                  {t.eta
+                                    ? <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>
+                                    : <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>
+                                  }
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                                <button onClick={() => startEditTask(t)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "2px 4px" }} title="Edit">✏️</button>
+                                <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    {/* Completed tasks */}
+                          )}
+                        </div>
+                      ))
+                    }
                     {completedTodos.length > 0 && (
                       <>
                         <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>COMPLETED</div>
                         {completedTodos.map(t => (
-                          <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.6 }}>
-                            <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10, marginTop: 2 }}>✓</button>
+                          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word" }}>{t.text}</div>
-                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                                {t.taskType && <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text-secondary)" }}>{t.taskType}</span>}
-                                {t.eta && <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>📅 {formatEta(t.eta)}</span>}
-                              </div>
+                              {t.eta && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>📅 {formatEta(t.eta)}</div>}
                             </div>
-                            <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, flexShrink: 0, padding: "2px 4px" }}>✕</button>
+                            <button onClick={() => toggleTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#1a6b3c", opacity: 0.7, padding: "2px 4px" }}>↩</button>
+                            <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
                           </div>
                         ))}
                       </>
