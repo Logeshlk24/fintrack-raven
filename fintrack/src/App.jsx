@@ -4263,13 +4263,13 @@ function ProjectsPage({ data, update }) {
 
       {/* ── PROJECT DETAIL ── */}
       {project && (
-        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
 
           {/* LEFT PANEL — Tabbed: Tasks | Files | Notes */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1" } : {}) }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}) }}>
 
             {/* Tab bar */}
-            <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px" }}>
+            <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px", flexShrink: 0 }}>
               <button style={tabStyle(leftTab === "tasks")} onClick={() => setLeftTab("tasks")}>
                 ✅ Tasks {todos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({doneTodos}/{todos.length})</span>}
               </button>
@@ -4562,7 +4562,7 @@ function ProjectsPage({ data, update }) {
               const activeNote = notes.find(n => n.id === activeNoteId) || null;
               const NOTE_COLORS = ["#ffffff", "#fef9c3", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe", "#fee2e2", "#ffedd5"];
               return (
-                <div style={{ display: "flex", height: 680 }}>
+                <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
                   {/* LEFT sidebar */}
                   <div style={{ width: 200, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}>
                     <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -5105,7 +5105,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
 
         {/* ── LEFT: Note editor ── */}
-        <div style={{ width: "38%", flexShrink: 0, display: "flex", flexDirection: "column", borderRight: "0.5px solid var(--color-border-tertiary)", background: note.color || "#fff" }}>
+        <div style={{ width: "38%", flexShrink: 0, display: "flex", flexDirection: "column", borderRight: "0.5px solid var(--color-border-tertiary)", background: note.color || "#fff", minWidth: 0, overflow: "hidden" }}>
           <input
             value={title}
             onChange={e => setTitle(e.target.value)}
@@ -5119,7 +5119,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
             onChange={e => setContent(e.target.value)}
             onKeyDown={e => e.key === "Escape" && onEsc()}
             placeholder="Start writing…"
-            style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13, padding: "10px 16px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.75, boxSizing: "border-box", width: "100%" }}
+            style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13, padding: "10px 16px", color: "var(--color-text-primary)", resize: "none", fontFamily: "inherit", lineHeight: 1.75, boxSizing: "border-box", width: "100%", overflowX: "auto", overflowY: "auto", minWidth: 0 }}
           />
           <div style={{ padding: "4px 16px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", background: "rgba(255,255,255,0.6)", flexShrink: 0 }}>
             Last edited {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
@@ -5127,13 +5127,15 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         </div>
 
         {/* ── RIGHT: Mind map ── */}
-        <div
-          onMouseDown={onCanvasMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseUp}
-          style={{ flex: 1, position: "relative", overflow: "hidden", background: "#f5f4fe", cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
-        >
+        <div style={{ flex: 1, position: "relative", overflow: "auto", background: "#f5f4fe", minWidth: 0 }}>
+          {/* Scrollable inner canvas — large enough to pan freely */}
+          <div
+            onMouseDown={onCanvasMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
+          >
           {/* SVG edges */}
           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
             <g transform={`translate(${pan.x},${pan.y})`}>
@@ -5239,7 +5241,8 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
             Drag to move · Double-click to rename<br/>
             <span style={{ color: "#a78bfa" }}>+</span> = add child &nbsp;·&nbsp; <span style={{ color: "#6d28d9" }}>●</span> = collapse
           </div>
-        </div>
+          </div>{/* end inner canvas */}
+        </div>{/* end scroll wrapper */}
       </div>
     </div>
   );
