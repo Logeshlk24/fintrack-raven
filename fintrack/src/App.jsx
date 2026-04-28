@@ -3564,54 +3564,110 @@ function BusinessPage({ data, update }) {
 
   // Year-on-year line chart (compact, replaces bar chart)
   function YoYChart({ summaries, height = 90 }) {
+    const [hoveredIdx, setHoveredIdx] = useState(null);
+    const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
     if (!summaries.length) return null;
     const displayed = [...summaries].sort((a, b) => a.year - b.year);
     const maxVal = Math.max(...displayed.map(s => Math.max(s.totalGross, s.totalNet)), 1);
-    const W = 480, pad = 32, chartH = height;
+    const W = 480, pad = 40, chartH = height;
     const n = displayed.length;
     const xStep = n > 1 ? (W - pad * 2) / (n - 1) : 0;
     const yOf = v => chartH - Math.round((v / maxVal) * (chartH - 10)) + 4;
     const pts = (key) => displayed.map((s, i) => `${pad + i * xStep},${yOf(s[key])}`).join(" ");
     const area = (key) => {
       const line = displayed.map((s, i) => `${pad + i * xStep},${yOf(s[key])}`).join(" L ");
-      return `M ${pad + 0 * xStep},${chartH + 4} L ${line} L ${pad + (n - 1) * xStep},${chartH + 4} Z`;
+      return `M ${pad},${chartH + 4} L ${line} L ${pad + (n - 1) * xStep},${chartH + 4} Z`;
     };
+    const hovered = hoveredIdx !== null ? displayed[hoveredIdx] : null;
     return (
-      <svg width="100%" viewBox={`0 0 ${W} ${chartH + 36}`} style={{ display: "block" }}>
-        <defs>
-          <linearGradient id="grossGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#1a6b3c" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#1a6b3c" stopOpacity="0.01" />
-          </linearGradient>
-          <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4da6ff" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#4da6ff" stopOpacity="0.01" />
-          </linearGradient>
-        </defs>
-        {/* Grid lines */}
-        {[0, 0.5, 1].map(frac => (
-          <line key={frac} x1={pad} x2={W - pad} y1={yOf(maxVal * frac)} y2={yOf(maxVal * frac)} stroke="#e5e7eb" strokeWidth={0.5} />
-        ))}
-        {/* Area fills */}
-        <path d={area("totalGross")} fill="url(#grossGrad)" />
-        <path d={area("totalNet")} fill="url(#netGrad)" />
-        {/* Lines */}
-        <polyline points={pts("totalGross")} fill="none" stroke="#1a6b3c" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        <polyline points={pts("totalNet")} fill="none" stroke="#4da6ff" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        {/* Dots + year labels */}
-        {displayed.map((s, i) => (
-          <g key={s.year}>
-            <circle cx={pad + i * xStep} cy={yOf(s.totalGross)} r={3.5} fill="#1a6b3c" />
-            <circle cx={pad + i * xStep} cy={yOf(s.totalNet)} r={3.5} fill="#4da6ff" />
-            <text x={pad + i * xStep} y={chartH + 18} textAnchor="middle" fontSize={9} fill="#6b7280">{s.year}</text>
-          </g>
-        ))}
-        {/* Legend */}
-        <circle cx={pad} cy={chartH + 28} r={4} fill="#1a6b3c" />
-        <text x={pad + 8} y={chartH + 32} fontSize={8} fill="#6b7280">Gross Income</text>
-        <circle cx={pad + 80} cy={chartH + 28} r={4} fill="#4da6ff" />
-        <text x={pad + 88} y={chartH + 32} fontSize={8} fill="#6b7280">Net Income</text>
-      </svg>
+      <div style={{ position: "relative" }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${chartH + 36}`} style={{ display: "block" }}
+          onMouseLeave={() => setHoveredIdx(null)}
+        >
+          <defs>
+            <linearGradient id="grossGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1a6b3c" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#1a6b3c" stopOpacity="0.01" />
+            </linearGradient>
+            <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4da6ff" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#4da6ff" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+          {/* Grid lines */}
+          {[0, 0.5, 1].map(frac => (
+            <line key={frac} x1={pad} x2={W - pad} y1={yOf(maxVal * frac)} y2={yOf(maxVal * frac)} stroke="#e5e7eb" strokeWidth={0.5} />
+          ))}
+          {/* Area fills */}
+          <path d={area("totalGross")} fill="url(#grossGrad)" />
+          <path d={area("totalNet")} fill="url(#netGrad)" />
+          {/* Lines */}
+          <polyline points={pts("totalGross")} fill="none" stroke="#1a6b3c" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={pts("totalNet")} fill="none" stroke="#4da6ff" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {/* Vertical hover line */}
+          {hoveredIdx !== null && (
+            <line
+              x1={pad + hoveredIdx * xStep} x2={pad + hoveredIdx * xStep}
+              y1={4} y2={chartH + 4}
+              stroke="#6b7280" strokeWidth={1} strokeDasharray="3,3"
+            />
+          )}
+          {/* Dots + hover targets + year labels */}
+          {displayed.map((s, i) => (
+            <g key={s.year}>
+              <rect
+                x={pad + i * xStep - (xStep > 0 ? xStep / 2 : 20)} y={0}
+                width={xStep > 0 ? xStep : 40} height={chartH + 4}
+                fill="transparent" style={{ cursor: "crosshair" }}
+                onMouseEnter={(e) => {
+                  setHoveredIdx(i);
+                  setTooltipPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
+                }}
+                onMouseMove={(e) => setTooltipPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
+              />
+              <circle cx={pad + i * xStep} cy={yOf(s.totalGross)} r={hoveredIdx === i ? 5 : 3.5} fill="#1a6b3c" style={{ transition: "r 0.1s" }} />
+              <circle cx={pad + i * xStep} cy={yOf(s.totalNet)} r={hoveredIdx === i ? 5 : 3.5} fill="#4da6ff" style={{ transition: "r 0.1s" }} />
+              <text x={pad + i * xStep} y={chartH + 18} textAnchor="middle" fontSize={9} fill={hoveredIdx === i ? "#111" : "#6b7280"} fontWeight={hoveredIdx === i ? "600" : "400"}>{s.year}</text>
+            </g>
+          ))}
+          {/* Legend */}
+          <circle cx={pad} cy={chartH + 28} r={4} fill="#1a6b3c" />
+          <text x={pad + 8} y={chartH + 32} fontSize={8} fill="#6b7280">Gross Income</text>
+          <circle cx={pad + 90} cy={chartH + 28} r={4} fill="#4da6ff" />
+          <text x={pad + 98} y={chartH + 32} fontSize={8} fill="#6b7280">Net Income</text>
+        </svg>
+        {/* Floating tooltip */}
+        {hovered && (
+          <div style={{
+            position: "absolute",
+            top: Math.max(0, tooltipPos.y - 70),
+            left: tooltipPos.x + 12,
+            background: "var(--color-background-primary)",
+            border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: 8,
+            padding: "7px 12px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            zIndex: 50,
+            pointerEvents: "none",
+            minWidth: 140,
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 5, color: "var(--color-text-primary)" }}>{hovered.year}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Gross:</span>
+              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(hovered.totalGross)}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4da6ff", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Net:</span>
+              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(hovered.totalNet)}</span>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 4, marginTop: 2 }}>
+              Margin: {hovered.totalGross > 0 ? ((hovered.totalNet / hovered.totalGross) * 100).toFixed(1) : 0}% · {hovered.months} month{hovered.months !== 1 ? "s" : ""}
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -3689,29 +3745,9 @@ function BusinessPage({ data, update }) {
             </div>
           ) : (
             <>
-              {/* Year-on-year chart */}
-              {yearSummary.length > 1 && (
-                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-                  <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Year-on-Year Performance</div>
-                  <YoYChart summaries={yearSummary} />
-                </div>
-              )}
-
-              {/* Summary stats */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
-                {yearSummary.map(s => (
-                  <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Gross (Total)</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 2 }}>Net (Total)</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "#4da6ff" }}>{fmtCur(s.totalNet)}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Year folder grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-                {yearSummary.map(s => (
+              {/* Year folder grid — sorted newest first */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+                {[...yearSummary].sort((a, b) => b.year - a.year).map(s => (
                   <div key={s.year}
                     onClick={() => setSelectedYear(s.year)}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", transition: "box-shadow 0.15s", borderTop: "3px solid #1a6b3c", position: "relative" }}
@@ -3731,6 +3767,26 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
+
+              {/* Summary stats */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+                {[...yearSummary].sort((a, b) => b.year - a.year).map(s => (
+                  <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{s.year} — Gross</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 2 }}>Net</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#4da6ff" }}>{fmtCur(s.totalNet)}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Year-on-year chart at bottom */}
+              {yearSummary.length > 1 && (
+                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+                  <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Year-on-Year Performance</div>
+                  <YoYChart summaries={yearSummary} />
+                </div>
+              )}
             </>
           )}
         </>
@@ -3859,13 +3915,13 @@ function ProjectsPage({ data, update }) {
   const [noteContent, setNoteContent] = useState("");
   const [notesSaved, setNotesSaved] = useState(false);
 
-  // Task form state
+  // Task form state — taskTypes is now an array
   const [showAddTask, setShowAddTask] = useState(false);
-  const [taskForm, setTaskForm] = useState({ name: "", type: "Development", eta: "" });
+  const [taskForm, setTaskForm] = useState({ name: "", types: [], eta: "" });
 
   // Edit task state
   const [editTaskId, setEditTaskId] = useState(null);
-  const [editTaskForm, setEditTaskForm] = useState({ name: "", type: "", eta: "" });
+  const [editTaskForm, setEditTaskForm] = useState({ name: "", types: [], eta: "" });
 
   // Day tracking state
   const [newDayEntry, setNewDayEntry] = useState("");
@@ -3907,13 +3963,15 @@ function ProjectsPage({ data, update }) {
     const todo = {
       id: Date.now(),
       text: taskForm.name.trim(),
-      taskType: taskForm.type,
+      taskTypes: taskForm.types.length > 0 ? taskForm.types : [],
+      // keep legacy taskType for backwards compat
+      taskType: taskForm.types.length === 1 ? taskForm.types[0] : (taskForm.types.length > 1 ? taskForm.types.join(", ") : ""),
       eta: taskForm.eta,
       done: false,
       createdAt: new Date().toISOString(),
     };
     update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id ? { ...pr, todos: [...(pr.todos || []), todo] } : pr) }));
-    setTaskForm({ name: "", type: "Development", eta: "" });
+    setTaskForm({ name: "", types: [], eta: "" });
     setShowAddTask(false);
   }
 
@@ -3933,13 +3991,23 @@ function ProjectsPage({ data, update }) {
 
   function startEditTask(t) {
     setEditTaskId(t.id);
-    setEditTaskForm({ name: t.text, type: t.taskType || "Other", eta: t.eta || "" });
+    // Support both old taskType (string) and new taskTypes (array)
+    const types = t.taskTypes && t.taskTypes.length > 0
+      ? t.taskTypes
+      : (t.taskType ? [t.taskType] : []);
+    setEditTaskForm({ name: t.text, types, eta: t.eta || "" });
   }
 
   function saveEditTask() {
     if (!editTaskForm.name.trim()) return;
     update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
-      ? { ...pr, todos: (pr.todos || []).map(t => t.id === editTaskId ? { ...t, text: editTaskForm.name.trim(), taskType: editTaskForm.type, eta: editTaskForm.eta } : t) }
+      ? { ...pr, todos: (pr.todos || []).map(t => t.id === editTaskId ? {
+          ...t,
+          text: editTaskForm.name.trim(),
+          taskTypes: editTaskForm.types,
+          taskType: editTaskForm.types.length === 1 ? editTaskForm.types[0] : (editTaskForm.types.join(", ")),
+          eta: editTaskForm.eta
+        } : t) }
       : pr
     )}));
     setEditTaskId(null);
@@ -4164,25 +4232,33 @@ function ProjectsPage({ data, update }) {
                           placeholder="e.g. Design homepage mockup"
                           value={taskForm.name}
                           onChange={e => setTaskForm(f => ({ ...f, name: e.target.value }))}
-                          onKeyDown={e => e.key === "Enter" && addTask()}
                           style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }}
                           autoFocus
                         />
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Task Type</label>
-                          <select value={taskForm.type} onChange={e => setTaskForm(f => ({ ...f, type: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }}>
-                            {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>ETA (Due Date)</label>
-                          <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 5 }}>
+                          Task Types <span style={{ color: "var(--color-text-secondary)", fontWeight: 400 }}>(select one or more)</span>
+                          {taskForm.types.length > 0 && <span style={{ marginLeft: 6, color: "#1a6b3c", fontWeight: 600 }}>· {taskForm.types.length} selected · {Math.round(100/taskForm.types.length)}% each</span>}
+                        </label>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {TASK_TYPES.map(t => {
+                            const sel = taskForm.types.includes(t);
+                            return (
+                              <button key={t} type="button"
+                                onClick={() => setTaskForm(f => ({ ...f, types: sel ? f.types.filter(x => x !== t) : [...f.types, t] }))}
+                                style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, border: sel ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: sel ? "#e8f5ee" : "transparent", color: sel ? "#1a6b3c" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: sel ? 600 : 400, transition: "all 0.12s" }}
+                              >{t}</button>
+                            );
+                          })}
                         </div>
                       </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>ETA (Due Date)</label>
+                        <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                      </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button onClick={() => { setShowAddTask(false); setTaskForm({ name: "", type: "Development", eta: "" }); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                        <button onClick={() => { setShowAddTask(false); setTaskForm({ name: "", types: [], eta: "" }); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
                         <button onClick={addTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Add Task</button>
                       </div>
                     </div>
@@ -4190,13 +4266,15 @@ function ProjectsPage({ data, update }) {
                 </div>
 
                 {/* Deadlines */}
-                {pendingTodos.length === 0 ? (
+                {todos.length === 0 ? (
                   <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
                     No tasks yet. Click "+ Add task…" to get started.
                   </div>
                 ) : (
                   <div>
-                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>DEADLINES</div>
+                    {pendingTodos.length > 0 && (
+                      <>
+                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>DEADLINES ({pendingTodos.length})</div>
                     {pendingTodos
                       .slice()
                       .sort((a, b) => {
@@ -4210,12 +4288,24 @@ function ProjectsPage({ data, update }) {
                           {editTaskId === t.id ? (
                             <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7, background: "var(--color-background-secondary)" }}>
                               <input value={editTaskForm.name} onChange={e => setEditTaskForm(f => ({ ...f, name: e.target.value }))} placeholder="Task name" style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }} autoFocus />
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                                <select value={editTaskForm.type} onChange={e => setEditTaskForm(f => ({ ...f, type: e.target.value }))} style={{ width: "100%", fontSize: 12 }}>
-                                  {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                              <div>
+                                <label style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>
+                                  Task Types
+                                  {editTaskForm.types.length > 0 && <span style={{ marginLeft: 5, color: "#1a6b3c", fontWeight: 600 }}>· {editTaskForm.types.length} · {Math.round(100/editTaskForm.types.length)}% each</span>}
+                                </label>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                  {TASK_TYPES.map(tt => {
+                                    const sel = editTaskForm.types.includes(tt);
+                                    return (
+                                      <button key={tt} type="button"
+                                        onClick={() => setEditTaskForm(f => ({ ...f, types: sel ? f.types.filter(x => x !== tt) : [...f.types, tt] }))}
+                                        style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, border: sel ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: sel ? "#e8f5ee" : "#fff", color: sel ? "#1a6b3c" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: sel ? 600 : 400 }}
+                                      >{tt}</button>
+                                    );
+                                  })}
+                                </div>
                               </div>
+                              <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                 <button onClick={() => setEditTaskId(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
                                 <button onClick={saveEditTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Save</button>
@@ -4229,10 +4319,37 @@ function ProjectsPage({ data, update }) {
                               >{t.done ? "✓" : ""}</button>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, wordBreak: "break-word" }}>{t.text}</div>
+                                {/* Task types with % breakdown */}
+                                {(() => {
+                                  const types = t.taskTypes && t.taskTypes.length > 0
+                                    ? t.taskTypes
+                                    : (t.taskType ? [t.taskType] : []);
+                                  if (types.length === 0) return null;
+                                  const pctEach = Math.round(100 / types.length);
+                                  return (
+                                    <div style={{ marginBottom: 4 }}>
+                                      {/* Segmented bar */}
+                                      <div style={{ display: "flex", borderRadius: 4, overflow: "hidden", height: 5, marginBottom: 5 }}>
+                                        {types.map((tp, i) => {
+                                          const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                          return <div key={tp} style={{ flex: 1, background: colors[i % colors.length] }} />;
+                                        })}
+                                      </div>
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                        {types.map((tp, i) => {
+                                          const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                          return (
+                                            <span key={tp} style={{ fontSize: 10, padding: "1px 7px", borderRadius: 10, background: colors[i % colors.length] + "18", border: `0.5px solid ${colors[i % colors.length]}44`, color: colors[i % colors.length], fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: colors[i % colors.length], display: "inline-block" }} />
+                                              {tp} · {pctEach}%
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: t.eta ? 6 : 0 }}>
-                                  {t.taskType && (
-                                    <span style={{ fontSize: 10, background: "#e8f5ee", border: "0.5px solid #1a6b3c22", borderRadius: 4, padding: "1px 6px", color: "#1a6b3c", fontWeight: 600 }}>{t.taskType}</span>
-                                  )}
                                   {t.eta
                                     ? <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>
                                     : <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>
@@ -4269,19 +4386,38 @@ function ProjectsPage({ data, update }) {
                         </div>
                       ))
                     }
+                      </>
+                    )}
                     {completedTodos.length > 0 && (
                       <>
-                        <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>COMPLETED</div>
-                        {completedTodos.map(t => (
-                          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word" }}>{t.text}</div>
-                              {t.eta && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>📅 {formatEta(t.eta)}</div>}
+                        <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderTop: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span>✅ COMPLETED ({completedTodos.length})</span>
+                          <span style={{ fontSize: 10, color: "#1a6b3c" }}>↩ to reopen</span>
+                        </div>
+                        {completedTodos.map(t => {
+                          const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+                          return (
+                            <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+                              <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word", marginBottom: 3 }}>{t.text}</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 2 }}>
+                                  {types.map((tp, i) => {
+                                    const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                    return (
+                                      <span key={tp} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, background: colors[i%colors.length]+"14", color: colors[i%colors.length], fontWeight: 600, opacity: 0.7 }}>{tp} · {Math.round(100/types.length)}%</span>
+                                    );
+                                  })}
+                                  {t.eta && <span style={{ fontSize: 9, color: "var(--color-text-secondary)", opacity: 0.7 }}>📅 {formatEta(t.eta)}</span>}
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                                <button onClick={() => toggleTodo(t.id)} style={{ background: "none", border: "0.5px solid #1a6b3c44", borderRadius: 5, cursor: "pointer", fontSize: 10, color: "#1a6b3c", padding: "2px 7px", fontWeight: 500 }} title="Reopen task">↩ Reopen</button>
+                                <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                              </div>
                             </div>
-                            <button onClick={() => toggleTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#1a6b3c", opacity: 0.7, padding: "2px 4px" }}>↩</button>
-                            <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </>
                     )}
                   </div>
