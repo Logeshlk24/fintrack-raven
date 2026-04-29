@@ -5073,46 +5073,52 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
   );
 }
 
-// ─── Merged Note + MindMap Editor — Split view (Note left · Map right) ────────
+// ─── Merged Note + MindMap Editor ─────────────────────────────────────────────
 function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, makeDefaultMindmap }) {
   const MAX_HISTORY = 80;
+  const NODE_COLORS = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
 
-  // ── Text state ───────────────────────────────────────────────────────────
-  const [title, setTitle]     = useState(note.title || "");
-  const [content, setContent] = useState(note.content || "");
+  // ── ALL STATE — declared first, in order, no forward references ──────────
+  const [title, setTitle]               = useState(note.title || "");
+  const [content, setContent]           = useState(note.content || "");
+  const initMM                          = note.mindmap || makeDefaultMindmap();
+  const [nodes, setNodes]               = useState(initMM.nodes);
+  const [edges, setEdges]               = useState(initMM.edges);
+  const [canvasNotes, setCanvasNotes]   = useState(note.canvasNotes || []);
+  const [collapsed, setCollapsed]       = useState(new Set());
+  const [histVer, setHistVer]           = useState(0);
+  const [selected, setSelected]         = useState(null);
+  const [editingId, setEditingId]       = useState(null);
+  const [editLabel, setEditLabel]       = useState("");
+  const [dragging, setDragging]         = useState(null);
+  const [pan, setPan]                   = useState({ x: 0, y: 0 });
+  const [panStart, setPanStart]         = useState(null);
+  const [notePos, setNotePos]           = useState(note.notePos || { x: 32, y: 32 });
+  const [noteDragging, setNoteDragging] = useState(null);
+  const [noteFocused, setNoteFocused]   = useState(false);
 
-  // ── Canvas sticky notes (double-click empty area to create) ─────────────────
-  const initMM = note.mindmap || makeDefaultMindmap();
-  const [nodes, setNodes]     = useState(initMM.nodes);
-  const [edges, setEdges]     = useState(initMM.edges);
+  // ── ALL REFS — declared after state ─────────────────────────────────────
+  const undoStack       = useRef([]);
+  const redoStack       = useRef([]);
+  const nodesRef        = useRef(nodes);
+  const edgesRef        = useRef(edges);
+  const notePosRef      = useRef(notePos);
+  const canvasNotesRef  = useRef(canvasNotes);
+  const saveTimer       = useRef(null);
 
-  // Canvas sticky notes — separate from the main note block
-  const initCanvasNotes = note.canvasNotes || [];
-  const [canvasNotes, setCanvasNotes] = useState(initCanvasNotes);
+  // Keep refs in sync with state
+  useEffect(() => { nodesRef.current = nodes; },            [nodes]);
+  useEffect(() => { edgesRef.current = edges; },            [edges]);
+  useEffect(() => { notePosRef.current = notePos; },        [notePos]);
+  useEffect(() => { canvasNotesRef.current = canvasNotes; },[canvasNotes]);
 
-  // collapsed: Set of node IDs whose children are hidden
-  const [collapsed, setCollapsed] = useState(new Set());
-
-  // ── Undo/Redo — use refs for stacks + a counter to force re-render ──────
-  const undoStack  = useRef([]);
-  const redoStack  = useRef([]);
-  const [histVer, setHistVer] = useState(0); // bumped to trigger re-render
-
-  // Always-fresh refs so keyboard handlers never capture stale state
-  // NOTE: notePos and canvasNotes are declared below — refs init to null, synced via useEffect
-  const nodesRef = useRef(nodes);
-  const edgesRef = useRef(edges);
-  const notePosRef = useRef(null);
-  const canvasNotesRef2 = useRef(null);
-  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
-  useEffect(() => { edgesRef.current = edges; }, [edges]);
-
+  // ── Undo / Redo ──────────────────────────────────────────────────────────
   function snapshot() {
     undoStack.current.push({
-      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-      edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: notePosRef.current ? { ...notePosRef.current } : { x: 32, y: 32 },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current || [])),
+      nodes:       JSON.parse(JSON.stringify(nodesRef.current)),
+      edges:       JSON.parse(JSON.stringify(edgesRef.current)),
+      notePos:     { ...(notePosRef.current || { x: 32, y: 32 }) },
+      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef.current || [])),
     });
     if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
     redoStack.current = [];
@@ -5121,14 +5127,11 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   function undo() {
     if (!undoStack.current.length) return;
     redoStack.current.push({
-      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-      edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: notePosRef.current ? { ...notePosRef.current } : { x: 32, y: 32 },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current || [])),
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      notePos: { ...(notePosRef.current || { x: 32, y: 32 }) }, canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef.current || [])),
     });
     const prev = undoStack.current.pop();
-    setNodes(prev.nodes);
-    setEdges(prev.edges);
+    setNodes(prev.nodes); setEdges(prev.edges);
     if (prev.notePos) setNotePos(prev.notePos);
     if (prev.canvasNotes) setCanvasNotes(prev.canvasNotes);
     setHistVer(v => v + 1);
@@ -5136,14 +5139,11 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   function redo() {
     if (!redoStack.current.length) return;
     undoStack.current.push({
-      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-      edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: notePosRef.current ? { ...notePosRef.current } : { x: 32, y: 32 },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current || [])),
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      notePos: { ...(notePosRef.current || { x: 32, y: 32 }) }, canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef.current || [])),
     });
     const next = redoStack.current.pop();
-    setNodes(next.nodes);
-    setEdges(next.edges);
+    setNodes(next.nodes); setEdges(next.edges);
     if (next.notePos) setNotePos(next.notePos);
     if (next.canvasNotes) setCanvasNotes(next.canvasNotes);
     setHistVer(v => v + 1);
@@ -5161,26 +5161,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     return () => window.removeEventListener("keydown", onKey);
   }, []); // eslint-disable-line
 
-  // ── Interaction state (not undone) ───────────────────────────────────────
-  const [selected, setSelected]   = useState(null);
-  const [editingId, setEditingId] = useState(null);
-  const [editLabel, setEditLabel] = useState("");
-  const [dragging, setDragging]   = useState(null);
-  const [pan, setPan]             = useState({ x: 0, y: 0 });
-  const [panStart, setPanStart]   = useState(null);
-
-  // ── Note block: draggable position on canvas ─────────────────────────────
-  const [notePos, setNotePos]           = useState(note.notePos || { x: 32, y: 32 });
-  const [noteDragging, setNoteDragging] = useState(null); // { offsetX, offsetY }
-
-  // Sync late-declared state into refs so undo/redo always has fresh values
-  useEffect(() => { notePosRef.current = notePos; }, [notePos]);
-  useEffect(() => { canvasNotesRef2.current = canvasNotes; }, [canvasNotes]);
-
-  const NODE_COLORS = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
-
   // ── Persist ──────────────────────────────────────────────────────────────
-  const saveTimer = useRef(null);
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -5326,8 +5307,6 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     if (noteDragging) snapshot(); // snapshot note block position
     setDragging(null); setPanStart(null); setNoteDragging(null);
   }
-
-  const [noteFocused, setNoteFocused] = useState(false);
 
   const selNode   = nodes.find(n => n.id === selected);
   const canUndo   = undoStack.current.length > 0;
