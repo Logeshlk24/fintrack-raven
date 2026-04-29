@@ -5089,8 +5089,6 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   // Canvas sticky notes — separate from the main note block
   const initCanvasNotes = note.canvasNotes || [];
   const [canvasNotes, setCanvasNotes] = useState(initCanvasNotes);
-  const canvasNotesRef = useRef(canvasNotes);
-  useEffect(() => { canvasNotesRef.current = canvasNotes; }, [canvasNotes]);
 
   // collapsed: Set of node IDs whose children are hidden
   const [collapsed, setCollapsed] = useState(new Set());
@@ -5101,21 +5099,20 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   const [histVer, setHistVer] = useState(0); // bumped to trigger re-render
 
   // Always-fresh refs so keyboard handlers never capture stale state
+  // NOTE: notePos and canvasNotes are declared below — refs init to null, synced via useEffect
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
-  const notePosRef = useRef(notePos);
-  const canvasNotesRef2 = useRef(canvasNotes);
+  const notePosRef = useRef(null);
+  const canvasNotesRef2 = useRef(null);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
-  useEffect(() => { notePosRef.current = notePos; }, [notePos]);
-  useEffect(() => { canvasNotesRef2.current = canvasNotes; }, [canvasNotes]);
 
   function snapshot() {
     undoStack.current.push({
       nodes: JSON.parse(JSON.stringify(nodesRef.current)),
       edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: { ...notePosRef.current },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
+      notePos: notePosRef.current ? { ...notePosRef.current } : { x: 32, y: 32 },
+      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current || [])),
     });
     if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
     redoStack.current = [];
@@ -5126,8 +5123,8 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     redoStack.current.push({
       nodes: JSON.parse(JSON.stringify(nodesRef.current)),
       edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: { ...notePosRef.current },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
+      notePos: notePosRef.current ? { ...notePosRef.current } : { x: 32, y: 32 },
+      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current || [])),
     });
     const prev = undoStack.current.pop();
     setNodes(prev.nodes);
@@ -5141,8 +5138,8 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     undoStack.current.push({
       nodes: JSON.parse(JSON.stringify(nodesRef.current)),
       edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: { ...notePosRef.current },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
+      notePos: notePosRef.current ? { ...notePosRef.current } : { x: 32, y: 32 },
+      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current || [])),
     });
     const next = redoStack.current.pop();
     setNodes(next.nodes);
@@ -5175,6 +5172,10 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   // ── Note block: draggable position on canvas ─────────────────────────────
   const [notePos, setNotePos]           = useState(note.notePos || { x: 32, y: 32 });
   const [noteDragging, setNoteDragging] = useState(null); // { offsetX, offsetY }
+
+  // Sync late-declared state into refs so undo/redo always has fresh values
+  useEffect(() => { notePosRef.current = notePos; }, [notePos]);
+  useEffect(() => { canvasNotesRef2.current = canvasNotes; }, [canvasNotes]);
 
   const NODE_COLORS = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
 
