@@ -2348,6 +2348,23 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
   const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", tenure: "", notes: "", accountId: "" });
   const [view, setView] = useState("list");
+  const [editingPayment, setEditingPayment] = useState(null); // holds the payment being edited
+  const [editForm, setEditForm] = useState(null);
+
+  function startEdit(p) {
+    setEditingPayment(p.id);
+    setEditForm({ name: p.name, flowType: p.flowType, type: p.type, amount: String(p.amount), day: String(p.day), startMonth: p.startMonth, freq: p.freq, customEveryN: p.customEveryN || "1", customUnit: p.customUnit || "months", tenure: p.tenure ? String(p.tenure) : "", notes: p.notes || "", accountId: p.accountId || "" });
+  }
+
+  function saveEdit() {
+    if (!editForm.name.trim() || !editForm.amount || !editForm.day) return;
+    update(p => ({ scheduledPayments: (p.scheduledPayments || []).map(x => x.id === editingPayment
+      ? { ...x, ...editForm, amount: parseFloat(editForm.amount), day: parseInt(editForm.day), tenure: editForm.tenure ? parseInt(editForm.tenure) : null }
+      : x
+    )}));
+    setEditingPayment(null);
+    setEditForm(null);
+  }
 
   function addPayment() {
     if (!form.name.trim() || !form.amount || !form.day) return;
@@ -2355,7 +2372,17 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
   }
 
-  function deletePayment(id) { update(p => ({ scheduledPayments: (p.scheduledPayments || []).filter(x => x.id !== id), transactions: (p.transactions || []).filter(t => t.scheduledPaymentId !== id) })); }
+  function deletePayment(id) {
+    const todayKey = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    update(p => ({
+      // Remove the scheduled payment itself
+      scheduledPayments: (p.scheduledPayments || []).filter(x => x.id !== id),
+      // Keep past transactions — only drop future (current month onwards) ones linked to this payment
+      transactions: (p.transactions || []).filter(t =>
+        !(t.scheduledPaymentId === id && t.scheduledPeriodKey && t.scheduledPeriodKey >= todayKey)
+      ),
+    }));
+  }
 
   function togglePaid(id) {
     update(p => {
@@ -2455,6 +2482,80 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
   return (
     <div style={{ marginTop: 16 }}>
+      {/* Edit Payment Modal */}
+      {editingPayment && editForm && (
+        <>
+          <div onClick={() => setEditingPayment(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.32)", zIndex: 200 }} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", zIndex: 201, width: 360, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Edit Scheduled Payment</div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Direction</label>
+              <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)" }}>
+                {[["expense","📤 Expense","#d44","#fdf0f0"],["income","📥 Income","#1a6b3c","#e8f5ee"]].map(([v,lbl,color,bg]) => (
+                  <button key={v} onClick={() => setEditForm(p => ({ ...p, flowType: v }))}
+                    style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: editForm.flowType === v ? 600 : 400, background: editForm.flowType === v ? bg : "transparent", color: editForm.flowType === v ? color : "var(--color-text-secondary)" }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {(editForm.flowType === "income" ? (categories.income || []) : (categories.expense || [])).map(t => (
+                  <button key={t} onClick={() => setEditForm(p => ({ ...p, type: t }))}
+                    style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: editForm.type === t ? "#1a6b3c" : "var(--color-border-secondary)", background: editForm.type === t ? "#e8f5ee" : "transparent", color: editForm.type === t ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: editForm.type === t ? 600 : 400 }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <LabelInput label="Name" placeholder="e.g. HDFC Home Loan" value={editForm.name} onChange={v => setEditForm(p => ({ ...p, name: v }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={editForm.amount} onChange={v => setEditForm(p => ({ ...p, amount: v }))} />
+              <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={editForm.day} onChange={v => setEditForm(p => ({ ...p, day: v }))} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
+              <input type="month" value={editForm.startMonth} onChange={e => setEditForm(p => ({ ...p, startMonth: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Repeat</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {["monthly","quarterly","annually","once","custom"].map(f => (
+                  <button key={f} onClick={() => setEditForm(p => ({ ...p, freq: f }))}
+                    style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: editForm.freq === f ? "#1a6b3c" : "var(--color-border-secondary)", background: editForm.freq === f ? "#e8f5ee" : "transparent", color: editForm.freq === f ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: editForm.freq === f ? 600 : 400, textTransform: "capitalize" }}>
+                    {f === "once" ? "One-time" : f}
+                  </button>
+                ))}
+              </div>
+              {editForm.freq === "custom" && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Every</span>
+                  <input type="number" min="1" value={editForm.customEveryN} onChange={e => setEditForm(p => ({ ...p, customEveryN: e.target.value }))} style={{ width: 60, textAlign: "center" }} />
+                  <select value={editForm.customUnit} onChange={e => setEditForm(p => ({ ...p, customUnit: e.target.value }))} style={{ flex: 1 }}>
+                    <option value="days">Day(s)</option><option value="weeks">Week(s)</option>
+                    <option value="months">Month(s)</option><option value="years">Year(s)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+            <LabelInput label="Tenure (months, optional)" placeholder="e.g. 24 — blank = ongoing" value={editForm.tenure} onChange={v => setEditForm(p => ({ ...p, tenure: v }))} />
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account (optional)</label>
+              <select value={editForm.accountId} onChange={e => setEditForm(p => ({ ...p, accountId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <option value="">— None —</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
+              </select>
+            </div>
+            <LabelInput label="Notes (optional)" placeholder="e.g. Auto-debit from SBI" value={editForm.notes} onChange={v => setEditForm(p => ({ ...p, notes: v }))} />
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button onClick={() => setEditingPayment(null)} style={{ flex: 1, background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEdit} style={{ flex: 2, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Save Changes</button>
+            </div>
+          </div>
+        </>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         <Card title="Add Scheduled Payment">
@@ -2576,6 +2677,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                       <button onClick={() => togglePaid(p.id)} title={isPaid ? "Mark Unpaid (removes transaction)" : "Mark Paid (logs to Expenses/Income)"} style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
+                      <button onClick={() => startEdit(p)} title="Edit payment" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#4da6ff", display: "flex", alignItems: "center", justifyContent: "center" }}>✏️</button>
                       <button onClick={() => deletePayment(p.id)} title="Delete" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#d44", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
                     </div>
                   </div>
@@ -4859,6 +4961,89 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
   );
 }
 
+// ─── Canvas Sticky Note — draggable, editable, deletable ─────────────────────
+function CanvasStickyNote({ note, pan, onUpdate, onDelete }) {
+  const [dragging, setDragging] = useState(null);
+  const COLORS = ["#fef9c3","#dcfce7","#dbeafe","#fce7f3","#ede9fe","#fee2e2","#ffedd5","#f0fdf4"];
+
+  function onMouseDown(e) {
+    if (e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") return;
+    e.stopPropagation();
+    setDragging({ ox: e.clientX - note.x, oy: e.clientY - note.y });
+  }
+  function onMouseMove(e) {
+    if (!dragging) return;
+    onUpdate(note.id, { x: e.clientX - dragging.ox, y: e.clientY - dragging.oy });
+  }
+  function onMouseUp() { setDragging(null); }
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      style={{
+        position: "absolute",
+        left: note.x + pan.x,
+        top: note.y + pan.y,
+        width: note.w || 180,
+        zIndex: 8,
+        cursor: dragging ? "grabbing" : "grab",
+        background: note.color || "#fef9c3",
+        borderRadius: 10,
+        boxShadow: "0 3px 12px rgba(0,0,0,0.13)",
+        border: "1px solid rgba(0,0,0,0.07)",
+        padding: "6px 8px 8px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+        userSelect: "none",
+      }}
+    >
+      {/* Top bar: color picker + delete */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4, marginBottom: 2 }}>
+        <div style={{ display: "flex", gap: 3 }}>
+          {COLORS.map(c => (
+            <button key={c} onMouseDown={e => { e.stopPropagation(); onUpdate(note.id, { color: c }); }}
+              style={{ width: 12, height: 12, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid rgba(0,0,0,0.15)", cursor: "pointer", padding: 0 }} />
+          ))}
+        </div>
+        <button onMouseDown={e => { e.stopPropagation(); onDelete(note.id); }}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#d44", opacity: 0.6, lineHeight: 1, padding: "0 2px" }} title="Delete sticky note">✕</button>
+      </div>
+      <textarea
+        id={"cninput-" + note.id}
+        value={note.text}
+        onChange={e => onUpdate(note.id, { text: e.target.value })}
+        onMouseDown={e => e.stopPropagation()}
+        placeholder="Type a note…"
+        rows={3}
+        style={{
+          background: "transparent", border: "none", outline: "none",
+          resize: "none", fontSize: 12.5, lineHeight: 1.6,
+          color: "#333", fontFamily: "inherit",
+          width: "100%", boxSizing: "border-box",
+          userSelect: "text", cursor: "text",
+        }}
+        onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+      />
+      {/* Resize handle */}
+      <div
+        onMouseDown={e => {
+          e.stopPropagation();
+          const startX = e.clientX, startW = note.w || 180;
+          function move(ev) { onUpdate(note.id, { w: Math.max(120, startW + ev.clientX - startX) }); }
+          function up() { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); }
+          window.addEventListener("mousemove", move);
+          window.addEventListener("mouseup", up);
+        }}
+        style={{ alignSelf: "flex-end", cursor: "ew-resize", fontSize: 10, color: "rgba(0,0,0,0.25)", lineHeight: 1, padding: "0 1px" }}
+        title="Drag to resize">⟺</div>
+    </div>
+  );
+}
+
 // ─── Merged Note + MindMap Editor — Split view (Note left · Map right) ────────
 function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, makeDefaultMindmap }) {
   const MAX_HISTORY = 80;
@@ -4867,10 +5052,16 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   const [title, setTitle]     = useState(note.title || "");
   const [content, setContent] = useState(note.content || "");
 
-  // ── Mind-map state ───────────────────────────────────────────────────────
+  // ── Canvas sticky notes (double-click empty area to create) ─────────────────
   const initMM = note.mindmap || makeDefaultMindmap();
   const [nodes, setNodes]     = useState(initMM.nodes);
   const [edges, setEdges]     = useState(initMM.edges);
+
+  // Canvas sticky notes — separate from the main note block
+  const initCanvasNotes = note.canvasNotes || [];
+  const [canvasNotes, setCanvasNotes] = useState(initCanvasNotes);
+  const canvasNotesRef = useRef(canvasNotes);
+  useEffect(() => { canvasNotesRef.current = canvasNotes; }, [canvasNotes]);
 
   // collapsed: Set of node IDs whose children are hidden
   const [collapsed, setCollapsed] = useState(new Set());
@@ -4944,38 +5135,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
 
   const NODE_COLORS = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
 
-  // ── Sticky notes on canvas ───────────────────────────────────────────────
-  const initStickies = note.mindmap?.stickies || [];
-  const [stickies, setStickies]         = useState(initStickies);
-  const [stickyDrag, setStickyDrag]     = useState(null); // { id, offsetX, offsetY }
-  const [editingSticky, setEditingSticky] = useState(null); // id
-  const stickiesRef = useRef(stickies);
-  useEffect(() => { stickiesRef.current = stickies; }, [stickies]);
-
-  const STICKY_COLORS = ["#fef9c3","#dcfce7","#dbeafe","#fce7f3","#ede9fe","#fee2e2","#ffedd5","#f0fdf4"];
-
-  function addSticky(x, y) {
-    const id = "s" + Date.now();
-    const newSticky = { id, title: "", body: "", x: x - pan.x - 90, y: y - pan.y - 50, color: STICKY_COLORS[Math.floor(Math.random() * STICKY_COLORS.length)] };
-    setStickies(p => [...p, newSticky]);
-    setEditingSticky(id);
-  }
-  function updateSticky(id, changes) {
-    setStickies(p => p.map(s => s.id === id ? { ...s, ...changes } : s));
-  }
-  function deleteSticky(id) {
-    setStickies(p => p.filter(s => s.id !== id));
-    if (editingSticky === id) setEditingSticky(null);
-  }
-
-  // Persist stickies too
+  // ── Persist ──────────────────────────────────────────────────────────────
   const saveTimer = useRef(null);
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      updateNote(note.id, { title, content, mindmap: { nodes, edges, stickies }, notePos });
+      updateNote(note.id, { title, content, mindmap: { nodes, edges }, notePos, canvasNotes });
     }, 600);
-  }, [title, content, nodes, edges, notePos, stickies]); // eslint-disable-line
+  }, [title, content, nodes, edges, notePos, canvasNotes]); // eslint-disable-line
 
   // ── Helper: get visible nodes (respects collapsed) ───────────────────────
   function getHiddenIds(collapsedSet) {
@@ -5057,7 +5224,6 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
 
   // ── Drag / pan ───────────────────────────────────────────────────────────
-  const lastClickTime = useRef(0);
   function onNodeMouseDown(e, nodeId) {
     e.stopPropagation();
     setSelected(nodeId);
@@ -5066,27 +5232,33 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
   function onCanvasMouseDown(e) {
     if (editingId) { commitEdit(); return; }
-    // Double-click on canvas = add sticky note
-    const now = Date.now();
-    if (now - lastClickTime.current < 300) {
-      addSticky(e.clientX, e.clientY);
-      lastClickTime.current = 0;
-      return;
-    }
-    lastClickTime.current = now;
     setSelected(null);
-    setEditingSticky(null);
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   }
+
+  function onCanvasDoubleClick(e) {
+    // Only create if clicking on empty canvas (not a node or note)
+    if (e.target !== e.currentTarget) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left - pan.x;
+    const y = e.clientY - rect.top - pan.y;
+    const newNote = { id: "cn" + Date.now(), text: "", x, y, color: "#fef9c3", w: 180 };
+    setCanvasNotes(prev => [...prev, newNote]);
+    setTimeout(() => {
+      const el = document.getElementById("cninput-" + newNote.id);
+      if (el) el.focus();
+    }, 50);
+  }
+
+  function updateCanvasNote(id, changes) {
+    setCanvasNotes(prev => prev.map(n => n.id === id ? { ...n, ...changes } : n));
+  }
+
+  function deleteCanvasNote(id) {
+    setCanvasNotes(prev => prev.filter(n => n.id !== id));
+  }
   function onMouseMove(e) {
-    if (stickyDrag) {
-      setStickyDrag(d => {
-        const newX = e.clientX - d.offsetX - pan.x;
-        const newY = e.clientY - d.offsetY - pan.y;
-        setStickies(p => p.map(s => s.id === d.id ? { ...s, x: newX, y: newY } : s));
-        return d;
-      });
-    } else if (noteDragging) {
+    if (noteDragging) {
       setNotePos({ x: e.clientX - noteDragging.offsetX, y: e.clientY - noteDragging.offsetY });
     } else if (dragging) {
       const x = e.clientX - dragging.offsetX, y = e.clientY - dragging.offsetY;
@@ -5098,7 +5270,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
   function onMouseUp() {
     if (dragging?.moved) snapshot();
-    setDragging(null); setPanStart(null); setNoteDragging(null); setStickyDrag(null);
+    setDragging(null); setPanStart(null); setNoteDragging(null);
   }
 
   const selNode   = nodes.find(n => n.id === selected);
@@ -5143,7 +5315,6 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         )}
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <button onClick={() => addSticky(400, 300)} title="Add sticky note to canvas" style={{ ...btnBase, background: "#fef9c3", border: "0.5px solid #d97706", color: "#92400e", fontWeight: 500 }}>📌 Add Note</button>
           <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btnBase, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
           <button onClick={() => deleteNote(note.id)} style={{ ...btnBase, color: "#d44", borderColor: "#d44" }}>🗑 Delete</button>
         </div>
@@ -5156,6 +5327,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseUp}
+          onDoubleClick={onCanvasDoubleClick}
           style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
         >
           {/* ── NOTE TEXT BLOCK — draggable, lives on canvas ── */}
@@ -5304,64 +5476,22 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
             })}
           </div>
 
-          {/* ── Sticky notes on canvas ── */}
-          <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)`, pointerEvents: "none" }}>
-            {stickies.map(sticky => (
-              <div
-                key={sticky.id}
-                onMouseDown={e => {
-                  e.stopPropagation();
-                  setEditingSticky(null);
-                  setStickyDrag({ id: sticky.id, offsetX: e.clientX - (sticky.x + pan.x), offsetY: e.clientY - (sticky.y + pan.y) });
-                }}
-                style={{
-                  position: "absolute", left: sticky.x, top: sticky.y,
-                  width: 180, minHeight: 120,
-                  background: sticky.color || "#fef9c3",
-                  borderRadius: 10,
-                  boxShadow: "2px 4px 14px rgba(0,0,0,0.13)",
-                  border: editingSticky === sticky.id ? "2px solid #d97706" : "1.5px solid rgba(0,0,0,0.08)",
-                  display: "flex", flexDirection: "column",
-                  cursor: stickyDrag?.id === sticky.id ? "grabbing" : "grab",
-                  zIndex: editingSticky === sticky.id ? 30 : 15,
-                  pointerEvents: "all",
-                  userSelect: "none",
-                }}>
-                {/* Sticky header bar */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 7px 2px", borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
-                  <div style={{ display: "flex", gap: 3 }}>
-                    {STICKY_COLORS.map(c => (
-                      <div key={c} onMouseDown={e => { e.stopPropagation(); updateSticky(sticky.id, { color: c }); }}
-                        style={{ width: 10, height: 10, borderRadius: "50%", background: c, border: sticky.color === c ? "1.5px solid #555" : "1px solid #ccc", cursor: "pointer" }} />
-                    ))}
-                  </div>
-                  <div onMouseDown={e => { e.stopPropagation(); deleteSticky(sticky.id); }}
-                    style={{ cursor: "pointer", fontSize: 12, color: "#999", lineHeight: 1, padding: "0 2px" }}>✕</div>
-                </div>
-                {/* Title */}
-                <input
-                  value={sticky.title}
-                  onChange={e => updateSticky(sticky.id, { title: e.target.value })}
-                  onMouseDown={e => { e.stopPropagation(); setEditingSticky(sticky.id); }}
-                  placeholder="Title…"
-                  style={{ border: "none", outline: "none", background: "transparent", fontSize: 12, fontWeight: 700, padding: "5px 8px 2px", fontFamily: "inherit", color: "#1a1a2e", width: "100%", boxSizing: "border-box", cursor: "text" }}
-                />
-                {/* Body */}
-                <textarea
-                  value={sticky.body}
-                  onChange={e => updateSticky(sticky.id, { body: e.target.value })}
-                  onMouseDown={e => { e.stopPropagation(); setEditingSticky(sticky.id); }}
-                  placeholder="Write here…"
-                  style={{ border: "none", outline: "none", background: "transparent", fontSize: 11.5, lineHeight: 1.6, padding: "2px 8px 8px", fontFamily: "inherit", color: "#2d2d3a", width: "100%", boxSizing: "border-box", flex: 1, resize: "none", cursor: "text", minHeight: 70 }}
-                />
-              </div>
-            ))}
-          </div>
+          {/* ── Canvas Sticky Notes (double-click blank area to create) ── */}
+          {canvasNotes.map(cn => (
+            <CanvasStickyNote
+              key={cn.id}
+              note={cn}
+              pan={pan}
+              onUpdate={updateCanvasNote}
+              onDelete={deleteCanvasNote}
+            />
+          ))}
 
           {/* Hint */}
           <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "#aaa", pointerEvents: "none", textAlign: "right", lineHeight: 1.5 }}>
-            Drag nodes · Double-click to rename · Double-click canvas = add note<br/>
-            <span style={{ color: "#a78bfa" }}>+</span> = add child &nbsp;·&nbsp; <span style={{ color: "#6d28d9" }}>●</span> = collapse
+            Drag nodes · Double-click node to rename<br/>
+            <span style={{ color: "#a78bfa" }}>+</span> = add child &nbsp;·&nbsp; <span style={{ color: "#6d28d9" }}>●</span> = collapse<br/>
+            <span style={{ color: "#ca8a04" }}>✦</span> Double-click empty space = add sticky note
           </div>
         </div>
       </div>
