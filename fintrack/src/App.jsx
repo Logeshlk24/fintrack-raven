@@ -3560,6 +3560,24 @@ function BusinessPage({ data, update }) {
   const [showAddMonth, setShowAddMonth] = useState(false);
   const [monthForm, setMonthForm] = useState({ month: "", grossIncome: "", netIncome: "" });
   const [editEntry, setEditEntry] = useState(null);
+  const [billPreview, setBillPreview] = useState(null); // { src, month }
+
+  // Upload bill for an entry — stores base64 in businessData
+  function uploadBill(entryId, file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      update(p => ({ businessData: (p.businessData || []).map(e =>
+        e.id === entryId ? { ...e, bill: ev.target.result, billName: file.name } : e
+      )}));
+    };
+    reader.readAsDataURL(file);
+  }
+  function removeBill(entryId) {
+    update(p => ({ businessData: (p.businessData || []).map(e =>
+      e.id === entryId ? { ...e, bill: null, billName: null } : e
+    )}));
+  }
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -4024,7 +4042,7 @@ function BusinessPage({ data, update }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--color-background-secondary)" }}>
-                      {["Month","Gross Income","Net Income","Margin",""].map(h => (
+                      {["Month","Gross Income","Net Income","Margin","Bill",""].map(h => (
                         <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
                       ))}
                     </tr>
@@ -4032,12 +4050,47 @@ function BusinessPage({ data, update }) {
                   <tbody>
                     {yearEntries.map((e, i) => {
                       const margin = e.grossIncome > 0 ? ((e.netIncome / e.grossIncome) * 100).toFixed(1) : "0.0";
+                      const isPdf = e.bill && e.bill.startsWith("data:application/pdf");
                       return (
                         <tr key={e.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
                           <td style={{ padding: "9px 14px", fontWeight: 500 }}>{e.month}</td>
                           <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</td>
                           <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</td>
                           <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
+
+                          {/* ── Bill cell ── */}
+                          <td style={{ padding: "6px 14px" }}>
+                            {e.bill ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                {/* Thumbnail — click to preview */}
+                                <div
+                                  onClick={() => setBillPreview({ src: e.bill, month: e.month, name: e.billName, isPdf })}
+                                  title={`View bill: ${e.billName || e.month}`}
+                                  style={{ width: 32, height: 32, borderRadius: 5, overflow: "hidden", border: "1px solid var(--color-border-secondary)", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: isPdf ? "#fee2e2" : "#f0fdf4" }}>
+                                  {isPdf
+                                    ? <span style={{ fontSize: 16 }}>📄</span>
+                                    : <img src={e.bill} alt="bill" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                  }
+                                </div>
+                                {/* File name truncated */}
+                                <span
+                                  onClick={() => setBillPreview({ src: e.bill, month: e.month, name: e.billName, isPdf })}
+                                  style={{ fontSize: 10, color: "var(--color-text-secondary)", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
+                                  title={e.billName}>{e.billName || "bill"}</span>
+                                {/* Remove bill */}
+                                <button onClick={() => removeBill(e.id)} title="Remove bill"
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 11, padding: 0, lineHeight: 1, flexShrink: 0 }}>✕</button>
+                              </div>
+                            ) : (
+                              <label style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-secondary)", padding: "3px 8px", borderRadius: 5, border: "0.5px dashed var(--color-border-secondary)", background: "transparent" }}
+                                title="Upload bill">
+                                📎 Upload
+                                <input type="file" accept="image/*,application/pdf" style={{ display: "none" }}
+                                  onChange={ev => uploadBill(e.id, ev.target.files[0])} />
+                              </label>
+                            )}
+                          </td>
+
                           <td style={{ padding: "9px 14px", textAlign: "right" }}>
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                               <button onClick={() => setEditEntry({ ...e })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️</button>
@@ -4053,10 +4106,43 @@ function BusinessPage({ data, update }) {
                       <td style={{ padding: "9px 14px", fontWeight: 600 }}>Total</td>
                       <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0))}</td>
                       <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0))}</td>
-                      <td colSpan={2} />
+                      <td colSpan={3} />
                     </tr>
                   </tfoot>
                 </table>
+
+                {/* ── Bill Preview Modal ── */}
+                {billPreview && (
+                  <div
+                    onClick={() => setBillPreview(null)}
+                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+                    <div
+                      onClick={e => e.stopPropagation()}
+                      style={{ background: "#fff", borderRadius: 14, overflow: "hidden", maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
+                      {/* Modal header */}
+                      <div style={{ padding: "12px 18px", borderBottom: "0.5px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f9fafb" }}>
+                        <div>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>{billPreview.month} — Bill</span>
+                          {billPreview.name && <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>{billPreview.name}</span>}
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          {/* Download */}
+                          <a href={billPreview.src} download={billPreview.name || "bill"}
+                            style={{ fontSize: 12, color: "#1a6b3c", textDecoration: "none", padding: "4px 10px", border: "0.5px solid #1a6b3c", borderRadius: 6 }}>⬇ Download</a>
+                          <button onClick={() => setBillPreview(null)}
+                            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#6b7280", lineHeight: 1, padding: "0 4px" }}>✕</button>
+                        </div>
+                      </div>
+                      {/* Content */}
+                      <div style={{ overflow: "auto", flex: 1 }}>
+                        {billPreview.isPdf
+                          ? <iframe src={billPreview.src} style={{ width: "80vw", height: "80vh", border: "none" }} title="Bill PDF" />
+                          : <img src={billPreview.src} alt="Bill" style={{ display: "block", maxWidth: "80vw", maxHeight: "80vh", objectFit: "contain" }} />
+                        }
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -4681,19 +4767,11 @@ function ProjectsPage({ data, update }) {
                       ) : notes.map(note => {
                         const isActive = activeNote && activeNote.id === note.id;
                         return (
-                          <div key={note.id}
-                            onClick={() => setActiveNoteId(note.id)}
-                            style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", background: isActive ? "#e8f5ee" : "transparent", borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent", display: "flex", alignItems: "center", gap: 6 }}>
-                            <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                          <div key={note.id} onClick={() => setActiveNoteId(note.id)}
+                            style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", background: isActive ? "#e8f5ee" : "transparent", borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent" }}>
+                            <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {note.title || "Untitled"}
                             </div>
-                            <button
-                              onClick={e => { e.stopPropagation(); deleteNote(note.id); }}
-                              title="Delete note"
-                              style={{ flexShrink: 0, background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, padding: "0 2px", lineHeight: 1, opacity: 0.5, borderRadius: 4 }}
-                              onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                              onMouseLeave={e => e.currentTarget.style.opacity = 0.5}
-                            >🗑</button>
                           </div>
                         );
                       })}
