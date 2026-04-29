@@ -5407,7 +5407,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           onDoubleClick={onCanvasDoubleClick}
           style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
         >
-          {/* ── NOTE TEXT BLOCK — draggable, transparent unless focused ── */}
+          {/* ── NOTE TEXT BLOCK — fully transparent until clicked ── */}
           <div
             data-nocanvas="1"
             style={{
@@ -5416,88 +5416,99 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
               top: notePos.y + pan.y,
               width: 320,
               zIndex: 5,
-              cursor: noteDragging ? "grabbing" : "default",
-              background: noteFocused ? "rgba(255,255,255,0.92)" : "transparent",
-              borderRadius: noteFocused ? 12 : 0,
-              boxShadow: noteFocused ? "0 4px 20px rgba(109,40,217,0.12)" : "none",
-              padding: noteFocused ? "10px 14px 12px" : "0",
-              border: noteFocused ? "1px solid rgba(109,40,217,0.15)" : "none",
-              transition: "background 0.2s, box-shadow 0.2s, padding 0.15s",
             }}
           >
-            {/* Drag handle — only visible on hover/focus */}
-            <div
-              onMouseDown={e => {
-                e.stopPropagation();
-                snapshot();
-                setNoteDragging({ offsetX: e.clientX - (notePos.x + pan.x), offsetY: e.clientY - (notePos.y + pan.y) });
-              }}
-              title="Drag to move"
-              style={{
-                cursor: "grab", height: 16, marginBottom: 4,
-                display: "flex", alignItems: "center", gap: 5,
-                userSelect: "none",
-                opacity: noteFocused ? 1 : 0,
-                transition: "opacity 0.15s",
-              }}
-            >
-              <span style={{ fontSize: 11, color: "rgba(109,40,217,0.45)", letterSpacing: 2 }}>⠿</span>
-              <span style={{ fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>drag to move</span>
-            </div>
-            {/* Title */}
-            <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              onFocus={() => setNoteFocused(true)}
-              onBlur={() => setNoteFocused(false)}
-              onKeyDown={e => e.key === "Escape" && onEsc()}
-              onMouseDown={e => e.stopPropagation()}
-              placeholder="Untitled Note"
-              style={{
-                border: "none", outline: "none",
-                background: "transparent",
-                fontSize: 22, fontWeight: 700,
-                padding: "0 0 6px 0",
-                color: "#1a1a2e",
-                fontFamily: "inherit", width: "100%",
-                boxSizing: "border-box",
-                display: "block",
-                borderBottom: noteFocused ? "2px solid rgba(109,40,217,0.18)" : "2px solid transparent",
-                marginBottom: 10,
-                transition: "border-bottom 0.15s",
-              }}
-            />
-            {/* Body */}
-            <textarea
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              onFocus={() => setNoteFocused(true)}
-              onBlur={() => setNoteFocused(false)}
-              onKeyDown={e => e.key === "Escape" && onEsc()}
-              onMouseDown={e => e.stopPropagation()}
-              placeholder="Start writing…"
-              rows={4}
-              style={{
-                border: "none", outline: "none",
-                background: "transparent",
-                fontSize: 13.5, lineHeight: 1.85,
-                padding: 0,
-                color: "#2d2d3a",
-                fontFamily: "inherit",
-                width: "100%",
-                boxSizing: "border-box",
-                resize: "none",
-                display: "block",
-                overflow: "hidden",
-              }}
-              onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
-            />
-            {/* Timestamp — only when focused */}
+            {/* Drag handle — only shown when focused */}
             {noteFocused && (
-              <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>
-                {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+              <div
+                onMouseDown={e => {
+                  e.stopPropagation();
+                  snapshot();
+                  setNoteDragging({ offsetX: e.clientX - (notePos.x + pan.x), offsetY: e.clientY - (notePos.y + pan.y) });
+                }}
+                style={{
+                  cursor: noteDragging ? "grabbing" : "grab",
+                  height: 18, marginBottom: 4,
+                  display: "flex", alignItems: "center", gap: 5,
+                  userSelect: "none",
+                }}
+              >
+                <span style={{ fontSize: 11, color: "rgba(109,40,217,0.4)", letterSpacing: 2 }}>⠿</span>
+                <span style={{ fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>drag to move</span>
               </div>
             )}
+
+            {/* Transparent card — border/bg only on focus */}
+            <div style={{
+              background: noteFocused ? "rgba(255,255,255,0.95)" : "transparent",
+              borderRadius: 12,
+              border: noteFocused ? "1px solid rgba(109,40,217,0.15)" : "1px solid transparent",
+              boxShadow: noteFocused ? "0 4px 24px rgba(109,40,217,0.10)" : "none",
+              padding: noteFocused ? "12px 14px 14px" : "0",
+              transition: "all 0.18s ease",
+            }}>
+              {/* Title — plain input, all browser chrome stripped */}
+              <input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                onFocus={() => setNoteFocused(true)}
+                onBlur={() => setNoteFocused(false)}
+                onKeyDown={e => e.key === "Escape" && onEsc()}
+                onMouseDown={e => e.stopPropagation()}
+                placeholder="Untitled Note"
+                style={{
+                  all: "unset",
+                  display: "block",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  fontSize: 22, fontWeight: 700,
+                  color: "#1a1a2e",
+                  fontFamily: "inherit",
+                  paddingBottom: 6,
+                  borderBottom: noteFocused ? "2px solid rgba(109,40,217,0.18)" : "2px solid transparent",
+                  marginBottom: 10,
+                  cursor: "text",
+                  transition: "border-bottom 0.18s",
+                }}
+              />
+              {/* Body textarea */}
+              <textarea
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                onFocus={() => setNoteFocused(true)}
+                onBlur={() => setNoteFocused(false)}
+                onKeyDown={e => e.key === "Escape" && onEsc()}
+                onMouseDown={e => e.stopPropagation()}
+                placeholder="Start writing…"
+                rows={noteFocused ? 4 : 1}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  border: "none",
+                  outline: "none",
+                  background: "transparent",
+                  fontSize: 13.5,
+                  lineHeight: 1.85,
+                  padding: 0,
+                  margin: 0,
+                  color: "#2d2d3a",
+                  fontFamily: "inherit",
+                  resize: "none",
+                  overflow: "hidden",
+                  cursor: "text",
+                  WebkitAppearance: "none",
+                  appearance: "none",
+                }}
+                onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+              />
+              {/* Timestamp — only on focus */}
+              {noteFocused && (
+                <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>
+                  {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ── SVG edges ── */}
