@@ -5175,10 +5175,21 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New node"); }, 0);
   }
   function deleteNode(nodeId) {
-    if (nodeId === "root") return; snap();
+    const isRoot = nodes.find(n => n.id === nodeId)?.isRoot;
+    const rootCount = nodes.filter(n => n.isRoot).length;
+    if (isRoot && rootCount <= 1) return; // keep at least one root
+    snap();
     const del = new Set(), q = [nodeId];
     while (q.length) { const id = q.shift(); del.add(id); edges.filter(e => e.from === id).forEach(e => q.push(e.to)); }
     setNodes(p => p.filter(n => !del.has(n.id))); setEdges(p => p.filter(e => !del.has(e.from) && !del.has(e.to))); setSelected(null);
+  }
+  function addRootNode() {
+    snap();
+    const id = "root_" + Date.now();
+    const maxX = nodes.length ? Math.max(...nodes.map(n => n.x)) : 300;
+    const newRoot = { id, label: "New Idea", x: maxX + 280, y: 280, isRoot: true, color: "#dbeafe" };
+    setNodes(p => [...p, newRoot]);
+    setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New Idea"); }, 0);
   }
   function commitEdit() {
     if (!editingId) return; snap();
@@ -5273,15 +5284,18 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         {/* Node selected actions */}
         {selNode && (<>
           <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
-          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Node:</span>
+          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{selNode.isRoot ? "🌟 Central:" : "Node:"}</span>
           <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btn }}>✏️ Rename</button>
-          {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
+          {(!selNode.isRoot || nodes.filter(n => n.isRoot).length > 1) &&
+            <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑{selNode.isRoot ? " Delete idea" : ""}</button>}
           <div style={{ display: "flex", gap: 3 }}>
             {NC.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
           </div>
         </>)}
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button onClick={addRootNode} title="Add a new central idea to the map"
+            style={{ ...btn, background: "#ede9fe", border: "1.5px solid #6d28d9", color: "#4c1d95", fontWeight: 600 }}>🌟 + Central Idea</button>
           <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btn, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
           <button onClick={() => deleteNote(note.id)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑 Delete note</button>
         </div>
@@ -5328,6 +5342,10 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
                   {/* + child */}
                   <div onMouseDown={e => { e.stopPropagation(); addChild(node.id); }} title="Add child"
                     style={{ position:"absolute", right:-11, top:"50%", transform:"translateY(-50%)", width:20, height:20, borderRadius:"50%", background:"#1a6b3c", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, cursor:"pointer", zIndex:20, boxShadow:"0 1px 4px rgba(0,0,0,0.18)", lineHeight:1 }}>+</div>
+                  {/* Star badge for root nodes */}
+                  {node.isRoot && (
+                    <div style={{ position:"absolute", top:-10, left:"50%", transform:"translateX(-50%)", fontSize:12, lineHeight:1, userSelect:"none", pointerEvents:"none" }}>🌟</div>
+                  )}
                   {hasKids && (
                     <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCol ? `Show ${kidCount}` : "Collapse"}
                       style={{ position:"absolute", bottom:-11, left:"50%", transform:"translateX(-50%)", width:20, height:20, borderRadius:"50%", background: isCol?"#6d28d9":"#e5e7eb", color: isCol?"#fff":"#6b7280", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, cursor:"pointer", zIndex:20, border:"1.5px solid "+(isCol?"#5b21b6":"#d1d5db") }}>
