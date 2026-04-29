@@ -5073,92 +5073,55 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
   );
 }
 
+// ─── Merged Note + MindMap Editor — Split view (Note left · Map right) ────────
 // ─── Merged Note + MindMap Editor ────────────────────────────────────────────
 function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, makeDefaultMindmap }) {
   const MAX_HISTORY = 80;
-  const NODE_COLORS_LIST = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
+  const NC = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
 
-  // ── ALL useState first — no useRef/useEffect before these ────────────────
+  // ── 1. ALL useState ── (must be before any useRef / useEffect) ───────────
   const initMM = note.mindmap || makeDefaultMindmap();
-  const [title, setTitle]               = useState(note.title || "");
-  const [content, setContent]           = useState(note.content || "");
-  const [nodes, setNodes]               = useState(initMM.nodes);
-  const [edges, setEdges]               = useState(initMM.edges);
-  const [canvasNotes, setCanvasNotes]   = useState(note.canvasNotes || []);
-  const [collapsed, setCollapsed]       = useState(new Set());
-  const [histVer, setHistVer]           = useState(0);
-  const [selected, setSelected]         = useState(null);
-  const [editingId, setEditingId]       = useState(null);
-  const [editLabel, setEditLabel]       = useState("");
-  const [dragging, setDragging]         = useState(null);
-  const [pan, setPan]                   = useState({ x: 0, y: 0 });
-  const [panStart, setPanStart]         = useState(null);
-  const [notePos, setNotePos]           = useState(note.notePos || { x: 32, y: 32 });
-  const [noteDragging, setNoteDragging] = useState(null);
-  const [noteFocused, setNoteFocused]   = useState(false);
+  const [title,        setTitle]        = useState(note.title   || "");
+  const [content,      setContent]      = useState(note.content || "");
+  const [nodes,        setNodes]        = useState(initMM.nodes);
+  const [edges,        setEdges]        = useState(initMM.edges);
+  const [mapNotes,     setMapNotes]     = useState(note.mapNotes || []);
+  const [collapsed,    setCollapsed]    = useState(new Set());
+  const [histVer,      setHistVer]      = useState(0);
+  const [selected,     setSelected]     = useState(null);
+  const [editingId,    setEditingId]    = useState(null);
+  const [editLabel,    setEditLabel]    = useState("");
+  const [dragging,     setDragging]     = useState(null);
+  const [pan,          setPan]          = useState({ x: 0, y: 0 });
+  const [panStart,     setPanStart]     = useState(null);
+  const [noteFocused,  setNoteFocused]  = useState(false);
 
-  // ── ALL useRef — after all useState ──────────────────────────────────────
-  const undoStack      = useRef([]);
-  const redoStack      = useRef([]);
-  const nodesRef       = useRef(nodes);
-  const edgesRef       = useRef(edges);
-  const notePosRef     = useRef(notePos);
-  const canvasNotesRef = useRef(canvasNotes);
-  const saveTimer      = useRef(null);
+  // ── 2. ALL useRef ── ──────────────────────────────────────────────────────
+  const undoStack   = useRef([]);
+  const redoStack   = useRef([]);
+  const nodesRef    = useRef(nodes);
+  const edgesRef    = useRef(edges);
+  const mapNotesRef = useRef(mapNotes);
+  const saveTimer   = useRef(null);
 
-  // ── ALL useEffect — after all useState and useRef ─────────────────────────
-  useEffect(() => { nodesRef.current = nodes; },            [nodes]);
-  useEffect(() => { edgesRef.current = edges; },            [edges]);
-  useEffect(() => { notePosRef.current = notePos; },        [notePos]);
-  useEffect(() => { canvasNotesRef.current = canvasNotes; },[canvasNotes]);
+  // ── 3. ALL useEffect ─────────────────────────────────────────────────────
+  useEffect(() => { nodesRef.current    = nodes;    }, [nodes]);
+  useEffect(() => { edgesRef.current    = edges;    }, [edges]);
+  useEffect(() => { mapNotesRef.current = mapNotes; }, [mapNotes]);
 
-  function snapshot() {
-    undoStack.current.push({
-      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-      edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: { ...notePosRef.current },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
-    });
-    if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
-    redoStack.current = [];
-    setHistVer(v => v + 1);
-  }
-  function undo() {
-    if (!undoStack.current.length) return;
-    redoStack.current.push({
-      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-      edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: { ...notePosRef.current },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
-    });
-    const prev = undoStack.current.pop();
-    setNodes(prev.nodes);
-    setEdges(prev.edges);
-    if (prev.notePos) setNotePos(prev.notePos);
-    if (prev.canvasNotes) setCanvasNotes(prev.canvasNotes);
-    setHistVer(v => v + 1);
-  }
-  function redo() {
-    if (!redoStack.current.length) return;
-    undoStack.current.push({
-      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
-      edges: JSON.parse(JSON.stringify(edgesRef.current)),
-      notePos: { ...notePosRef.current },
-      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
-    });
-    const next = redoStack.current.pop();
-    setNodes(next.nodes);
-    setEdges(next.edges);
-    if (next.notePos) setNotePos(next.notePos);
-    if (next.canvasNotes) setCanvasNotes(next.canvasNotes);
-    setHistVer(v => v + 1);
-  }
+  // Auto-save
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      updateNote(note.id, { title, content, mindmap: { nodes, edges }, mapNotes });
+    }, 600);
+  }, [title, content, nodes, edges, mapNotes]); // eslint-disable-line
 
-  // Keyboard Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
+  // Keyboard undo/redo
   useEffect(() => {
     function onKey(e) {
       const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return; // don't steal from text inputs
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
       if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
     }
@@ -5166,349 +5129,184 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     return () => window.removeEventListener("keydown", onKey);
   }, []); // eslint-disable-line
 
-  // ── Persist ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      updateNote(note.id, { title, content, mindmap: { nodes, edges }, notePos, canvasNotes });
-    }, 600);
-  }, [title, content, nodes, edges, notePos, canvasNotes]); // eslint-disable-line
-
-  // ── Helper: get visible nodes (respects collapsed) ───────────────────────
-  function getHiddenIds(collapsedSet) {
-    // BFS: for each collapsed node, mark all descendants as hidden
-    const hidden = new Set();
-    const queue = [];
-    collapsedSet.forEach(id => {
-      edges.filter(e => e.from === id).forEach(e => queue.push(e.to));
+  // ── Undo / Redo ──────────────────────────────────────────────────────────
+  function snap() {
+    undoStack.current.push({
+      nodes:    JSON.parse(JSON.stringify(nodesRef.current)),
+      edges:    JSON.parse(JSON.stringify(edgesRef.current)),
+      mapNotes: JSON.parse(JSON.stringify(mapNotesRef.current)),
     });
-    while (queue.length) {
-      const id = queue.shift();
-      if (hidden.has(id)) continue;
-      hidden.add(id);
-      edges.filter(e => e.from === id).forEach(e => { if (!hidden.has(e.to)) queue.push(e.to); });
-    }
+    if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
+    redoStack.current = [];
+    setHistVer(v => v + 1);
+  }
+  function undo() {
+    if (!undoStack.current.length) return;
+    redoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)), mapNotes: JSON.parse(JSON.stringify(mapNotesRef.current)) });
+    const p = undoStack.current.pop();
+    setNodes(p.nodes); setEdges(p.edges); setMapNotes(p.mapNotes);
+    setHistVer(v => v + 1);
+  }
+  function redo() {
+    if (!redoStack.current.length) return;
+    undoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)), mapNotes: JSON.parse(JSON.stringify(mapNotesRef.current)) });
+    const n = redoStack.current.pop();
+    setNodes(n.nodes); setEdges(n.edges); setMapNotes(n.mapNotes);
+    setHistVer(v => v + 1);
+  }
+
+  // ── Visibility (collapse) ────────────────────────────────────────────────
+  function getHidden(col) {
+    const hidden = new Set(), q = [];
+    col.forEach(id => edges.filter(e => e.from === id).forEach(e => q.push(e.to)));
+    while (q.length) { const id = q.shift(); if (hidden.has(id)) continue; hidden.add(id); edges.filter(e => e.from === id).forEach(e => { if (!hidden.has(e.to)) q.push(e.to); }); }
     return hidden;
   }
-  const hiddenIds = getHiddenIds(collapsed);
-  const visibleNodes = nodes.filter(n => !hiddenIds.has(n.id));
-  const visibleEdges = edges.filter(e => !hiddenIds.has(e.from) && !hiddenIds.has(e.to));
+  const hidden       = getHidden(collapsed);
+  const visibleNodes = nodes.filter(n => !hidden.has(n.id));
+  const visibleEdges = edges.filter(e => !hidden.has(e.from) && !hidden.has(e.to));
 
-  // ── Mind-map actions ─────────────────────────────────────────────────────
+  // ── Map node actions ─────────────────────────────────────────────────────
   function addChild(parentId) {
-    snapshot();
+    snap();
     const parent = nodes.find(n => n.id === parentId);
     if (!parent) return;
-    const existingAngles = edges
-      .filter(e => e.from === parentId)
+    const angles = edges.filter(e => e.from === parentId)
       .map(e => { const c = nodes.find(n => n.id === e.to); return c ? Math.atan2(c.y - parent.y, c.x - parent.x) : null; })
       .filter(a => a !== null);
-    const baseAngle = existingAngles.length ? Math.max(...existingAngles) + 0.6 : 0;
-    const dist = 180;
+    const angle = angles.length ? Math.max(...angles) + 0.6 : 0;
     const id = "n" + Date.now();
-    const newNode = {
-      id, label: "New node",
-      x: parent.x + dist * Math.cos(baseAngle),
-      y: parent.y + dist * Math.sin(baseAngle),
-      color: NODE_COLORS_LIST[nodes.length % NODE_COLORS_LIST.length],
-    };
-    // Auto-expand parent if collapsed
     setCollapsed(s => { const ns = new Set(s); ns.delete(parentId); return ns; });
-    setNodes(p => [...p, newNode]);
+    setNodes(p => [...p, { id, label: "New node", x: parent.x + 180 * Math.cos(angle), y: parent.y + 180 * Math.sin(angle), color: NC[nodes.length % NC.length] }]);
     setEdges(p => [...p, { id: "e" + Date.now(), from: parentId, to: id }]);
     setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New node"); }, 0);
   }
   function deleteNode(nodeId) {
     if (nodeId === "root") return;
-    snapshot();
-    // Collect full subtree to delete
-    const toDelete = new Set();
-    const queue = [nodeId];
-    while (queue.length) {
-      const id = queue.shift();
-      toDelete.add(id);
-      edges.filter(e => e.from === id).forEach(e => queue.push(e.to));
-    }
-    setNodes(p => p.filter(n => !toDelete.has(n.id)));
-    setEdges(p => p.filter(e => !toDelete.has(e.from) && !toDelete.has(e.to)));
+    snap();
+    const del = new Set(), q = [nodeId];
+    while (q.length) { const id = q.shift(); del.add(id); edges.filter(e => e.from === id).forEach(e => q.push(e.to)); }
+    setNodes(p => p.filter(n => !del.has(n.id)));
+    setEdges(p => p.filter(e => !del.has(e.from) && !del.has(e.to)));
     setSelected(null);
   }
   function commitEdit() {
     if (!editingId) return;
-    snapshot();
+    snap();
     setNodes(p => p.map(n => n.id === editingId ? { ...n, label: editLabel } : n));
     setEditingId(null);
   }
-  function changeColor(nodeId, color) {
-    snapshot();
-    setNodes(p => p.map(n => n.id === nodeId ? { ...n, color } : n));
-  }
+  function changeColor(nodeId, color) { snap(); setNodes(p => p.map(n => n.id === nodeId ? { ...n, color } : n)); }
   function toggleCollapse(nodeId) {
-    const hasChildren = edges.some(e => e.from === nodeId);
-    if (!hasChildren) return;
-    setCollapsed(s => {
-      const ns = new Set(s);
-      ns.has(nodeId) ? ns.delete(nodeId) : ns.add(nodeId);
-      return ns;
-    });
+    if (!edges.some(e => e.from === nodeId)) return;
+    setCollapsed(s => { const ns = new Set(s); ns.has(nodeId) ? ns.delete(nodeId) : ns.add(nodeId); return ns; });
   }
 
-  // ── Drag / pan ───────────────────────────────────────────────────────────
+  // ── Map sticky note actions ───────────────────────────────────────────────
+  const SNCOLORS = ["#fef9c3","#dcfce7","#dbeafe","#fce7f3","#ede9fe","#fee2e2","#ffedd5"];
+  function addMapNote(x, y) {
+    snap();
+    const id = "mn" + Date.now();
+    setMapNotes(p => [...p, { id, x, y, text: "", color: SNCOLORS[p.length % SNCOLORS.length], w: 180 }]);
+    return id;
+  }
+  function updateMapNote(id, changes) { setMapNotes(p => p.map(n => n.id === id ? { ...n, ...changes } : n)); }
+  function deleteMapNote(id) { snap(); setMapNotes(p => p.filter(n => n.id !== id)); }
+
+  // ── Drag / Pan ───────────────────────────────────────────────────────────
   function onNodeMouseDown(e, nodeId) {
     e.stopPropagation();
     setSelected(nodeId);
     const node = nodes.find(n => n.id === nodeId);
-    setDragging({ nodeId, offsetX: e.clientX - node.x, offsetY: e.clientY - node.y, moved: false });
+    setDragging({ type: "node", nodeId, offsetX: e.clientX - node.x, offsetY: e.clientY - node.y, moved: false });
+  }
+  function onMapNoteMouseDown(e, mnId) {
+    e.stopPropagation();
+    const mn = mapNotes.find(n => n.id === mnId);
+    if (!mn) return;
+    setDragging({ type: "mapnote", id: mnId, offsetX: e.clientX - mn.x - pan.x, offsetY: e.clientY - mn.y - pan.y });
   }
   function onCanvasMouseDown(e) {
     if (editingId) { commitEdit(); return; }
     setSelected(null);
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   }
-
-  function onCanvasDoubleClick(e) {
-    // Block if double-clicking on a mind-map node, sticky note, or the main note block
-    const blocked = ["BUTTON","INPUT","TEXTAREA","SELECT"];
-    if (blocked.includes(e.target.tagName)) return;
-    // Walk up — if any ancestor has data-nocanvas, it's a node/note widget → ignore
+  function onCanvasDblClick(e) {
     let el = e.target;
-    while (el && el !== e.currentTarget) {
-      if (el.dataset && el.dataset.nocanvas) return;
-      el = el.parentElement;
-    }
+    while (el && el !== e.currentTarget) { if (el.dataset?.nocanvas) return; el = el.parentElement; }
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left - pan.x;
     const y = e.clientY - rect.top - pan.y;
-    const id = "cn" + Date.now();
-    const newNote = { id, text: "", x, y, color: "#fef9c3", w: 200 };
-    setCanvasNotes(prev => [...prev, newNote]);
-    setTimeout(() => {
-      const el = document.getElementById("cninput-" + id);
-      if (el) el.focus();
-    }, 40);
-  }
-
-  function updateCanvasNote(id, changes) {
-    setCanvasNotes(prev => prev.map(n => n.id === id ? { ...n, ...changes } : n));
-  }
-
-  function deleteCanvasNote(id) {
-    snapshot();
-    setCanvasNotes(prev => prev.filter(n => n.id !== id));
+    const id = addMapNote(x, y);
+    setTimeout(() => { const el = document.getElementById("mn-" + id); if (el) el.focus(); }, 40);
   }
   function onMouseMove(e) {
-    if (noteDragging) {
-      setNotePos({ x: e.clientX - noteDragging.offsetX, y: e.clientY - noteDragging.offsetY });
-    } else if (dragging) {
-      const x = e.clientX - dragging.offsetX, y = e.clientY - dragging.offsetY;
-      setNodes(p => p.map(n => n.id === dragging.nodeId ? { ...n, x, y } : n));
+    if (dragging?.type === "node") {
+      setNodes(p => p.map(n => n.id === dragging.nodeId ? { ...n, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY } : n));
       setDragging(d => ({ ...d, moved: true }));
+    } else if (dragging?.type === "mapnote") {
+      setMapNotes(p => p.map(n => n.id === dragging.id ? { ...n, x: e.clientX - dragging.offsetX - pan.x, y: e.clientY - dragging.offsetY - pan.y } : n));
     } else if (panStart) {
       setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
     }
   }
   function onMouseUp() {
-    if (dragging?.moved) snapshot();
-    if (noteDragging) snapshot(); // snapshot note block position
-    setDragging(null); setPanStart(null); setNoteDragging(null);
+    if (dragging?.moved) snap();
+    setDragging(null); setPanStart(null);
   }
 
-  const selNode   = nodes.find(n => n.id === selected);
-  const canUndo   = undoStack.current.length > 0;
-  const canRedo   = redoStack.current.length > 0;
-  const btnBase   = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
-
-  function addCanvasNote() {
-    // Place in center of current view
-    const id = "cn" + Date.now();
-    const x = 300 - pan.x + Math.random() * 80;
-    const y = 200 - pan.y + Math.random() * 80;
-    const newNote = { id, text: "", x, y, color: "#fef9c3", w: 200 };
-    snapshot();
-    setCanvasNotes(prev => [...prev, newNote]);
-    setTimeout(() => {
-      const el = document.getElementById("cninput-" + id);
-      if (el) el.focus();
-    }, 40);
-  }
+  const selNode  = nodes.find(n => n.id === selected);
+  const canUndo  = undoStack.current.length > 0;
+  const canRedo  = redoStack.current.length > 0;
+  const btn      = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
 
-      {/* ── Shared toolbar ── */}
-      <div style={{ padding: "6px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.96)", flexShrink: 0, flexWrap: "wrap" }}>
-
-        {/* Undo / Redo */}
-        <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"
-          style={{ ...btnBase, opacity: canUndo ? 1 : 0.3, color: "var(--color-text-primary)" }}>↩ Undo</button>
-        <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"
-          style={{ ...btnBase, opacity: canRedo ? 1 : 0.3, color: "var(--color-text-primary)" }}>↪ Redo</button>
-
-        <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
-
-        {/* Add sticky note button */}
-        <button onClick={addCanvasNote} title="Add a sticky note anywhere on canvas"
-          style={{ ...btnBase, background: "#fef9c3", border: "1px solid #d97706", color: "#92400e", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-          📝 + Note
-        </button>
-
-        <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
-
-        {/* Note bg color */}
+      {/* ── Toolbar ── */}
+      <div style={{ padding: "6px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.97)", flexShrink: 0, flexWrap: "wrap" }}>
+        <button onClick={undo} disabled={!canUndo} title="Undo Ctrl+Z" style={{ ...btn, opacity: canUndo ? 1 : 0.3 }}>↩ Undo</button>
+        <button onClick={redo} disabled={!canRedo} title="Redo Ctrl+Y" style={{ ...btn, opacity: canRedo ? 1 : 0.3 }}>↪ Redo</button>
+        <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+        {/* Note bg colors */}
         {NOTE_COLORS.map(c => (
           <button key={c} onClick={() => updateNote(note.id, { color: c })}
             style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />
         ))}
-
-        {/* Map node actions — only when a node is selected */}
-        {selNode && (
-          <>
-            <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
-            <span style={{ fontSize: 10, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Selected:</span>
-            <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btnBase }}>✏️ Rename</button>
-            {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btnBase, color: "#d44", borderColor: "#d44" }}>🗑</button>}
-            <div style={{ display: "flex", gap: 3 }}>
-              {NODE_COLORS.map(c => (
-                <button key={c} onClick={() => changeColor(selected, c)}
-                  style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />
-              ))}
-            </div>
-          </>
-        )}
-
+        {/* Node selected actions */}
+        {selNode && (<>
+          <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Node:</span>
+          <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btn }}>✏️ Rename</button>
+          {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
+          <div style={{ display: "flex", gap: 3 }}>
+            {NC.map(c => <button key={c} onClick={() => changeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
+          </div>
+        </>)}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btnBase, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
-          <button onClick={() => deleteNote(note.id)} style={{ ...btnBase, color: "#d44", borderColor: "#d44" }}>🗑 Delete</button>
+          <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btn, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
+          <button onClick={() => deleteNote(note.id)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑 Delete note</button>
         </div>
       </div>
 
-      {/* ── ONE INFINITE CANVAS — note text + mind map nodes live together ── */}
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", background: note.color || "#f5f4fe", position: "relative" }}>
+      {/* ── Canvas ── */}
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
         <div
           onMouseDown={onCanvasMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseUp}
-          onDoubleClick={onCanvasDoubleClick}
-          style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
+          onDoubleClick={onCanvasDblClick}
+          style={{ position: "relative", width: 2800, height: 2000, background: note.color || "#f0eff8", cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
         >
-          {/* ── NOTE TEXT BLOCK — fully transparent until clicked ── */}
-          <div
-            data-nocanvas="1"
-            style={{
-              position: "absolute",
-              left: notePos.x + pan.x,
-              top: notePos.y + pan.y,
-              width: 320,
-              zIndex: 5,
-            }}
-          >
-            {/* Drag handle — only shown when focused */}
-            {noteFocused && (
-              <div
-                onMouseDown={e => {
-                  e.stopPropagation();
-                  snapshot();
-                  setNoteDragging({ offsetX: e.clientX - (notePos.x + pan.x), offsetY: e.clientY - (notePos.y + pan.y) });
-                }}
-                style={{
-                  cursor: noteDragging ? "grabbing" : "grab",
-                  height: 18, marginBottom: 4,
-                  display: "flex", alignItems: "center", gap: 5,
-                  userSelect: "none",
-                }}
-              >
-                <span style={{ fontSize: 11, color: "rgba(109,40,217,0.4)", letterSpacing: 2 }}>⠿</span>
-                <span style={{ fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>drag to move</span>
-              </div>
-            )}
-
-            {/* Transparent card — border/bg only on focus */}
-            <div style={{
-              background: noteFocused ? "rgba(255,255,255,0.95)" : "transparent",
-              borderRadius: 12,
-              border: noteFocused ? "1px solid rgba(109,40,217,0.15)" : "1px solid transparent",
-              boxShadow: noteFocused ? "0 4px 24px rgba(109,40,217,0.10)" : "none",
-              padding: noteFocused ? "12px 14px 14px" : "0",
-              transition: "all 0.18s ease",
-            }}>
-              {/* Title — plain input, all browser chrome stripped */}
-              <input
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                onFocus={() => setNoteFocused(true)}
-                onBlur={() => setNoteFocused(false)}
-                onKeyDown={e => e.key === "Escape" && onEsc()}
-                onMouseDown={e => e.stopPropagation()}
-                placeholder="Untitled Note"
-                style={{
-                  all: "unset",
-                  display: "block",
-                  width: "100%",
-                  boxSizing: "border-box",
-                  fontSize: 22, fontWeight: 700,
-                  color: "#1a1a2e",
-                  fontFamily: "inherit",
-                  paddingBottom: 6,
-                  borderBottom: noteFocused ? "2px solid rgba(109,40,217,0.18)" : "2px solid transparent",
-                  marginBottom: 10,
-                  cursor: "text",
-                  transition: "border-bottom 0.18s",
-                }}
-              />
-              {/* Body textarea */}
-              <textarea
-                value={content}
-                onChange={e => setContent(e.target.value)}
-                onFocus={() => setNoteFocused(true)}
-                onBlur={() => setNoteFocused(false)}
-                onKeyDown={e => e.key === "Escape" && onEsc()}
-                onMouseDown={e => e.stopPropagation()}
-                placeholder="Start writing…"
-                rows={noteFocused ? 4 : 1}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "none",
-                  outline: "none",
-                  background: "transparent",
-                  fontSize: 13.5,
-                  lineHeight: 1.85,
-                  padding: 0,
-                  margin: 0,
-                  color: "#2d2d3a",
-                  fontFamily: "inherit",
-                  resize: "none",
-                  overflow: "hidden",
-                  cursor: "text",
-                  WebkitAppearance: "none",
-                  appearance: "none",
-                }}
-                onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
-              />
-              {/* Timestamp — only on focus */}
-              {noteFocused && (
-                <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>
-                  {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* ── SVG edges ── */}
           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
             <g transform={`translate(${pan.x},${pan.y})`}>
               {visibleEdges.map(edge => {
-                const f = nodes.find(n => n.id === edge.from);
-                const t = nodes.find(n => n.id === edge.to);
+                const f = nodes.find(n => n.id === edge.from), t = nodes.find(n => n.id === edge.to);
                 if (!f || !t) return null;
                 const mx = (f.x + t.x) / 2;
-                return (
-                  <path key={edge.id}
-                    d={`M ${f.x} ${f.y} C ${mx} ${f.y} ${mx} ${t.y} ${t.x} ${t.y}`}
-                    stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.6} />
-                );
+                return <path key={edge.id} d={`M ${f.x} ${f.y} C ${mx} ${f.y} ${mx} ${t.y} ${t.x} ${t.y}`} stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.6} />;
               })}
             </g>
           </svg>
@@ -5517,49 +5315,28 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           <div data-nocanvas="1" style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
             {visibleNodes.map(node => {
               const isSel = selected === node.id;
-              const hasChildren = edges.some(e => e.from === node.id);
-              const isCollapsed = collapsed.has(node.id);
-              const childCount = edges.filter(e => e.from === node.id).length;
-              const NODE_W = 130, NODE_H = 36;
+              const hasKids = edges.some(e => e.from === node.id);
+              const isCol = collapsed.has(node.id);
+              const kidCount = edges.filter(e => e.from === node.id).length;
+              const NW = 130, NH = 36;
               return (
-                <div key={node.id} style={{ position: "absolute", left: node.x - NODE_W / 2, top: node.y - NODE_H / 2 }}>
-                  <div
-                    onMouseDown={e => onNodeMouseDown(e, node.id)}
+                <div key={node.id} style={{ position: "absolute", left: node.x - NW/2, top: node.y - NH/2 }}>
+                  <div onMouseDown={e => onNodeMouseDown(e, node.id)}
                     onDoubleClick={() => { setEditingId(node.id); setEditLabel(node.label); }}
-                    style={{
-                      width: NODE_W, minHeight: NODE_H,
-                      background: node.color || "#ede9fe",
-                      border: isSel ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.1)",
-                      borderRadius: node.isRoot ? 14 : 9,
-                      padding: "5px 12px",
-                      cursor: dragging?.nodeId === node.id ? "grabbing" : "grab",
-                      userSelect: "none", zIndex: isSel ? 10 : 2,
-                      boxShadow: isSel ? "0 3px 14px rgba(109,40,217,0.22)" : "0 1px 5px rgba(0,0,0,0.08)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      position: "relative",
-                    }}>
-                    {editingId === node.id ? (
-                      <input autoFocus value={editLabel}
-                        onChange={e => setEditLabel(e.target.value)}
-                        onBlur={commitEdit}
-                        onKeyDown={e => (e.key === "Enter" || e.key === "Escape") && commitEdit()}
-                        onMouseDown={e => e.stopPropagation()}
-                        style={{ border: "none", outline: "none", background: "transparent", fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, width: "100%", fontFamily: "inherit", color: "#111", textAlign: "center" }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: node.isRoot ? 13 : 12, fontWeight: node.isRoot ? 700 : 500, color: "#111", wordBreak: "break-word", textAlign: "center", lineHeight: 1.35 }}>
-                        {node.label}
-                      </span>
-                    )}
+                    style={{ width: NW, minHeight: NH, background: node.color || "#ede9fe", border: isSel ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.1)", borderRadius: node.isRoot ? 14 : 9, padding: "5px 12px", cursor: dragging?.nodeId === node.id ? "grabbing" : "grab", userSelect: "none", zIndex: isSel ? 10 : 2, boxShadow: isSel ? "0 3px 14px rgba(109,40,217,0.22)" : "0 1px 5px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                    {editingId === node.id
+                      ? <input autoFocus value={editLabel} onChange={e => setEditLabel(e.target.value)} onBlur={commitEdit} onKeyDown={e => (e.key==="Enter"||e.key==="Escape") && commitEdit()} onMouseDown={e => e.stopPropagation()} style={{ border:"none", outline:"none", background:"transparent", fontSize: node.isRoot?13:12, fontWeight: node.isRoot?700:500, width:"100%", fontFamily:"inherit", color:"#111", textAlign:"center" }} />
+                      : <span style={{ fontSize: node.isRoot?13:12, fontWeight: node.isRoot?700:500, color:"#111", wordBreak:"break-word", textAlign:"center", lineHeight:1.35 }}>{node.label}</span>
+                    }
                   </div>
-                  {/* + child */}
+                  {/* + add child */}
                   <div onMouseDown={e => { e.stopPropagation(); addChild(node.id); }} title="Add child"
-                    style={{ position: "absolute", right: -11, top: "50%", transform: "translateY(-50%)", width: 20, height: 20, borderRadius: "50%", background: "#1a6b3c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, cursor: "pointer", zIndex: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1 }}>+</div>
-                  {/* Collapse */}
-                  {hasChildren && (
-                    <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCollapsed ? `Show ${childCount}` : "Collapse"}
-                      style={{ position: "absolute", bottom: -11, left: "50%", transform: "translateX(-50%)", width: 20, height: 20, borderRadius: "50%", background: isCollapsed ? "#6d28d9" : "#e5e7eb", color: isCollapsed ? "#fff" : "#6b7280", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, cursor: "pointer", zIndex: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.14)", border: "1.5px solid " + (isCollapsed ? "#5b21b6" : "#d1d5db") }}>
-                      {isCollapsed ? `+${childCount}` : "−"}
+                    style={{ position:"absolute", right:-11, top:"50%", transform:"translateY(-50%)", width:20, height:20, borderRadius:"50%", background:"#1a6b3c", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, cursor:"pointer", zIndex:20, boxShadow:"0 1px 4px rgba(0,0,0,0.18)", lineHeight:1 }}>+</div>
+                  {/* collapse/expand */}
+                  {hasKids && (
+                    <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCol ? `Show ${kidCount}` : "Collapse"}
+                      style={{ position:"absolute", bottom:-11, left:"50%", transform:"translateX(-50%)", width:20, height:20, borderRadius:"50%", background: isCol?"#6d28d9":"#e5e7eb", color: isCol?"#fff":"#6b7280", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, cursor:"pointer", zIndex:20, border:"1.5px solid "+(isCol?"#5b21b6":"#d1d5db") }}>
+                      {isCol ? `+${kidCount}` : "−"}
                     </div>
                   )}
                 </div>
@@ -5567,25 +5344,55 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
             })}
           </div>
 
-          {/* ── Canvas Sticky Notes (double-click blank area to create) ── */}
-          {canvasNotes.map(cn => (
-            <CanvasStickyNote
-              key={cn.id}
-              note={cn}
-              pan={pan}
-              onUpdate={updateCanvasNote}
-              onDelete={deleteCanvasNote}
-              onMoveEnd={snapshot}
-            />
+          {/* ── Sticky notes on canvas ── */}
+          {mapNotes.map(mn => (
+            <div key={mn.id} data-nocanvas="1"
+              style={{ position:"absolute", left: mn.x + pan.x, top: mn.y + pan.y, width: mn.w || 180, zIndex: 8 }}>
+              {/* Header bar — drag handle + color + delete */}
+              <div
+                onMouseDown={e => onMapNoteMouseDown(e, mn.id)}
+                style={{ height:24, background: mn.color || "#fef9c3", borderRadius:"6px 6px 0 0", display:"flex", alignItems:"center", padding:"0 6px", gap:4, cursor: dragging?.id===mn.id?"grabbing":"grab", userSelect:"none", borderBottom:"1px solid rgba(0,0,0,0.07)" }}>
+                <span style={{ fontSize:10, color:"rgba(0,0,0,0.3)", letterSpacing:2, flexShrink:0 }}>⠿</span>
+                {/* Color dots */}
+                {SNCOLORS.map(c => (
+                  <button key={c} onMouseDown={e => e.stopPropagation()} onClick={() => updateMapNote(mn.id, { color: c })}
+                    style={{ width:9, height:9, borderRadius:"50%", background:c, border: mn.color===c?"2px solid rgba(0,0,0,0.4)":"1px solid rgba(0,0,0,0.15)", cursor:"pointer", padding:0, flexShrink:0 }} />
+                ))}
+                {/* Delete */}
+                <button onMouseDown={e => e.stopPropagation()} onClick={() => deleteMapNote(mn.id)}
+                  style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", fontSize:12, color:"rgba(0,0,0,0.4)", padding:0, lineHeight:1, flexShrink:0 }}>✕</button>
+              </div>
+              {/* Body textarea */}
+              <textarea
+                id={"mn-" + mn.id}
+                value={mn.text}
+                onChange={e => updateMapNote(mn.id, { text: e.target.value })}
+                onMouseDown={e => e.stopPropagation()}
+                placeholder="Write here…"
+                style={{ display:"block", width:"100%", boxSizing:"border-box", background: mn.color||"#fef9c3", border:"none", outline:"none", resize:"vertical", minHeight:60, padding:"6px 8px", fontSize:12, lineHeight:1.7, fontFamily:"inherit", color:"#1a1a2e", borderRadius:"0 0 6px 6px", boxShadow:"0 3px 10px rgba(0,0,0,0.10)" }}
+              />
+            </div>
           ))}
 
           {/* Hint */}
-          <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "#aaa", pointerEvents: "none", textAlign: "right", lineHeight: 1.5 }}>
-            Drag nodes · Double-click node to rename<br/>
-            <span style={{ color: "#a78bfa" }}>+</span> = add child &nbsp;·&nbsp; <span style={{ color: "#6d28d9" }}>●</span> = collapse<br/>
-            <span style={{ color: "#ca8a04" }}>✦</span> Double-click empty space = add sticky note
+          <div style={{ position:"absolute", bottom:8, right:12, fontSize:10, color:"#bbb", pointerEvents:"none", textAlign:"right", lineHeight:1.6 }}>
+            Double-click empty space = new sticky note<br/>
+            <span style={{ color:"#a78bfa" }}>+</span> edge = add child · <span style={{ color:"#6d28d9" }}>●</span> = collapse · drag = pan
           </div>
         </div>
+      </div>
+
+      {/* ── Note text panel at bottom ── */}
+      <div style={{ borderTop:"0.5px solid var(--color-border-tertiary)", background: note.color||"#fff", flexShrink:0 }}>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Note title…"
+          onFocus={() => setNoteFocused(true)} onBlur={() => setNoteFocused(false)}
+          style={{ display:"block", width:"100%", boxSizing:"border-box", border:"none", outline:"none", background:"transparent", fontSize:15, fontWeight:700, padding:"10px 16px 4px", fontFamily:"inherit", color:"var(--color-text-primary)" }} />
+        {noteFocused || content ? (
+          <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Start writing…"
+            onFocus={() => setNoteFocused(true)} onBlur={() => setNoteFocused(false)}
+            rows={3}
+            style={{ display:"block", width:"100%", boxSizing:"border-box", border:"none", outline:"none", background:"transparent", fontSize:13, padding:"4px 16px 10px", fontFamily:"inherit", color:"var(--color-text-primary)", resize:"none", lineHeight:1.7 }} />
+        ) : null}
       </div>
     </div>
   );
