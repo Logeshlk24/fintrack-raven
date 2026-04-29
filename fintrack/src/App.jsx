@@ -149,19 +149,19 @@ export default function App() {
 
   const totalIncome = data.transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
   const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+  // Net worth = sum of all bank balances (linked transactions) + unlinked transactions
+  const linkedBankIds = new Set((data.banks || []).map(b => String(b.id)));
+  const unlinkedIncome = data.transactions.filter(t => t.type === "income" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
+  const unlinkedExpense = data.transactions.filter(t => t.type === "expense" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
   const netWorth = (data.banks || []).reduce((s, b) => {
-    const inc = data.transactions.filter(t => t.type === "income" && t.bankId === b.id).reduce((a, t) => a + Number(t.amount || 0), 0);
-    const exp = data.transactions.filter(t => t.type === "expense" && t.bankId === b.id).reduce((a, t) => a + Number(t.amount || 0), 0);
-    
-    // For credit cards, outstanding is a liability (subtract from net worth)
-    // Credit card balance = opening + expenses - income (payments)
+    const inc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
+    const exp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
     if (b.type === "Credit Card") {
       const outstanding = (b.openingBalance || 0) + exp - inc;
-      return s - outstanding; // Credit card debt reduces net worth
+      return s - outstanding;
     }
-    // For bank accounts and cash: add to net worth
     return s + (b.openingBalance || 0) + inc - exp;
-  }, 0);
+  }, 0) + (unlinkedIncome - unlinkedExpense);
 
   const totalAssets = data.assets.reduce((s, a) => s + Number(a.value || 0), 0);
   const totalLiabilities = data.liabilities.reduce((s, l) => s + Number(l.value || 0), 0);
@@ -2373,13 +2373,15 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   }
 
   function deletePayment(id) {
-    const todayKey = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    // Keep all past transactions including current month — only drop strictly future ones
+    const now = new Date();
+    const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonthKey = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, "0")}`;
     update(p => ({
-      // Remove the scheduled payment itself
       scheduledPayments: (p.scheduledPayments || []).filter(x => x.id !== id),
-      // Keep past transactions — only drop future (current month onwards) ones linked to this payment
+      // Only remove transactions from NEXT month onwards — keep all past + current month data
       transactions: (p.transactions || []).filter(t =>
-        !(t.scheduledPaymentId === id && t.scheduledPeriodKey && t.scheduledPeriodKey >= todayKey)
+        !(t.scheduledPaymentId === id && t.scheduledPeriodKey && t.scheduledPeriodKey >= nextMonthKey)
       ),
     }));
   }
