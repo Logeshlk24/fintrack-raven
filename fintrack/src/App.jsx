@@ -4962,7 +4962,7 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
 }
 
 // ─── Canvas Sticky Note — draggable, editable, deletable ─────────────────────
-function CanvasStickyNote({ note, pan, onUpdate, onDelete }) {
+function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
   const [dragging, setDragging] = useState(null);
   const [hovered, setHovered] = useState(false);
   const COLORS = ["#fef9c3","#dcfce7","#dbeafe","#fce7f3","#ede9fe","#fee2e2","#ffedd5","#f0fdf4"];
@@ -4970,13 +4970,17 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete }) {
   function onMouseDown(e) {
     if (e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") return;
     e.stopPropagation();
-    setDragging({ ox: e.clientX - note.x, oy: e.clientY - note.y });
+    setDragging({ ox: e.clientX - note.x, oy: e.clientY - note.y, moved: false });
   }
   function onMouseMove(e) {
     if (!dragging) return;
     onUpdate(note.id, { x: e.clientX - dragging.ox, y: e.clientY - dragging.oy });
+    setDragging(d => ({ ...d, moved: true }));
   }
-  function onMouseUp() { setDragging(null); }
+  function onMouseUp() {
+    if (dragging?.moved && onMoveEnd) onMoveEnd();
+    setDragging(null);
+  }
 
   return (
     <div
@@ -5097,13 +5101,19 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   // Always-fresh refs so keyboard handlers never capture stale state
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
+  const notePosRef = useRef(notePos);
+  const canvasNotesRef2 = useRef(canvasNotes);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { notePosRef.current = notePos; }, [notePos]);
+  useEffect(() => { canvasNotesRef2.current = canvasNotes; }, [canvasNotes]);
 
   function snapshot() {
     undoStack.current.push({
       nodes: JSON.parse(JSON.stringify(nodesRef.current)),
       edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      notePos: { ...notePosRef.current },
+      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
     });
     if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
     redoStack.current = [];
@@ -5114,10 +5124,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     redoStack.current.push({
       nodes: JSON.parse(JSON.stringify(nodesRef.current)),
       edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      notePos: { ...notePosRef.current },
+      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
     });
     const prev = undoStack.current.pop();
     setNodes(prev.nodes);
     setEdges(prev.edges);
+    if (prev.notePos) setNotePos(prev.notePos);
+    if (prev.canvasNotes) setCanvasNotes(prev.canvasNotes);
     setHistVer(v => v + 1);
   }
   function redo() {
@@ -5125,10 +5139,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     undoStack.current.push({
       nodes: JSON.parse(JSON.stringify(nodesRef.current)),
       edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      notePos: { ...notePosRef.current },
+      canvasNotes: JSON.parse(JSON.stringify(canvasNotesRef2.current)),
     });
     const next = redoStack.current.pop();
     setNodes(next.nodes);
     setEdges(next.edges);
+    if (next.notePos) setNotePos(next.notePos);
+    if (next.canvasNotes) setCanvasNotes(next.canvasNotes);
     setHistVer(v => v + 1);
   }
 
@@ -5286,6 +5304,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
 
   function deleteCanvasNote(id) {
+    snapshot();
     setCanvasNotes(prev => prev.filter(n => n.id !== id));
   }
   function onMouseMove(e) {
@@ -5301,13 +5320,30 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
   function onMouseUp() {
     if (dragging?.moved) snapshot();
+    if (noteDragging) snapshot(); // snapshot note block position
     setDragging(null); setPanStart(null); setNoteDragging(null);
   }
+
+  const [noteFocused, setNoteFocused] = useState(false);
 
   const selNode   = nodes.find(n => n.id === selected);
   const canUndo   = undoStack.current.length > 0;
   const canRedo   = redoStack.current.length > 0;
   const btnBase   = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
+
+  function addCanvasNote() {
+    // Place in center of current view
+    const id = "cn" + Date.now();
+    const x = 300 - pan.x + Math.random() * 80;
+    const y = 200 - pan.y + Math.random() * 80;
+    const newNote = { id, text: "", x, y, color: "#fef9c3", w: 200 };
+    snapshot();
+    setCanvasNotes(prev => [...prev, newNote]);
+    setTimeout(() => {
+      const el = document.getElementById("cninput-" + id);
+      if (el) el.focus();
+    }, 40);
+  }
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -5320,6 +5356,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           style={{ ...btnBase, opacity: canUndo ? 1 : 0.3, color: "var(--color-text-primary)" }}>↩ Undo</button>
         <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"
           style={{ ...btnBase, opacity: canRedo ? 1 : 0.3, color: "var(--color-text-primary)" }}>↪ Redo</button>
+
+        <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
+
+        {/* Add sticky note button */}
+        <button onClick={addCanvasNote} title="Add a sticky note anywhere on canvas"
+          style={{ ...btnBase, background: "#fef9c3", border: "1px solid #d97706", color: "#92400e", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+          📝 + Note
+        </button>
 
         <div style={{ width: "0.5px", height: 16, background: "var(--color-border-secondary)" }} />
 
@@ -5361,7 +5405,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           onDoubleClick={onCanvasDoubleClick}
           style={{ position: "relative", width: 2400, height: 1800, cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
         >
-          {/* ── NOTE TEXT BLOCK — draggable, lives on canvas ── */}
+          {/* ── NOTE TEXT BLOCK — draggable, transparent unless focused ── */}
           <div
             data-nocanvas="1"
             style={{
@@ -5371,47 +5415,62 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
               width: 320,
               zIndex: 5,
               cursor: noteDragging ? "grabbing" : "default",
+              background: noteFocused ? "rgba(255,255,255,0.92)" : "transparent",
+              borderRadius: noteFocused ? 12 : 0,
+              boxShadow: noteFocused ? "0 4px 20px rgba(109,40,217,0.12)" : "none",
+              padding: noteFocused ? "10px 14px 12px" : "0",
+              border: noteFocused ? "1px solid rgba(109,40,217,0.15)" : "none",
+              transition: "background 0.2s, box-shadow 0.2s, padding 0.15s",
             }}
           >
-            {/* Drag handle bar */}
+            {/* Drag handle — only visible on hover/focus */}
             <div
               onMouseDown={e => {
                 e.stopPropagation();
+                snapshot();
                 setNoteDragging({ offsetX: e.clientX - (notePos.x + pan.x), offsetY: e.clientY - (notePos.y + pan.y) });
               }}
-              title="Drag to move note"
+              title="Drag to move"
               style={{
-                cursor: "grab", height: 18, marginBottom: 6,
+                cursor: "grab", height: 16, marginBottom: 4,
                 display: "flex", alignItems: "center", gap: 5,
                 userSelect: "none",
+                opacity: noteFocused ? 1 : 0,
+                transition: "opacity 0.15s",
               }}
             >
-              <span style={{ fontSize: 11, color: "rgba(109,40,217,0.4)", letterSpacing: 2 }}>⠿</span>
+              <span style={{ fontSize: 11, color: "rgba(109,40,217,0.45)", letterSpacing: 2 }}>⠿</span>
               <span style={{ fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>drag to move</span>
             </div>
             {/* Title */}
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
+              onFocus={() => setNoteFocused(true)}
+              onBlur={() => setNoteFocused(false)}
               onKeyDown={e => e.key === "Escape" && onEsc()}
               onMouseDown={e => e.stopPropagation()}
               placeholder="Untitled Note"
               style={{
-                border: "none", outline: "none", background: "transparent",
+                border: "none", outline: "none",
+                background: "transparent",
                 fontSize: 22, fontWeight: 700,
                 padding: "0 0 6px 0",
                 color: "#1a1a2e",
                 fontFamily: "inherit", width: "100%",
                 boxSizing: "border-box",
                 display: "block",
-                borderBottom: "2px solid rgba(109,40,217,0.18)",
+                borderBottom: noteFocused ? "2px solid rgba(109,40,217,0.18)" : "2px solid transparent",
                 marginBottom: 10,
+                transition: "border-bottom 0.15s",
               }}
             />
             {/* Body */}
             <textarea
               value={content}
               onChange={e => setContent(e.target.value)}
+              onFocus={() => setNoteFocused(true)}
+              onBlur={() => setNoteFocused(false)}
               onKeyDown={e => e.key === "Escape" && onEsc()}
               onMouseDown={e => e.stopPropagation()}
               placeholder="Start writing…"
@@ -5431,10 +5490,12 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
               }}
               onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
             />
-            {/* Timestamp */}
-            <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>
-              {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-            </div>
+            {/* Timestamp — only when focused */}
+            {noteFocused && (
+              <div style={{ marginTop: 8, fontSize: 10, color: "rgba(109,40,217,0.4)", fontStyle: "italic" }}>
+                {new Date(note.updatedAt || note.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </div>
+            )}
           </div>
 
           {/* ── SVG edges ── */}
@@ -5516,6 +5577,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
               pan={pan}
               onUpdate={updateCanvasNote}
               onDelete={deleteCanvasNote}
+              onMoveEnd={snapshot}
             />
           ))}
 
