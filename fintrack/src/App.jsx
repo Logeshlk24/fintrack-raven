@@ -3560,24 +3560,6 @@ function BusinessPage({ data, update }) {
   const [showAddMonth, setShowAddMonth] = useState(false);
   const [monthForm, setMonthForm] = useState({ month: "", grossIncome: "", netIncome: "" });
   const [editEntry, setEditEntry] = useState(null);
-  const [billPreview, setBillPreview] = useState(null); // { src, month }
-
-  // Upload bill for an entry — stores base64 in businessData
-  function uploadBill(entryId, file) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      update(p => ({ businessData: (p.businessData || []).map(e =>
-        e.id === entryId ? { ...e, bill: ev.target.result, billName: file.name } : e
-      )}));
-    };
-    reader.readAsDataURL(file);
-  }
-  function removeBill(entryId) {
-    update(p => ({ businessData: (p.businessData || []).map(e =>
-      e.id === entryId ? { ...e, bill: null, billName: null } : e
-    )}));
-  }
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -4042,7 +4024,7 @@ function BusinessPage({ data, update }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--color-background-secondary)" }}>
-                      {["Month","Gross Income","Net Income","Margin","Bill",""].map(h => (
+                      {["Month","Gross Income","Net Income","Margin",""].map(h => (
                         <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
                       ))}
                     </tr>
@@ -4050,47 +4032,12 @@ function BusinessPage({ data, update }) {
                   <tbody>
                     {yearEntries.map((e, i) => {
                       const margin = e.grossIncome > 0 ? ((e.netIncome / e.grossIncome) * 100).toFixed(1) : "0.0";
-                      const isPdf = e.bill && e.bill.startsWith("data:application/pdf");
                       return (
                         <tr key={e.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
                           <td style={{ padding: "9px 14px", fontWeight: 500 }}>{e.month}</td>
                           <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</td>
                           <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</td>
                           <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
-
-                          {/* ── Bill cell ── */}
-                          <td style={{ padding: "6px 14px" }}>
-                            {e.bill ? (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                {/* Thumbnail — click to preview */}
-                                <div
-                                  onClick={() => setBillPreview({ src: e.bill, month: e.month, name: e.billName, isPdf })}
-                                  title={`View bill: ${e.billName || e.month}`}
-                                  style={{ width: 32, height: 32, borderRadius: 5, overflow: "hidden", border: "1px solid var(--color-border-secondary)", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: isPdf ? "#fee2e2" : "#f0fdf4" }}>
-                                  {isPdf
-                                    ? <span style={{ fontSize: 16 }}>📄</span>
-                                    : <img src={e.bill} alt="bill" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                  }
-                                </div>
-                                {/* File name truncated */}
-                                <span
-                                  onClick={() => setBillPreview({ src: e.bill, month: e.month, name: e.billName, isPdf })}
-                                  style={{ fontSize: 10, color: "var(--color-text-secondary)", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
-                                  title={e.billName}>{e.billName || "bill"}</span>
-                                {/* Remove bill */}
-                                <button onClick={() => removeBill(e.id)} title="Remove bill"
-                                  style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 11, padding: 0, lineHeight: 1, flexShrink: 0 }}>✕</button>
-                              </div>
-                            ) : (
-                              <label style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-secondary)", padding: "3px 8px", borderRadius: 5, border: "0.5px dashed var(--color-border-secondary)", background: "transparent" }}
-                                title="Upload bill">
-                                📎 Upload
-                                <input type="file" accept="image/*,application/pdf" style={{ display: "none" }}
-                                  onChange={ev => uploadBill(e.id, ev.target.files[0])} />
-                              </label>
-                            )}
-                          </td>
-
                           <td style={{ padding: "9px 14px", textAlign: "right" }}>
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                               <button onClick={() => setEditEntry({ ...e })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️</button>
@@ -4106,43 +4053,10 @@ function BusinessPage({ data, update }) {
                       <td style={{ padding: "9px 14px", fontWeight: 600 }}>Total</td>
                       <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0))}</td>
                       <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0))}</td>
-                      <td colSpan={3} />
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
-
-                {/* ── Bill Preview Modal ── */}
-                {billPreview && (
-                  <div
-                    onClick={() => setBillPreview(null)}
-                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-                    <div
-                      onClick={e => e.stopPropagation()}
-                      style={{ background: "#fff", borderRadius: 14, overflow: "hidden", maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
-                      {/* Modal header */}
-                      <div style={{ padding: "12px 18px", borderBottom: "0.5px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f9fafb" }}>
-                        <div>
-                          <span style={{ fontWeight: 600, fontSize: 14 }}>{billPreview.month} — Bill</span>
-                          {billPreview.name && <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>{billPreview.name}</span>}
-                        </div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          {/* Download */}
-                          <a href={billPreview.src} download={billPreview.name || "bill"}
-                            style={{ fontSize: 12, color: "#1a6b3c", textDecoration: "none", padding: "4px 10px", border: "0.5px solid #1a6b3c", borderRadius: 6 }}>⬇ Download</a>
-                          <button onClick={() => setBillPreview(null)}
-                            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#6b7280", lineHeight: 1, padding: "0 4px" }}>✕</button>
-                        </div>
-                      </div>
-                      {/* Content */}
-                      <div style={{ overflow: "auto", flex: 1 }}>
-                        {billPreview.isPdf
-                          ? <iframe src={billPreview.src} style={{ width: "80vw", height: "80vh", border: "none" }} title="Bill PDF" />
-                          : <img src={billPreview.src} alt="Bill" style={{ display: "block", maxWidth: "80vw", maxHeight: "80vh", objectFit: "contain" }} />
-                        }
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </>
           )}
@@ -5159,42 +5073,44 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
   );
 }
 
-// ─── Merged Note + MindMap Editor — Split view (Note left · Map right) ────────
+// ─── Merged Note + MindMap Editor ────────────────────────────────────────────
 function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, makeDefaultMindmap }) {
   const MAX_HISTORY = 80;
+  const NODE_COLORS_LIST = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
 
-  // ── Text state ───────────────────────────────────────────────────────────
-  const [title, setTitle]     = useState(note.title || "");
-  const [content, setContent] = useState(note.content || "");
-
-  // ── Canvas sticky notes (double-click empty area to create) ─────────────────
+  // ── ALL useState first — no useRef/useEffect before these ────────────────
   const initMM = note.mindmap || makeDefaultMindmap();
-  const [nodes, setNodes]     = useState(initMM.nodes);
-  const [edges, setEdges]     = useState(initMM.edges);
+  const [title, setTitle]               = useState(note.title || "");
+  const [content, setContent]           = useState(note.content || "");
+  const [nodes, setNodes]               = useState(initMM.nodes);
+  const [edges, setEdges]               = useState(initMM.edges);
+  const [canvasNotes, setCanvasNotes]   = useState(note.canvasNotes || []);
+  const [collapsed, setCollapsed]       = useState(new Set());
+  const [histVer, setHistVer]           = useState(0);
+  const [selected, setSelected]         = useState(null);
+  const [editingId, setEditingId]       = useState(null);
+  const [editLabel, setEditLabel]       = useState("");
+  const [dragging, setDragging]         = useState(null);
+  const [pan, setPan]                   = useState({ x: 0, y: 0 });
+  const [panStart, setPanStart]         = useState(null);
+  const [notePos, setNotePos]           = useState(note.notePos || { x: 32, y: 32 });
+  const [noteDragging, setNoteDragging] = useState(null);
+  const [noteFocused, setNoteFocused]   = useState(false);
 
-  // Canvas sticky notes — separate from the main note block
-  const initCanvasNotes = note.canvasNotes || [];
-  const [canvasNotes, setCanvasNotes] = useState(initCanvasNotes);
+  // ── ALL useRef — after all useState ──────────────────────────────────────
+  const undoStack      = useRef([]);
+  const redoStack      = useRef([]);
+  const nodesRef       = useRef(nodes);
+  const edgesRef       = useRef(edges);
+  const notePosRef     = useRef(notePos);
   const canvasNotesRef = useRef(canvasNotes);
-  useEffect(() => { canvasNotesRef.current = canvasNotes; }, [canvasNotes]);
+  const saveTimer      = useRef(null);
 
-  // collapsed: Set of node IDs whose children are hidden
-  const [collapsed, setCollapsed] = useState(new Set());
-
-  // ── Undo/Redo — use refs for stacks + a counter to force re-render ──────
-  const undoStack  = useRef([]);
-  const redoStack  = useRef([]);
-  const [histVer, setHistVer] = useState(0); // bumped to trigger re-render
-
-  // Always-fresh refs so keyboard handlers never capture stale state
-  const nodesRef = useRef(nodes);
-  const edgesRef = useRef(edges);
-  const notePosRef = useRef(notePos);
-  const canvasNotesRef2 = useRef(canvasNotes);
-  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
-  useEffect(() => { edgesRef.current = edges; }, [edges]);
-  useEffect(() => { notePosRef.current = notePos; }, [notePos]);
-  useEffect(() => { canvasNotesRef2.current = canvasNotes; }, [canvasNotes]);
+  // ── ALL useEffect — after all useState and useRef ─────────────────────────
+  useEffect(() => { nodesRef.current = nodes; },            [nodes]);
+  useEffect(() => { edgesRef.current = edges; },            [edges]);
+  useEffect(() => { notePosRef.current = notePos; },        [notePos]);
+  useEffect(() => { canvasNotesRef.current = canvasNotes; },[canvasNotes]);
 
   function snapshot() {
     undoStack.current.push({
@@ -5250,22 +5166,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     return () => window.removeEventListener("keydown", onKey);
   }, []); // eslint-disable-line
 
-  // ── Interaction state (not undone) ───────────────────────────────────────
-  const [selected, setSelected]   = useState(null);
-  const [editingId, setEditingId] = useState(null);
-  const [editLabel, setEditLabel] = useState("");
-  const [dragging, setDragging]   = useState(null);
-  const [pan, setPan]             = useState({ x: 0, y: 0 });
-  const [panStart, setPanStart]   = useState(null);
-
-  // ── Note block: draggable position on canvas ─────────────────────────────
-  const [notePos, setNotePos]           = useState(note.notePos || { x: 32, y: 32 });
-  const [noteDragging, setNoteDragging] = useState(null); // { offsetX, offsetY }
-
-  const NODE_COLORS = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
-
   // ── Persist ──────────────────────────────────────────────────────────────
-  const saveTimer = useRef(null);
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -5309,7 +5210,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
       id, label: "New node",
       x: parent.x + dist * Math.cos(baseAngle),
       y: parent.y + dist * Math.sin(baseAngle),
-      color: NODE_COLORS[nodes.length % NODE_COLORS.length],
+      color: NODE_COLORS_LIST[nodes.length % NODE_COLORS_LIST.length],
     };
     // Auto-expand parent if collapsed
     setCollapsed(s => { const ns = new Set(s); ns.delete(parentId); return ns; });
@@ -5411,8 +5312,6 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     if (noteDragging) snapshot(); // snapshot note block position
     setDragging(null); setPanStart(null); setNoteDragging(null);
   }
-
-  const [noteFocused, setNoteFocused] = useState(false);
 
   const selNode   = nodes.find(n => n.id === selected);
   const canUndo   = undoStack.current.length > 0;
