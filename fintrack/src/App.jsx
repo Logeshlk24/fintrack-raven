@@ -4964,6 +4964,7 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
 // ─── Canvas Sticky Note — draggable, editable, deletable ─────────────────────
 function CanvasStickyNote({ note, pan, onUpdate, onDelete }) {
   const [dragging, setDragging] = useState(null);
+  const [hovered, setHovered] = useState(false);
   const COLORS = ["#fef9c3","#dcfce7","#dbeafe","#fce7f3","#ede9fe","#fee2e2","#ffedd5","#f0fdf4"];
 
   function onMouseDown(e) {
@@ -4979,66 +4980,88 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete }) {
 
   return (
     <div
+      data-nocanvas="1"
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
+      onMouseLeave={() => { onMouseUp(); setHovered(false); }}
+      onMouseEnter={() => setHovered(true)}
       style={{
         position: "absolute",
         left: note.x + pan.x,
         top: note.y + pan.y,
-        width: note.w || 180,
+        width: note.w || 200,
         zIndex: 8,
         cursor: dragging ? "grabbing" : "grab",
         background: note.color || "#fef9c3",
         borderRadius: 10,
-        boxShadow: "0 3px 12px rgba(0,0,0,0.13)",
-        border: "1px solid rgba(0,0,0,0.07)",
-        padding: "6px 8px 8px",
+        boxShadow: hovered ? "0 6px 20px rgba(0,0,0,0.18)" : "0 3px 12px rgba(0,0,0,0.10)",
+        border: hovered ? "1.5px solid rgba(0,0,0,0.18)" : "1px solid rgba(0,0,0,0.07)",
+        padding: "0 0 6px 0",
         display: "flex",
         flexDirection: "column",
-        gap: 4,
         userSelect: "none",
+        transition: "box-shadow 0.15s, border 0.15s",
       }}
     >
-      {/* Top bar: color picker + delete */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4, marginBottom: 2 }}>
-        <div style={{ display: "flex", gap: 3 }}>
+      {/* Top drag bar with color dots + delete */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px 4px", borderBottom: "1px solid rgba(0,0,0,0.06)", cursor: "grab" }}>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <span style={{ fontSize: 9, color: "rgba(0,0,0,0.25)", marginRight: 2, letterSpacing: 1 }}>⠿</span>
           {COLORS.map(c => (
             <button key={c} onMouseDown={e => { e.stopPropagation(); onUpdate(note.id, { color: c }); }}
-              style={{ width: 12, height: 12, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid rgba(0,0,0,0.15)", cursor: "pointer", padding: 0 }} />
+              style={{ width: 11, height: 11, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid rgba(0,0,0,0.18)", cursor: "pointer", padding: 0, flexShrink: 0 }} />
           ))}
         </div>
-        <button onMouseDown={e => { e.stopPropagation(); onDelete(note.id); }}
-          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#d44", opacity: 0.6, lineHeight: 1, padding: "0 2px" }} title="Delete sticky note">✕</button>
+        {/* Delete button — always visible on hover, subtle otherwise */}
+        <button
+          onMouseDown={e => { e.stopPropagation(); onDelete(note.id); }}
+          title="Delete sticky note"
+          style={{
+            background: hovered ? "#fee2e2" : "none",
+            border: hovered ? "1px solid #fca5a5" : "none",
+            borderRadius: 5, cursor: "pointer", fontSize: 11,
+            color: "#d44", lineHeight: 1, padding: "2px 5px",
+            fontWeight: 700, transition: "all 0.12s",
+            opacity: hovered ? 1 : 0.35,
+          }}>✕</button>
       </div>
+
+      {/* Textarea */}
       <textarea
         id={"cninput-" + note.id}
         value={note.text}
         onChange={e => onUpdate(note.id, { text: e.target.value })}
         onMouseDown={e => e.stopPropagation()}
-        placeholder="Type a note…"
+        onBlur={() => {
+          // Auto-delete if note is empty and user clicks away
+          if (!note.text.trim()) onDelete(note.id);
+        }}
+        placeholder="Type here… click ✕ to delete"
         rows={3}
         style={{
           background: "transparent", border: "none", outline: "none",
-          resize: "none", fontSize: 12.5, lineHeight: 1.6,
+          resize: "none", fontSize: 12.5, lineHeight: 1.65,
           color: "#333", fontFamily: "inherit",
           width: "100%", boxSizing: "border-box",
           userSelect: "text", cursor: "text",
+          padding: "7px 10px 2px",
+          minHeight: 60,
         }}
         onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
       />
-      {/* Resize handle */}
+
+      {/* Resize handle bottom-right */}
       <div
         onMouseDown={e => {
           e.stopPropagation();
-          const startX = e.clientX, startW = note.w || 180;
+          const startX = e.clientX, startW = note.w || 200;
           function move(ev) { onUpdate(note.id, { w: Math.max(120, startW + ev.clientX - startX) }); }
           function up() { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); }
           window.addEventListener("mousemove", move);
           window.addEventListener("mouseup", up);
         }}
-        style={{ alignSelf: "flex-end", cursor: "ew-resize", fontSize: 10, color: "rgba(0,0,0,0.25)", lineHeight: 1, padding: "0 1px" }}
+        style={{ alignSelf: "flex-end", cursor: "ew-resize", fontSize: 10, color: "rgba(0,0,0,0.22)", padding: "0 6px 2px", lineHeight: 1 }}
         title="Drag to resize">⟺</div>
     </div>
   );
@@ -5237,17 +5260,25 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
 
   function onCanvasDoubleClick(e) {
-    // Only create if clicking on empty canvas (not a node or note)
-    if (e.target !== e.currentTarget) return;
+    // Block if double-clicking on a mind-map node, sticky note, or the main note block
+    const blocked = ["BUTTON","INPUT","TEXTAREA","SELECT"];
+    if (blocked.includes(e.target.tagName)) return;
+    // Walk up — if any ancestor has data-nocanvas, it's a node/note widget → ignore
+    let el = e.target;
+    while (el && el !== e.currentTarget) {
+      if (el.dataset && el.dataset.nocanvas) return;
+      el = el.parentElement;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left - pan.x;
     const y = e.clientY - rect.top - pan.y;
-    const newNote = { id: "cn" + Date.now(), text: "", x, y, color: "#fef9c3", w: 180 };
+    const id = "cn" + Date.now();
+    const newNote = { id, text: "", x, y, color: "#fef9c3", w: 200 };
     setCanvasNotes(prev => [...prev, newNote]);
     setTimeout(() => {
-      const el = document.getElementById("cninput-" + newNote.id);
+      const el = document.getElementById("cninput-" + id);
       if (el) el.focus();
-    }, 50);
+    }, 40);
   }
 
   function updateCanvasNote(id, changes) {
@@ -5332,6 +5363,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         >
           {/* ── NOTE TEXT BLOCK — draggable, lives on canvas ── */}
           <div
+            data-nocanvas="1"
             style={{
               position: "absolute",
               left: notePos.x + pan.x,
@@ -5423,7 +5455,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           </svg>
 
           {/* ── Map nodes ── */}
-          <div style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
+          <div data-nocanvas="1" style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
             {visibleNodes.map(node => {
               const isSel = selected === node.id;
               const hasChildren = edges.some(e => e.from === node.id);
