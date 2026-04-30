@@ -2222,24 +2222,26 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
           {/* Add sub-folder (only top-level folders can have sub-folders) */}
           {!parentId && (
             <div style={{ display:"flex", gap:5, alignItems:"center" }}>
-              <input value={newSubName[folder.id]||""} onChange={e=>setNewSubName(p=>({...p,[folder.id]:e.target.value}))}
-                onKeyDown={e=>e.key==="Enter"&&addFolder(folder.id)}
+              <input
+                value={newSubName[folder.id]||""}
+                onChange={e => setNewSubName(p=>({...p,[folder.id]:e.target.value}))}
+                onKeyDown={e => { if(e.key==="Enter") { addFolder(folder.id); } }}
                 placeholder="Sub-folder name…"
-                style={{ border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"5px 9px", fontSize:12, outline:"none", fontFamily:"inherit", width:140 }} />
-              <button onClick={()=>addFolder(folder.id)} style={{ background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:11, fontWeight:500, whiteSpace:"nowrap" }}>+ Sub-folder</button>
+                style={{ border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"5px 9px", fontSize:12, outline:"none", fontFamily:"inherit", width:140, background:"var(--color-background-primary)", color:"var(--color-text-primary)" }} />
+              <button onClick={()=>addFolder(folder.id)} style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:11, fontWeight:500, whiteSpace:"nowrap" }}>+ Sub-folder</button>
             </div>
           )}
         </div>
-        {/* Sub-folders */}
+        {/* Sub-folders — styled like main folders */}
         {subs.length > 0 && subs.map(sub => (
-          <div key={sub.id} style={{ marginBottom:8, borderRadius:8, border:"0.5px solid var(--color-border-tertiary)", overflow:"hidden" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 12px", background:"var(--color-background-secondary)", cursor:"pointer" }}
+          <div key={sub.id} style={{ marginBottom:10, borderRadius:10, border:"0.5px solid var(--color-border-secondary)", overflow:"hidden", background:"var(--color-background-primary)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"var(--color-background-secondary)", cursor:"pointer", userSelect:"none" }}
               onClick={()=>setOpenId(openId===sub.id?null:sub.id)}>
-              <span style={{ fontSize:15 }}>{openId===sub.id?"📂":"📁"}</span>
-              <span style={{ fontWeight:500, fontSize:13, flex:1 }}>{sub.name}</span>
-              <span style={{ fontSize:10, color:"var(--color-text-secondary)" }}>{(sub.files||[]).length} file{(sub.files||[]).length!==1?"s":""}</span>
-              <span style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{openId===sub.id?"▲":"▼"}</span>
-              <button onClick={e=>{e.stopPropagation();deleteFolder(sub.id,folder.id);}} style={{ background:"#fee2e2", border:"none", borderRadius:5, padding:"2px 7px", cursor:"pointer", fontSize:10, color:"#dc2626" }}>🗑</button>
+              <span style={{ fontSize:18 }}>{openId===sub.id?"📂":"📁"}</span>
+              <span style={{ fontWeight:600, fontSize:14, flex:1, color:"var(--color-text-primary)" }}>{sub.name}</span>
+              <span style={{ fontSize:11, color:"var(--color-text-secondary)", background:"var(--color-background-tertiary)", borderRadius:10, padding:"1px 8px" }}>{(sub.files||[]).length} file{(sub.files||[]).length!==1?"s":""}</span>
+              <span style={{ fontSize:11, color:"var(--color-text-secondary)", marginLeft:4 }}>{openId===sub.id?"▲":"▼"}</span>
+              <button onClick={e=>{e.stopPropagation();deleteFolder(sub.id,folder.id);}} style={{ background:"#fee2e2", border:"none", borderRadius:5, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#dc2626", marginLeft:4 }}>🗑</button>
             </div>
             {openId===sub.id && <FolderBody folder={sub} parentId={folder.id} />}
           </div>
@@ -2839,7 +2841,7 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
 function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
   const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
-  const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", tenure: "", notes: "", accountId: "" });
+  const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", time: "09:00", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", tenure: "", notes: "", accountId: "" });
   const [view, setView] = useState("list");
   const [editingPayment, setEditingPayment] = useState(null); // holds the payment being edited
   const [editForm, setEditForm] = useState(null);
@@ -2868,7 +2870,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   // ── Auto-pay: mark due/overdue payments as paid and log transactions ────────
   useEffect(() => {
     if (!payments.length) return;
-    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const now = new Date();
 
     const updates = [];
     payments.forEach(pay => {
@@ -2876,7 +2878,14 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       if (!key) return;
       const [ky, km] = key.split("-").map(Number);
       const dueDate = new Date(ky, km - 1, pay.day);
-      // Auto-pay if due date is today or in the past AND not already paid
+      // If payment has a time set, check hour:minute too
+      if (pay.time) {
+        const [hh, mm] = pay.time.split(":").map(Number);
+        dueDate.setHours(hh, mm, 0, 0);
+      } else {
+        dueDate.setHours(0, 0, 0, 0);
+      }
+      // Auto-pay if due datetime has passed AND not already paid
       if (dueDate <= now && !pay.paid.includes(key)) {
         updates.push({ pay, key });
       }
@@ -2889,7 +2898,6 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       let transactions = p.transactions || [];
 
       updates.forEach(({ pay, key }) => {
-        // Skip if already paid (check current state inside update)
         const current = scheduledPayments.find(x => x.id === pay.id);
         if (!current || current.paid.includes(key)) return;
 
@@ -2897,7 +2905,6 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
         const txDate = `${ky}-${String(km).padStart(2,"0")}-${String(pay.day).padStart(2,"0")}`;
         const txType = pay.flowType === "income" ? "income" : "expense";
 
-        // Check no duplicate transaction already exists for this period
         const alreadyLogged = transactions.some(t => t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key);
         if (!alreadyLogged) {
           transactions = [...transactions, {
@@ -2920,8 +2927,35 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
       return { scheduledPayments, transactions };
     });
+
+    // Re-check every minute so time-based triggers fire promptly
+    const interval = setInterval(() => {
+      const nowCheck = new Date();
+      payments.forEach(pay => {
+        if (!pay.time) return;
+        const key = getNextDueKey(pay);
+        if (!key || pay.paid.includes(key)) return;
+        const [ky, km] = key.split("-").map(Number);
+        const dueDate = new Date(ky, km - 1, pay.day);
+        const [hh, mm] = pay.time.split(":").map(Number);
+        dueDate.setHours(hh, mm, 0, 0);
+        if (dueDate <= nowCheck) {
+          update(p => {
+            const current = (p.scheduledPayments || []).find(x => x.id === pay.id);
+            if (!current || current.paid.includes(key)) return p;
+            const txDate = `${ky}-${String(km).padStart(2,"0")}-${String(pay.day).padStart(2,"0")}`;
+            const txType = pay.flowType === "income" ? "income" : "expense";
+            const alreadyLogged = (p.transactions || []).some(t => t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key);
+            return {
+              scheduledPayments: p.scheduledPayments.map(x => x.id === pay.id ? { ...x, paid: [...x.paid, key] } : x),
+              transactions: alreadyLogged ? p.transactions : [...(p.transactions || []), { id: Date.now()+Math.random(), type: txType, amount: pay.amount, category: pay.type || "EMI", note: pay.name + " (auto)", date: txDate, bankId: pay.accountId || "", scheduledPaymentId: pay.id, scheduledPeriodKey: key }],
+            };
+          });
+        }
+      });
+    }, 60000); // check every minute
+    return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // Run once on mount — catches any overdue/today payments immediately
 
   function deletePayment(id) {
     // Keep all past transactions including current month — only drop strictly future ones
@@ -3136,9 +3170,13 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
             </div>
           </div>
           <LabelInput label="Name" placeholder="e.g. HDFC Home Loan, Netflix, Rent" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
             <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Auto-add Time</label>
+              <input type="time" value={form.time||"09:00"} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
           </div>
           <div style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
@@ -3202,6 +3240,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 const key = getNextDueKey(p);
                 const isPaid = key && p.paid.includes(key);
                 const days = d ? daysDiff(d) : null;
+                const timeLabel = p.time ? ` · ⏰ ${p.time}` : "";
                 // Check if this was auto-paid (transaction note ends with "(auto)")
                 const autoPaidTx = isPaid && (data.transactions || []).find(t => t.scheduledPaymentId === p.id && t.scheduledPeriodKey === key && t.note?.endsWith("(auto)"));
                 let badge = "", badgeColor = "var(--color-text-secondary)", badgeBg = "var(--color-background-secondary)";
@@ -3219,6 +3258,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                       <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                       <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
                         {p.flowType === "income" ? "📥" : "📤"} {p.type} · {p.freq === "custom" ? `every ${p.customEveryN || 1} ${p.customUnit || "months"}` : p.freq}{p.tenure ? ` · ${p.tenure}mo` : ""}
+                        {p.time ? ` · ⏰ ${p.time}` : ""}
                         {acct ? ` · ${acct.name}` : ""}
                         {p.notes ? ` · ${p.notes}` : ""}
                       </div>
@@ -4645,13 +4685,19 @@ function BusinessPage({ data, update }) {
                           {/* Bill column */}
                           <td style={{ padding: "6px 14px" }}>
                             {e.billImage ? (
-                              <img
-                                src={e.billImage}
-                                alt="bill"
-                                onClick={() => setBillModal({ url: e.billImage, link: e.billLink, driveId: e.billDriveId })}
-                                style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer", display: "block" }}
-                                title="Click to view full bill"
-                              />
+                              <div style={{ position: "relative", display: "inline-block" }}>
+                                <img
+                                  src={e.billImage}
+                                  alt="bill"
+                                  onClick={() => setBillModal({ url: e.billImage, link: e.billLink, driveId: e.billDriveId })}
+                                  style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer", display: "block" }}
+                                  title="Click to view full bill"
+                                />
+                                <button
+                                  onClick={() => updateEntry(e.id, { billImage: null, billDriveId: null, billLink: null })}
+                                  title="Remove bill"
+                                  style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#d44", border: "1.5px solid #fff", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>✕</button>
+                              </div>
                             ) : (
                               <BillUploadBtn onUploaded={result => updateEntry(e.id, { billImage: result.previewUrl || result.webViewLink, billDriveId: result.id, billLink: result.webViewLink })} />
                             )}
