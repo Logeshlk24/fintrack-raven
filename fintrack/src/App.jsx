@@ -1916,203 +1916,210 @@ function ProjectSettings({ data, update, cardStyle, sectionTitle }) {
 }
 
 
-// ─── Google Drive Integration Helpers ────────────────────────────────────────
-// Uses the MCP Google Drive connection already authorised in Claude.ai
-async function gdriveListFolder(folderId = "root") {
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        mcp_servers: [{ type: "url", url: "https://drivemcp.googleapis.com/mcp/v1", name: "gdrive" }],
-        messages: [{ role: "user", content: `List files in Google Drive folder id="${folderId}". Return ONLY a JSON array: [{id,name,mimeType,webViewLink,thumbnailLink,size}]. No other text.` }]
-      })
-    });
-    const data = await res.json();
-    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
-    const match = text.match(/\[[\s\S]*\]/);
-    return match ? JSON.parse(match[0]) : [];
-  } catch { return []; }
-}
+// ─── Documents + Google Drive ─────────────────────────────────────────────────
+// Uses Google Drive REST API with OAuth2 (GAPI + GIS)
+// Users must supply their own Client ID from Google Cloud Console
+// (Drive API scope: https://www.googleapis.com/auth/drive.file)
 
-async function gdriveUpload(file, folderId = "root") {
-  // Upload via MCP: convert file to base64, ask Claude to upload it
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async ev => {
-      try {
-        const b64 = ev.target.result.split(",")[1];
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 500,
-            mcp_servers: [{ type: "url", url: "https://drivemcp.googleapis.com/mcp/v1", name: "gdrive" }],
-            messages: [{ role: "user", content: `Upload a file to Google Drive folder "${folderId}". File name: "${file.name}", mimeType: "${file.type}", base64 data: ${b64.slice(0,100)}... (truncated for instruction). Actually use gdrive_upload_file tool with the full base64. Return ONLY JSON: {id,name,webViewLink}` }]
-          })
-        });
-        const data = await res.json();
-        const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
-        const match = text.match(/\{[\s\S]*\}/);
-        resolve(match ? JSON.parse(match[0]) : null);
-      } catch(e) { reject(e); }
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-// ─── Documents Settings (with Google Drive) ───────────────────────────────────
 function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
-  const GDRIVE_MCP = "https://drivemcp.googleapis.com/mcp/v1";
+  // ── state ──────────────────────────────────────────────────────────────
+  const [folders,       setFoldersState] = useState(data.documentFolders || []);
+  const [newFolder,     setNewFolder]    = useState("");
+  const [openId,        setOpenId]       = useState(null);
+  const [preview,       setPreview]      = useState(null);
+  const [uploading,     setUploading]    = useState({});
 
-  const [folders,       setFolders]      = useState(data.documentFolders || []);
-  const [newFolderName, setNewFolderName] = useState("");
-  const [openFolderId,  setOpenFolderId]  = useState(null);
-  const [driveFiles,    setDriveFiles]    = useState({}); // folderId -> []
-  const [loading,       setLoading]       = useState({});
-  const [uploading,     setUploading]     = useState({});
-  const [preview,       setPreview]       = useState(null);
-  const [driveMode,     setDriveMode]     = useState(false); // false = local, true = google drive
-  const [driveStatus,   setDriveStatus]   = useState("idle"); // idle | connecting | connected | error
+  // Google Drive OAuth state
+  const [clientId,      setClientId]     = useState(data.driveClientId || "");
+  const [editClientId,  setEditClientId] = useState(false);
+  const [driveReady,    setDriveReady]   = useState(false);  // gapi loaded
+  const [driveToken,    setDriveToken]   = useState(null);   // access token
+  const [driveUser,     setDriveUser]    = useState(null);   // {email}
+  const [driveLoading,  setDriveLoading] = useState(false);
+  const [driveError,    setDriveError]   = useState("");
 
-  // Sync folders to Firestore
+  // ── persist folders to Firestore ──────────────────────────────────────
+  function setFolders(fn) {
+    setFoldersState(prev => {
+      const next = typeof fn === "function" ? fn(prev) : fn;
+      update(p => ({ documentFolders: next }));
+      return next;
+    });
+  }
+
+  // ── Load Google APIs once ─────────────────────────────────────────────
   useEffect(() => {
-    update(p => ({ documentFolders: folders }));
-  }, [folders]); // eslint-disable-line
-
-  // ── Local folder actions ──────────────────────────────────────────────────
-  function addFolder() {
-    const name = newFolderName.trim(); if (!name) return;
-    setFolders(p => [...p, { id: "f" + Date.now(), name, files: [], driveId: null }]);
-    setNewFolderName("");
-  }
-  function deleteFolder(id) { setFolders(p => p.filter(f => f.id !== id)); if (openFolderId === id) setOpenFolderId(null); }
-
-  function uploadLocal(folderId, file) {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const f = { id: "d" + Date.now(), name: file.name, type: file.type, size: file.size, data: ev.target.result, uploadedAt: new Date().toISOString(), source: "local" };
-      setFolders(p => p.map(folder => folder.id === folderId ? { ...folder, files: [...(folder.files||[]), f] } : folder));
+    if (window.gapi) { setDriveReady(true); return; }
+    const script = document.createElement("script");
+    script.src = "https://apis.google.com/js/api.js";
+    script.onload = () => {
+      window.gapi.load("client", () => {
+        window.gapi.client.init({ discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"] })
+          .then(() => setDriveReady(true));
+      });
     };
-    reader.readAsDataURL(file);
-  }
+    document.head.appendChild(script);
+  }, []);
 
-  // ── Google Drive actions ──────────────────────────────────────────────────
-  async function connectDrive() {
-    setDriveStatus("connecting");
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 200,
-          mcp_servers: [{ type: "url", url: GDRIVE_MCP, name: "gdrive" }],
-          messages: [{ role: "user", content: 'List 1 file from Google Drive root. Return ONLY: {"ok":true}' }]
-        })
+  // ── Sign in with Google (GIS token flow) ──────────────────────────────
+  function signInDrive() {
+    if (!clientId.trim()) { setDriveError("Paste your Google Cloud Client ID first."); return; }
+    setDriveError(""); setDriveLoading(true);
+    // Load GIS
+    const loadGIS = () => new Promise(res => {
+      if (window.google?.accounts?.oauth2) { res(); return; }
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client";
+      s.onload = res;
+      document.head.appendChild(s);
+    });
+    loadGIS().then(() => {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId.trim(),
+        scope: "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+        callback: (resp) => {
+          setDriveLoading(false);
+          if (resp.error) { setDriveError("Sign-in failed: " + resp.error); return; }
+          setDriveToken(resp.access_token);
+          window.gapi.client.setToken({ access_token: resp.access_token });
+          // Get user email
+          fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            headers: { Authorization: "Bearer " + resp.access_token }
+          }).then(r => r.json()).then(u => setDriveUser({ email: u.email }));
+          // Save clientId
+          update(p => ({ driveClientId: clientId.trim() }));
+        },
       });
-      const d = await res.json();
-      if (d.content) { setDriveStatus("connected"); setDriveMode(true); }
-      else setDriveStatus("error");
-    } catch { setDriveStatus("error"); }
+      client.requestAccessToken();
+    });
   }
 
-  async function loadDriveFolder(driveId) {
-    setLoading(p => ({ ...p, [driveId]: true }));
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 2000,
-          mcp_servers: [{ type: "url", url: GDRIVE_MCP, name: "gdrive" }],
-          messages: [{ role: "user", content: `List files in Google Drive folder id="${driveId}". Return ONLY a JSON array: [{"id":"...","name":"...","mimeType":"...","webViewLink":"...","size":"..."}]. No markdown, no explanation.` }]
-        })
-      });
-      const d = await res.json();
-      const text = (d.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-      const match = text.match(/\[[\s\S]*?\]/);
-      const files = match ? JSON.parse(match[0]) : [];
-      setDriveFiles(p => ({ ...p, [driveId]: files }));
-    } catch { setDriveFiles(p => ({ ...p, [driveId]: [] })); }
-    setLoading(p => ({ ...p, [driveId]: false }));
-  }
+  function signOutDrive() { setDriveToken(null); setDriveUser(null); }
 
-  async function uploadToDrive(folderId, driveId, file) {
+  // ── Upload file to Google Drive ────────────────────────────────────────
+  async function uploadToDrive(folderId, file, driveFolderId) {
+    if (!driveToken) { alert("Connect Google Drive first."); return; }
     setUploading(p => ({ ...p, [folderId]: true }));
     try {
-      // Read as base64
-      const b64data = await new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
-      const b64 = b64data.split(",")[1];
-      const uploadRes = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 500,
-          mcp_servers: [{ type: "url", url: GDRIVE_MCP, name: "gdrive" }],
-          messages: [{ role: "user", content: `Upload file to Google Drive. Folder: "${driveId}", filename: "${file.name}", mimeType: "${file.type||"application/octet-stream"}", base64Content: "${b64}". Use the upload tool. Return ONLY JSON: {"id":"...","name":"...","webViewLink":"..."}` }]
-        })
-      });
-      const ud = await uploadRes.json();
-      const utext = (ud.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-      const umatch = utext.match(/\{[\s\S]*?\}/);
-      if (umatch) {
-        const uploaded = JSON.parse(umatch[0]);
-        // Also track locally
-        const f = { id: uploaded.id, name: uploaded.name, type: file.type, size: file.size, webViewLink: uploaded.webViewLink, uploadedAt: new Date().toISOString(), source: "gdrive" };
-        setFolders(p => p.map(folder => folder.id === folderId ? { ...folder, files: [...(folder.files||[]), f] } : folder));
-        // Refresh drive listing
-        if (driveId) loadDriveFolder(driveId);
-      }
-    } catch(e) { console.error("Drive upload failed", e); }
+      // Read file
+      const ab = await file.arrayBuffer();
+      const meta = JSON.stringify({ name: file.name, parents: driveFolderId ? [driveFolderId] : [] });
+      const form = new FormData();
+      form.append("metadata", new Blob([meta], { type: "application/json" }));
+      form.append("file", new Blob([ab], { type: file.type || "application/octet-stream" }), file.name);
+
+      const res = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink,size",
+        { method: "POST", headers: { Authorization: "Bearer " + driveToken }, body: form }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const driveFile = await res.json();
+
+      // Make it readable (optional: share with "anyone")
+      // Store only the Drive metadata — no base64
+      const fileRecord = {
+        id:          driveFile.id,
+        name:        driveFile.name,
+        type:        driveFile.mimeType || file.type,
+        size:        file.size,
+        webViewLink: driveFile.webViewLink,
+        downloadUrl: driveFile.webContentLink,
+        source:      "gdrive",
+        uploadedAt:  new Date().toISOString(),
+      };
+      setFolders(p => p.map(f => f.id === folderId ? { ...f, files: [...(f.files||[]), fileRecord] } : f));
+    } catch(e) {
+      setDriveError("Upload failed: " + e.message);
+    }
     setUploading(p => ({ ...p, [folderId]: false }));
   }
 
-  function deleteFile(folderId, fileId) {
-    setFolders(p => p.map(f => f.id === folderId ? { ...f, files: (f.files||[]).filter(d => d.id !== fileId) } : f));
+  // ── Upload file locally (fallback) ────────────────────────────────────
+  function uploadLocal(folderId, file) {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const f = { id: "d"+Date.now(), name: file.name, type: file.type, size: file.size, data: ev.target.result, source: "local", uploadedAt: new Date().toISOString() };
+      setFolders(p => p.map(folder => folder.id===folderId ? { ...folder, files:[...(folder.files||[]),f] } : folder));
+    };
+    reader.readAsDataURL(file);
   }
 
-  function fmtSize(b) { if (!b) return ""; if (b<1024) return b+" B"; if (b<1048576) return (b/1024).toFixed(1)+" KB"; return (b/1048576).toFixed(1)+" MB"; }
-  function fileIcon(t) { if (!t) return "📄"; if (t.startsWith("image/")) return "🖼"; if (t==="application/pdf") return "📕"; if (t.includes("word")) return "📝"; if (t.includes("sheet")||t.includes("excel")||t.includes("csv")) return "📊"; return "📄"; }
+  function handleFileInput(folderId, driveFolderId, files) {
+    Array.from(files).forEach(file => {
+      driveToken ? uploadToDrive(folderId, file, driveFolderId) : uploadLocal(folderId, file);
+    });
+  }
 
-  const folder_bg = openFolderId ? "#f0fdf4" : "var(--color-background-primary)";
+  function addFolder() {
+    const name = newFolder.trim(); if (!name) return;
+    setFolders(p => [...p, { id:"f"+Date.now(), name, files:[], driveFolderId:"" }]);
+    setNewFolder("");
+  }
+  function deleteFolder(id) { setFolders(p => p.filter(f => f.id!==id)); if (openId===id) setOpenId(null); }
+  function deleteFile(folderId, fileId) { setFolders(p => p.map(f => f.id===folderId ? { ...f, files:(f.files||[]).filter(d=>d.id!==fileId) } : f)); }
+  function setDriveFolderId(folderId, val) { setFolders(p => p.map(f => f.id===folderId ? { ...f, driveFolderId: val } : f)); }
+
+  function fmtSize(b) { if(!b) return ""; if(b<1024) return b+" B"; if(b<1048576) return (b/1024).toFixed(1)+" KB"; return (b/1048576).toFixed(1)+" MB"; }
+  function fileIcon(t) { if(!t) return "📄"; if(t.startsWith("image/")) return "🖼"; if(t==="application/pdf") return "📕"; if(t.includes("word")) return "📝"; if(t.includes("sheet")||t.includes("excel")||t.includes("csv")) return "📊"; return "📄"; }
+
+  const connected = !!driveToken;
 
   return (
     <div>
-      {sectionTitle("🗂", "Documents", "Organise files into folders. Connect Google Drive to store files there instead of locally.")}
+      {sectionTitle("🗂", "Documents", "Organise files into folders. Connect Google Drive to store all uploads directly in your Drive.")}
 
-      {/* Drive connection banner */}
-      <div style={{ ...cardStyle, background: driveMode ? "#f0fdf4" : "#fafafa", border: driveMode ? "1px solid #bbf7d0" : "0.5px solid var(--color-border-tertiary)", display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
-        <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt="Google Drive" style={{ width:28, height:28, flexShrink:0 }} onError={e => e.target.style.display="none"} />
-        <div style={{ flex:1 }}>
-          <div style={{ fontWeight:600, fontSize:13, marginBottom:2 }}>
-            {driveMode ? "✅ Google Drive connected" : "Google Drive"}
+      {/* ── Google Drive Connect Card ── */}
+      <div style={{ ...cardStyle, background: connected?"#f0fdf4":"#fafafa", border: connected?"1px solid #bbf7d0":"0.5px solid var(--color-border-tertiary)" }}>
+        <div style={{ display:"flex", alignItems:"flex-start", gap:14, flexWrap:"wrap" }}>
+          <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt="" style={{ width:32, height:32, marginTop:2, flexShrink:0 }} onError={e=>e.target.style.display="none"} />
+          <div style={{ flex:1, minWidth:220 }}>
+            <div style={{ fontWeight:600, fontSize:14, marginBottom:3 }}>
+              {connected ? `✅ Connected as ${driveUser?.email||"Google user"}` : "Connect Google Drive"}
+            </div>
+            <div style={{ fontSize:12, color:"var(--color-text-secondary)", marginBottom: connected?0:10 }}>
+              {connected
+                ? "Files are uploaded directly to your Google Drive. No base64 stored in Firestore."
+                : "All uploads will be saved to your Google Drive. Requires a Google Cloud OAuth Client ID."}
+            </div>
+
+            {!connected && (
+              <>
+                {/* Client ID input */}
+                <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
+                  <input
+                    value={clientId} onChange={e => setClientId(e.target.value)}
+                    placeholder="Paste Google OAuth Client ID  (xxxx.apps.googleusercontent.com)"
+                    style={{ flex:1, minWidth:260, border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"7px 11px", fontSize:12, outline:"none", fontFamily:"inherit", background:"var(--color-background-primary)", color:"var(--color-text-primary)" }}
+                  />
+                </div>
+                <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:8 }}>
+                  📌 <b>How to get Client ID:</b> Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color:"#1a6b3c" }}>Google Cloud Console → APIs → Credentials</a> → Create OAuth 2.0 Client ID → Web app → add your app URL to Authorized origins.
+                </div>
+              </>
+            )}
+            {driveError && <div style={{ fontSize:12, color:"#dc2626", marginTop:4 }}>⚠ {driveError}</div>}
           </div>
-          <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>
-            {driveMode
-              ? "Files uploaded from Drive-linked folders are stored in your Google Drive."
-              : "Connect to store and access attachments directly from your Google Drive."}
+
+          <div style={{ flexShrink:0 }}>
+            {connected ? (
+              <button onClick={signOutDrive}
+                style={{ background:"none", border:"0.5px solid #ccc", borderRadius:8, padding:"7px 14px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)" }}>
+                Disconnect
+              </button>
+            ) : (
+              <button onClick={signInDrive} disabled={driveLoading}
+                style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor: driveLoading?"not-allowed":"pointer", fontSize:13, fontWeight:500, opacity: driveLoading?0.7:1, whiteSpace:"nowrap" }}>
+                {driveLoading ? "Signing in…" : "Sign in with Google"}
+              </button>
+            )}
           </div>
         </div>
-        {!driveMode ? (
-          <button onClick={connectDrive} disabled={driveStatus==="connecting"}
-            style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 16px", cursor:"pointer", fontSize:12, fontWeight:500, whiteSpace:"nowrap", opacity: driveStatus==="connecting"?0.6:1 }}>
-            {driveStatus==="connecting" ? "Connecting…" : driveStatus==="error" ? "⚠ Retry" : "Connect Drive"}
-          </button>
-        ) : (
-          <button onClick={() => { setDriveMode(false); setDriveStatus("idle"); }}
-            style={{ background:"none", border:"0.5px solid #ccc", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:11, color:"var(--color-text-secondary)" }}>
-            Disconnect
-          </button>
-        )}
       </div>
 
-      {/* Add folder */}
+      {/* ── Add folder ── */}
       <div style={cardStyle}>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => e.key==="Enter" && addFolder()}
+          <input value={newFolder} onChange={e=>setNewFolder(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addFolder()}
             placeholder="New folder name…"
             style={{ flex:1, border:"0.5px solid var(--color-border-secondary)", borderRadius:8, padding:"8px 12px", fontSize:13, outline:"none", fontFamily:"inherit", background:"var(--color-background-primary)", color:"var(--color-text-primary)" }} />
           <button onClick={addFolder}
@@ -2120,80 +2127,104 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
         </div>
       </div>
 
-      {/* Folder list */}
-      {folders.length === 0 ? (
+      {/* ── Folder list ── */}
+      {folders.length===0 ? (
         <div style={{ ...cardStyle, textAlign:"center", color:"var(--color-text-secondary)", fontSize:13, padding:"2rem" }}>
           <div style={{ fontSize:36, marginBottom:8 }}>🗂</div>No folders yet.
         </div>
       ) : folders.map(folder => {
-        const isOpen = openFolderId === folder.id;
-        const dFiles = folder.driveId ? (driveFiles[folder.driveId] || []) : [];
-        const isLoading = loading[folder.driveId];
-        const isUploading = uploading[folder.id];
-        const localFiles = folder.files || [];
+        const isOpen   = openId === folder.id;
+        const isUp     = uploading[folder.id];
+        const files    = folder.files || [];
 
         return (
           <div key={folder.id} style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:10 }}>
             {/* Header */}
             <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", cursor:"pointer", background: isOpen?"#f0fdf4":"var(--color-background-primary)", borderBottom: isOpen?"0.5px solid var(--color-border-tertiary)":"none" }}
-              onClick={() => { setOpenFolderId(isOpen?null:folder.id); if (!isOpen && folder.driveId) loadDriveFolder(folder.driveId); }}>
+              onClick={() => setOpenId(isOpen?null:folder.id)}>
               <span style={{ fontSize:18 }}>{isOpen?"📂":"📁"}</span>
               <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{folder.name}</span>
-              {folder.driveId && <span style={{ fontSize:10, background:"#dbeafe", color:"#1d4ed8", borderRadius:4, padding:"1px 6px" }}>Drive</span>}
-              <span style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{localFiles.length} file{localFiles.length!==1?"s":""}</span>
+              {folder.driveFolderId && <span style={{ fontSize:10, background:"#dbeafe", color:"#1d4ed8", borderRadius:4, padding:"1px 6px", flexShrink:0 }}>☁ Drive linked</span>}
+              <span style={{ fontSize:11, color:"var(--color-text-secondary)", whiteSpace:"nowrap" }}>{files.length} file{files.length!==1?"s":""}</span>
               <span style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{isOpen?"▲":"▼"}</span>
-              <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }}
-                style={{ background:"#fee2e2", border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#dc2626", marginLeft:4 }}>🗑</button>
+              <button onClick={e=>{e.stopPropagation();deleteFolder(folder.id);}}
+                style={{ background:"#fee2e2", border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#dc2626", marginLeft:4, flexShrink:0 }}>🗑</button>
             </div>
 
             {isOpen && (
               <div style={{ padding:"12px 14px" }}>
-                {/* Link to Drive folder */}
-                {driveMode && !folder.driveId && (
-                  <div style={{ marginBottom:10, display:"flex", alignItems:"center", gap:8 }}>
-                    <input placeholder="Paste Google Drive folder ID to link…"
-                      style={{ flex:1, border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"6px 10px", fontSize:12, outline:"none", fontFamily:"inherit" }}
-                      onBlur={e => { const v = e.target.value.trim(); if (v) setFolders(p => p.map(f => f.id===folder.id ? { ...f, driveId: v } : f)); }} />
-                    <span style={{ fontSize:10, color:"var(--color-text-secondary)" }}>from Drive folder URL</span>
+                {/* Drive folder ID linker */}
+                {connected && (
+                  <div style={{ marginBottom:10, display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                    <span style={{ fontSize:11, color:"var(--color-text-secondary)", whiteSpace:"nowrap" }}>Drive Folder ID:</span>
+                    <input
+                      value={folder.driveFolderId || ""}
+                      onChange={e => setDriveFolderId(folder.id, e.target.value)}
+                      placeholder="Paste Drive folder ID (optional — uploads go to Drive root if empty)"
+                      style={{ flex:1, minWidth:200, border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"5px 9px", fontSize:11, outline:"none", fontFamily:"inherit" }}
+                    />
+                    <a href="https://drive.google.com" target="_blank" rel="noreferrer"
+                      style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", whiteSpace:"nowrap" }}>Open Drive ↗</a>
                   </div>
                 )}
 
                 {/* Upload button */}
-                <label style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#f0fdf4", border:"1px dashed #1a6b3c", borderRadius:8, padding:"6px 14px", cursor: isUploading?"not-allowed":"pointer", fontSize:12, color:"#1a6b3c", fontWeight:500, marginBottom:10, opacity: isUploading?0.6:1 }}>
-                  {isUploading ? "⏳ Uploading…" : (folder.driveId && driveMode ? "☁ Upload to Drive" : "📎 Upload File")}
-                  <input type="file" multiple style={{ display:"none" }} disabled={isUploading}
-                    onChange={e => Array.from(e.target.files).forEach(f => { folder.driveId && driveMode ? uploadToDrive(folder.id, folder.driveId, f) : uploadLocal(folder.id, f); })} />
+                <label style={{ display:"inline-flex", alignItems:"center", gap:6, background: connected?"#f0fdf4":"#f9fafb", border: connected?"1px dashed #1a6b3c":"1px dashed #ccc", borderRadius:8, padding:"7px 14px", cursor: isUp?"not-allowed":"pointer", fontSize:12, color: connected?"#1a6b3c":"var(--color-text-secondary)", fontWeight:500, marginBottom:12, opacity: isUp?0.6:1 }}>
+                  {isUp ? "⏳ Uploading to Drive…" : connected ? "☁ Upload to Google Drive" : "📎 Upload File (local)"}
+                  <input type="file" multiple style={{ display:"none" }} disabled={isUp}
+                    onChange={e => handleFileInput(folder.id, folder.driveFolderId, e.target.files)} />
                 </label>
 
+                {!connected && (
+                  <div style={{ fontSize:11, color:"#d97706", marginBottom:10 }}>
+                    ⚠ Not connected to Drive — files stored locally in Firestore (larger storage use).
+                  </div>
+                )}
+
                 {/* File list */}
-                {localFiles.length === 0 ? (
-                  <div style={{ fontSize:12, color:"var(--color-text-secondary)", padding:"6px 0" }}>No files yet.</div>
+                {files.length===0 ? (
+                  <div style={{ fontSize:12, color:"var(--color-text-secondary)", padding:"4px 0" }}>No files yet.</div>
                 ) : (
                   <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                    {localFiles.map(file => (
+                    {files.map(file => (
                       <div key={file.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 10px", borderRadius:8, background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-tertiary)" }}>
-                        {/* Thumbnail */}
-                        <div onClick={() => file.webViewLink ? window.open(file.webViewLink,"_blank") : setPreview({ src:file.data, name:file.name, type:file.type })}
+                        {/* Icon / thumb */}
+                        <div
+                          onClick={() => file.webViewLink ? window.open(file.webViewLink,"_blank") : file.data && setPreview({src:file.data,name:file.name,type:file.type})}
                           style={{ width:34, height:34, borderRadius:6, overflow:"hidden", border:"0.5px solid var(--color-border-secondary)", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"#f9fafb", fontSize:20 }}>
-                          {file.type?.startsWith("image/") && file.data
-                            ? <img src={file.data} alt={file.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                            : file.source==="gdrive" ? <span>☁</span> : <span>{fileIcon(file.type)}</span>}
+                          {file.source==="gdrive"
+                            ? <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_16dp.png" alt="" style={{ width:18, height:18 }} onError={e=>e.target.replaceWith(Object.assign(document.createElement("span"),{textContent:"☁"}))} />
+                            : file.type?.startsWith("image/") && file.data
+                              ? <img src={file.data} alt={file.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                              : <span>{fileIcon(file.type)}</span>
+                          }
                         </div>
+                        {/* Info */}
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div onClick={() => file.webViewLink ? window.open(file.webViewLink,"_blank") : setPreview({ src:file.data, name:file.name, type:file.type })}
-                            style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }} title={file.name}>{file.name}</div>
-                          <div style={{ fontSize:10, color:"var(--color-text-secondary)", display:"flex", gap:6, alignItems:"center" }}>
+                          <div onClick={() => file.webViewLink ? window.open(file.webViewLink,"_blank") : file.data && setPreview({src:file.data,name:file.name,type:file.type})}
+                            style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }} title={file.name}>
+                            {file.name}
+                          </div>
+                          <div style={{ fontSize:10, color:"var(--color-text-secondary)", display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
                             {fmtSize(file.size)}
-                            {file.source==="gdrive" && <span style={{ background:"#dbeafe", color:"#1d4ed8", borderRadius:3, padding:"0 4px", fontSize:9 }}>Drive</span>}
-                            &nbsp;·&nbsp; {new Date(file.uploadedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+                            <span style={{ background: file.source==="gdrive"?"#dbeafe":"#f1f5f9", color: file.source==="gdrive"?"#1d4ed8":"#64748b", borderRadius:3, padding:"0 4px", fontSize:9 }}>
+                              {file.source==="gdrive" ? "☁ Google Drive" : "💾 Local"}
+                            </span>
+                            {new Date(file.uploadedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
                           </div>
                         </div>
+                        {/* Actions */}
                         {file.webViewLink
-                          ? <a href={file.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"4px 8px", border:"0.5px solid #1a6b3c", borderRadius:6, whiteSpace:"nowrap" }}>☁ Open</a>
-                          : file.data && <a href={file.data} download={file.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"4px 8px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇</a>
+                          ? <a href={file.webViewLink} target="_blank" rel="noreferrer"
+                              style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"4px 9px", border:"0.5px solid #1a6b3c", borderRadius:6, whiteSpace:"nowrap", flexShrink:0 }}>
+                              ☁ Open in Drive
+                            </a>
+                          : file.data &&
+                            <a href={file.data} download={file.name}
+                              style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"4px 9px", border:"0.5px solid #1a6b3c", borderRadius:6, flexShrink:0 }}>⬇</a>
                         }
                         <button onClick={() => deleteFile(folder.id, file.id)}
-                          style={{ background:"none", border:"0.5px solid #d44", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11, color:"#d44" }}>🗑</button>
+                          style={{ background:"none", border:"0.5px solid #d44", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11, color:"#d44", flexShrink:0 }}>🗑</button>
                       </div>
                     ))}
                   </div>
@@ -2204,15 +2235,15 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
         );
       })}
 
-      {/* Preview modal for local files */}
+      {/* Local preview modal */}
       {preview && (
-        <div onClick={() => setPreview(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"90vw", maxHeight:"90vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
+        <div onClick={()=>setPreview(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"90vw", maxHeight:"90vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
             <div style={{ padding:"12px 18px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
               <span style={{ fontWeight:600, fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{preview.name}</span>
               <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
                 <a href={preview.src} download={preview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"4px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>
-                <button onClick={() => setPreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
+                <button onClick={()=>setPreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
               </div>
             </div>
             <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
