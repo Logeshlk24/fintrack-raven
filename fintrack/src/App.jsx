@@ -680,8 +680,8 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
   // Bank balances: sum income - expense per bank (exclude credit cards)
   const banks = data.banks || [];
   const bankBalances = banks.filter(bank => bank.type !== "Credit Card").map(bank => {
-    const inc = data.transactions.filter(t => t.type === "income" && t.bankId === bank.id).reduce((s, t) => s + Number(t.amount || 0), 0);
-    const exp = data.transactions.filter(t => t.type === "expense" && t.bankId === bank.id).reduce((s, t) => s + Number(t.amount || 0), 0);
+    const inc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(bank.id)).reduce((s, t) => s + Number(t.amount || 0), 0);
+    const exp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(bank.id)).reduce((s, t) => s + Number(t.amount || 0), 0);
     // For bank accounts and cash: normal calculation
     return { ...bank, balance: (bank.openingBalance || 0) + inc - exp };
   });
@@ -2661,8 +2661,8 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
           {sectionTitle("🏦", "Bank Accounts")}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
             {banks.map(acct => {
-              const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-              const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
+              const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
               const bal = (acct.openingBalance || 0) + txInc - txExp;
               return (
                 <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
@@ -2689,8 +2689,8 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
           {sectionTitle("💳", "Credit Cards")}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
             {cards.map(acct => {
-              const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-              const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
+              const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
               const bal = (acct.openingBalance || 0) + txExp - txInc;
               const limit = acct.creditLimit || 0;
               const usedPct = limit > 0 ? Math.min((bal / limit) * 100, 100) : 0;
@@ -2747,8 +2747,8 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
           {sectionTitle("💵", "Cash Accounts")}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
             {cashAccounts.map(acct => {
-              const txInc = data.transactions.filter(t => t.type === "income" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
-              const txExp = data.transactions.filter(t => t.type === "expense" && t.bankId === acct.id).reduce((s, t) => s + Number(t.amount), 0);
+              const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
+              const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
               const bal = (acct.openingBalance || 0) + txInc - txExp;
               return (
                 <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
