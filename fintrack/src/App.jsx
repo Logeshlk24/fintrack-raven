@@ -2906,7 +2906,10 @@ function LiabilitiesTab({ data, update }) {
     if (diff >= 0 && diff <= 7) return s + l.amount;
     return s;
   }, 0);
-  const liabAnnual = activeLiabilities.reduce((s, l) => s + l.amount * 12, 0);
+  const liabAnnual = activeLiabilities.reduce((s, l) => {
+    const remaining = Math.max(0, l.totalMonths - (l.paidMonths || 0));
+    return s + l.amount * remaining;
+  }, 0);
 
   return (
     <div style={{ marginTop: 16 }}>
@@ -3560,6 +3563,11 @@ function BusinessPage({ data, update }) {
   const [showAddMonth, setShowAddMonth] = useState(false);
   const [monthForm, setMonthForm] = useState({ month: "", grossIncome: "", netIncome: "" });
   const [editEntry, setEditEntry] = useState(null);
+  const [billModal, setBillModal] = useState(null); // base64 image/pdf to show in modal
+
+  function updateEntry(id, changes) {
+    update(p => ({ businessData: (p.businessData || []).map(e => e.id === id ? { ...e, ...changes } : e) }));
+  }
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -4024,7 +4032,7 @@ function BusinessPage({ data, update }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--color-background-secondary)" }}>
-                      {["Month","Gross Income","Net Income","Margin",""].map(h => (
+                      {["Month","Gross Income","Net Income","Margin","Bill",""].map(h => (
                         <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
                       ))}
                     </tr>
@@ -4038,6 +4046,31 @@ function BusinessPage({ data, update }) {
                           <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</td>
                           <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</td>
                           <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
+                          {/* Bill column */}
+                          <td style={{ padding: "6px 14px" }}>
+                            {e.billImage ? (
+                              <img
+                                src={e.billImage}
+                                alt="bill"
+                                onClick={() => setBillModal(e.billImage)}
+                                style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer", display: "block" }}
+                                title="Click to view full bill"
+                              />
+                            ) : (
+                              <label title="Upload bill" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 6, border: "1px dashed #ccc", color: "#aaa", fontSize: 16 }}>
+                                📎
+                                <input type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={ev => {
+                                  const file = ev.target.files[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onload = re => {
+                                    updateEntry(e.id, { billImage: re.target.result });
+                                  };
+                                  reader.readAsDataURL(file);
+                                }} />
+                              </label>
+                            )}
+                          </td>
                           <td style={{ padding: "9px 14px", textAlign: "right" }}>
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                               <button onClick={() => setEditEntry({ ...e })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️</button>
@@ -4053,10 +4086,23 @@ function BusinessPage({ data, update }) {
                       <td style={{ padding: "9px 14px", fontWeight: 600 }}>Total</td>
                       <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0))}</td>
                       <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0))}</td>
-                      <td colSpan={2} />
+                      <td colSpan={3} />
                     </tr>
                   </tfoot>
                 </table>
+                {/* Bill full-view modal */}
+                {billModal && (
+                  <div onClick={() => setBillModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div onClick={ev => ev.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 16, maxWidth: "90vw", maxHeight: "90vh", overflow: "auto", position: "relative" }}>
+                      <button onClick={() => setBillModal(null)} style={{ position: "absolute", top: 10, right: 12, background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#666" }}>✕</button>
+                      {billModal.startsWith("data:application/pdf") ? (
+                        <iframe src={billModal} style={{ width: "70vw", height: "80vh", border: "none" }} title="Bill PDF" />
+                      ) : (
+                        <img src={billModal} alt="Full bill" style={{ maxWidth: "80vw", maxHeight: "80vh", borderRadius: 8, display: "block" }} />
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -5175,21 +5221,10 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New node"); }, 0);
   }
   function deleteNode(nodeId) {
-    const isRoot = nodes.find(n => n.id === nodeId)?.isRoot;
-    const rootCount = nodes.filter(n => n.isRoot).length;
-    if (isRoot && rootCount <= 1) return; // keep at least one root
-    snap();
+    if (nodeId === "root") return; snap();
     const del = new Set(), q = [nodeId];
     while (q.length) { const id = q.shift(); del.add(id); edges.filter(e => e.from === id).forEach(e => q.push(e.to)); }
     setNodes(p => p.filter(n => !del.has(n.id))); setEdges(p => p.filter(e => !del.has(e.from) && !del.has(e.to))); setSelected(null);
-  }
-  function addRootNode() {
-    snap();
-    const id = "root_" + Date.now();
-    const maxX = nodes.length ? Math.max(...nodes.map(n => n.x)) : 300;
-    const newRoot = { id, label: "New Idea", x: maxX + 280, y: 280, isRoot: true, color: "#dbeafe" };
-    setNodes(p => [...p, newRoot]);
-    setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New Idea"); }, 0);
   }
   function commitEdit() {
     if (!editingId) return; snap();
@@ -5284,18 +5319,15 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         {/* Node selected actions */}
         {selNode && (<>
           <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
-          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{selNode.isRoot ? "🌟 Central:" : "Node:"}</span>
+          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Node:</span>
           <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btn }}>✏️ Rename</button>
-          {(!selNode.isRoot || nodes.filter(n => n.isRoot).length > 1) &&
-            <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑{selNode.isRoot ? " Delete idea" : ""}</button>}
+          {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
           <div style={{ display: "flex", gap: 3 }}>
             {NC.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
           </div>
         </>)}
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <button onClick={addRootNode} title="Add a new central idea to the map"
-            style={{ ...btn, background: "#ede9fe", border: "1.5px solid #6d28d9", color: "#4c1d95", fontWeight: 600 }}>🌟 + Central Idea</button>
           <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btn, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
           <button onClick={() => deleteNote(note.id)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑 Delete note</button>
         </div>
@@ -5342,10 +5374,6 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
                   {/* + child */}
                   <div onMouseDown={e => { e.stopPropagation(); addChild(node.id); }} title="Add child"
                     style={{ position:"absolute", right:-11, top:"50%", transform:"translateY(-50%)", width:20, height:20, borderRadius:"50%", background:"#1a6b3c", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, cursor:"pointer", zIndex:20, boxShadow:"0 1px 4px rgba(0,0,0,0.18)", lineHeight:1 }}>+</div>
-                  {/* Star badge for root nodes */}
-                  {node.isRoot && (
-                    <div style={{ position:"absolute", top:-10, left:"50%", transform:"translateX(-50%)", fontSize:12, lineHeight:1, userSelect:"none", pointerEvents:"none" }}>🌟</div>
-                  )}
                   {hasKids && (
                     <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCol ? `Show ${kidCount}` : "Collapse"}
                       style={{ position:"absolute", bottom:-11, left:"50%", transform:"translateX(-50%)", width:20, height:20, borderRadius:"50%", background: isCol?"#6d28d9":"#e5e7eb", color: isCol?"#fff":"#6b7280", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, cursor:"pointer", zIndex:20, border:"1.5px solid "+(isCol?"#5b21b6":"#d1d5db") }}>
