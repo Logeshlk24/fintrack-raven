@@ -104,6 +104,41 @@ function DriveProvider({ children, data, update }) {
   const [error,       setError]       = useState("");
   const clientId = data.driveClientId || "";
 
+  // ── Auto-silent refresh on mount if token expired but clientId + email exist ──
+  useEffect(() => {
+    if (isValid) return; // still valid, nothing to do
+    const cid = data.driveClientId;
+    const savedEmail = storedEmail;
+    if (!cid || !savedEmail) return; // never authenticated before
+
+    // Wait for GIS script to load, then silently request a new token
+    function tryRefresh() {
+      if (!window.google?.accounts?.oauth2) return;
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: cid,
+        scope: "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+        hint: savedEmail, // pre-fill the account
+        callback: async (resp) => {
+          if (resp.error || !resp.access_token) return; // silent fail — user can re-login manually
+          saveToken(resp.access_token, resp.expires_in || 3600);
+          setEmail(savedEmail);
+        },
+      });
+      // prompt: "none" = fully silent, no popup — only works if user already granted
+      client.requestAccessToken({ prompt: "none" });
+    }
+
+    if (window.google?.accounts?.oauth2) {
+      tryRefresh();
+    } else {
+      // Script still loading — poll until ready
+      const iv = setInterval(() => {
+        if (window.google?.accounts?.oauth2) { clearInterval(iv); tryRefresh(); }
+      }, 200);
+      setTimeout(() => clearInterval(iv), 8000); // give up after 8s
+    }
+  }, []); // eslint-disable-line
+
   // Load google scripts once
   useEffect(() => {
     if (!window._gapiReady) {
@@ -2270,27 +2305,65 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
         </div>
       </div>
 
-      {/* Folder list */}
-      {folders.length===0
-        ? <div style={{ ...cardStyle, textAlign:"center", color:"var(--color-text-secondary)", fontSize:13, padding:"2rem" }}><div style={{ fontSize:36, marginBottom:8 }}>🗂</div>No folders yet.</div>
-        : folders.map(folder => {
-          const isOpen = openId===folder.id;
-          const fcount = (folder.files||[]).length + (folder.subFolders||[]).reduce((s,sf)=>s+(sf.files||[]).length,0);
-          return (
-            <div key={folder.id} style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:10 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"11px 14px", cursor:"pointer", background:isOpen?"#f0fdf4":"var(--color-background-primary)", borderBottom:isOpen?"0.5px solid var(--color-border-tertiary)":"none" }}
-                onClick={()=>setOpenId(isOpen?null:folder.id)}>
-                <span style={{ fontSize:20 }}>{isOpen?"📂":"📁"}</span>
-                <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{folder.name}</span>
-                {folder.driveFolderId && <span style={{ fontSize:10, background:"#dbeafe", color:"#1d4ed8", borderRadius:4, padding:"1px 6px", flexShrink:0 }}>☁ Drive</span>}
-                <span style={{ fontSize:11, color:"var(--color-text-secondary)", whiteSpace:"nowrap" }}>{fcount} file{fcount!==1?"s":""}{(folder.subFolders||[]).length>0?` · ${(folder.subFolders||[]).length} sub-folder${(folder.subFolders||[]).length!==1?"s":""}`:""}</span>
-                <span style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{isOpen?"▲":"▼"}</span>
-                <button onClick={e=>{e.stopPropagation();deleteFolder(folder.id);}} style={{ background:"#fee2e2", border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#dc2626", marginLeft:4, flexShrink:0 }}>🗑</button>
-              </div>
-              {isOpen && <FolderBody folder={folder} />}
+      {/* ── Folder grid — like Business year folders ── */}
+      {folders.length === 0
+        ? <div style={{ textAlign:"center", color:"var(--color-text-secondary)", fontSize:13, padding:"3rem 1rem" }}>
+            <div style={{ fontSize:40, marginBottom:8 }}>🗂</div>
+            <div>No folders yet. Create one above.</div>
+          </div>
+        : <>
+          {/* Grid of folder cards */}
+          {!openId && (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))", gap:12, marginTop:4 }}>
+              {folders.map(folder => {
+                const fcount = (folder.files||[]).length + (folder.subFolders||[]).reduce((s,sf)=>s+(sf.files||[]).length,0);
+                const sfCount = (folder.subFolders||[]).length;
+                return (
+                  <div key={folder.id}
+                    onClick={() => setOpenId(folder.id)}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
+                    style={{ background:"var(--color-background-primary)", borderRadius:14, border:"0.5px solid var(--color-border-secondary)", borderTop:"3px solid #1a6b3c", padding:"1.1rem 1.1rem 0.9rem", cursor:"pointer", position:"relative", boxShadow:"0 1px 4px rgba(0,0,0,0.05)", transition:"box-shadow 0.15s" }}>
+                    {/* Delete button */}
+                    <button onClick={e=>{e.stopPropagation(); deleteFolder(folder.id);}}
+                      style={{ position:"absolute", top:8, right:8, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"#d44", opacity:0.5, padding:"2px 4px" }}
+                      title="Delete folder">🗑</button>
+                    <div style={{ fontSize:32, marginBottom:6 }}>📁</div>
+                    <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:20, wordBreak:"break-word" }}>{folder.name}</div>
+                    <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:6 }}>
+                      {fcount} file{fcount!==1?"s":""}
+                      {sfCount>0 && ` · ${sfCount} sub-folder${sfCount!==1?"s":""}`}
+                    </div>
+                    <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                      {folder.driveFolderId && <span style={{ fontSize:10, background:"#dbeafe", color:"#1d4ed8", borderRadius:4, padding:"1px 6px" }}>☁ Drive</span>}
+                      {fcount === 0 && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:4, padding:"1px 6px" }}>Empty</span>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })
+          )}
+
+          {/* Expanded folder detail view */}
+          {openId && (() => {
+            const folder = folders.find(f => f.id === openId);
+            if (!folder) { setOpenId(null); return null; }
+            return (
+              <div style={{ marginTop:4 }}>
+                {/* Back + header */}
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+                  <button onClick={()=>setOpenId(null)} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)", display:"flex", alignItems:"center", gap:5 }}>
+                    ← Back
+                  </button>
+                  <span style={{ fontSize:22 }}>📂</span>
+                  <span style={{ fontWeight:700, fontSize:18 }}>{folder.name}</span>
+                  {folder.driveFolderId && <span style={{ fontSize:11, background:"#dbeafe", color:"#1d4ed8", borderRadius:5, padding:"2px 8px" }}>☁ Drive</span>}
+                </div>
+                <FolderBody folder={folder} />
+              </div>
+            );
+          })()}
+        </>
       }
 
       {/* Preview modal */}
