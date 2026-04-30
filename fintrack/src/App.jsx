@@ -2865,6 +2865,64 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
   }
 
+  // ── Auto-pay: mark due/overdue payments as paid and log transactions ────────
+  useEffect(() => {
+    if (!payments.length) return;
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+
+    const updates = [];
+    payments.forEach(pay => {
+      const key = getNextDueKey(pay);
+      if (!key) return;
+      const [ky, km] = key.split("-").map(Number);
+      const dueDate = new Date(ky, km - 1, pay.day);
+      // Auto-pay if due date is today or in the past AND not already paid
+      if (dueDate <= now && !pay.paid.includes(key)) {
+        updates.push({ pay, key });
+      }
+    });
+
+    if (!updates.length) return;
+
+    update(p => {
+      let scheduledPayments = p.scheduledPayments || [];
+      let transactions = p.transactions || [];
+
+      updates.forEach(({ pay, key }) => {
+        // Skip if already paid (check current state inside update)
+        const current = scheduledPayments.find(x => x.id === pay.id);
+        if (!current || current.paid.includes(key)) return;
+
+        const [ky, km] = key.split("-").map(Number);
+        const txDate = `${ky}-${String(km).padStart(2,"0")}-${String(pay.day).padStart(2,"0")}`;
+        const txType = pay.flowType === "income" ? "income" : "expense";
+
+        // Check no duplicate transaction already exists for this period
+        const alreadyLogged = transactions.some(t => t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key);
+        if (!alreadyLogged) {
+          transactions = [...transactions, {
+            id: Date.now() + Math.random(),
+            type: txType,
+            amount: pay.amount,
+            category: pay.type || (txType === "income" ? "Income" : "EMI"),
+            note: pay.name + (pay.notes ? ` — ${pay.notes}` : "") + " (auto)",
+            date: txDate,
+            bankId: pay.accountId || "",
+            scheduledPaymentId: pay.id,
+            scheduledPeriodKey: key,
+          }];
+        }
+
+        scheduledPayments = scheduledPayments.map(x =>
+          x.id === pay.id ? { ...x, paid: [...x.paid, key] } : x
+        );
+      });
+
+      return { scheduledPayments, transactions };
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Run once on mount — catches any overdue/today payments immediately
+
   function deletePayment(id) {
     // Keep all past transactions including current month — only drop strictly future ones
     const now = new Date();
@@ -3144,17 +3202,19 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 const key = getNextDueKey(p);
                 const isPaid = key && p.paid.includes(key);
                 const days = d ? daysDiff(d) : null;
+                // Check if this was auto-paid (transaction note ends with "(auto)")
+                const autoPaidTx = isPaid && (data.transactions || []).find(t => t.scheduledPaymentId === p.id && t.scheduledPeriodKey === key && t.note?.endsWith("(auto)"));
                 let badge = "", badgeColor = "var(--color-text-secondary)", badgeBg = "var(--color-background-secondary)";
-                if (d && days !== null) {
+                if (!isPaid && d && days !== null) {
                   if (days < 0) { badge = `${Math.abs(days)}d overdue`; badgeColor = "#d44"; badgeBg = "#fdf0f0"; }
                   else if (days === 0) { badge = "Due today"; badgeColor = "#f0a020"; badgeBg = "#fff8e0"; }
                   else if (days <= 7) { badge = `${days}d left`; badgeColor = "#f0a020"; badgeBg = "#fff8e0"; }
                   else { badge = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }); }
                 }
-                const acct = accounts.find(a => a.id == p.accountId);
+                const acct = accounts.find(a => String(a.id) === String(p.accountId));
                 return (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: isPaid ? "var(--color-background-tertiary)" : "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)", opacity: isPaid ? 0.55 : 1, transition: "opacity 0.2s" }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: typeColors[p.type] || "#1a6b3c", flexShrink: 0 }} />
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: isPaid ? "var(--color-background-tertiary)" : "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: `0.5px solid ${isPaid ? "#bbf7d0" : "var(--color-border-tertiary)"}`, opacity: isPaid ? 0.75 : 1, transition: "opacity 0.2s" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: isPaid ? "#1a6b3c" : (typeColors[p.type] || "#1a6b3c"), flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                       <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
@@ -3166,12 +3226,12 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{fmtCur(p.amount)}</div>
                       <span style={{ fontSize: 10, background: isPaid ? "#e8f5ee" : badgeBg, color: isPaid ? "#1a6b3c" : badgeColor, borderRadius: 4, padding: "2px 7px", display: "inline-block", marginTop: 2, fontWeight: 500 }}>
-                        {isPaid ? "✓ Paid" : badge}
+                        {isPaid ? (autoPaidTx ? "⚡ Auto-paid" : "✓ Paid") : badge}
                       </span>
                       {isPaid && <div style={{ fontSize: 10, color: "#1a6b3c", marginTop: 2, opacity: 0.8 }}>↳ logged in {p.flowType === "income" ? "Income" : "Expenses"}</div>}
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                      <button onClick={() => togglePaid(p.id)} title={isPaid ? "Mark Unpaid (removes transaction)" : "Mark Paid (logs to Expenses/Income)"} style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
+                      <button onClick={() => togglePaid(p.id)} title={isPaid ? "Undo — removes auto-logged transaction" : "Mark Paid manually"} style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
                       <button onClick={() => startEdit(p)} title="Edit payment" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#4da6ff", display: "flex", alignItems: "center", justifyContent: "center" }}>✏️</button>
                       <button onClick={() => deletePayment(p.id)} title="Delete" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#d44", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
                     </div>
