@@ -1101,7 +1101,7 @@ function MoneyPage({ data, update, tab, setTab }) {
                       ))}</tr>
                     </thead>
                     <tbody>{filtered.slice().reverse().map(t => {
-                      const acct = accounts.find(b => b.id === t.bankId);
+                      const acct = accounts.find(b => String(b.id) === String(t.bankId));
                       return (
                         <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                           <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{t.date}</td>
@@ -2204,8 +2204,11 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
         {drive?.connected && (
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
             <span style={{ fontSize:11, color:"var(--color-text-secondary)", whiteSpace:"nowrap", flexShrink:0 }}>Drive Folder ID:</span>
-            <input value={folder.driveFolderId||""} onChange={e=>setDriveFId(folder.id,e.target.value,parentId)}
-              placeholder="optional — leave empty to upload to Drive root"
+            <input 
+              defaultValue={folder.driveFolderId||""}
+              onBlur={e => setDriveFId(folder.id, e.target.value.trim(), parentId)}
+              onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } }}
+              placeholder="Paste folder ID here (press Enter or click away to save)"
               style={{ flex:1, minWidth:160, border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"4px 9px", fontSize:11, outline:"none", fontFamily:"inherit", color:"var(--color-text-primary)" }} />
             <a href="https://drive.google.com" target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", whiteSpace:"nowrap" }}>Open Drive ↗</a>
           </div>
@@ -2383,6 +2386,14 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                 ? <iframe src={preview.previewUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" allow="autoplay" />
                 : preview.dataUrl?.startsWith("data:image")
                   ? <img src={preview.dataUrl} alt={preview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
+                  : (preview.dataUrl?.startsWith("data:application/pdf") || preview.type === "application/pdf") && preview.dataUrl
+                    ? <object data={preview.dataUrl} type="application/pdf" style={{ width:"82vw", height:"78vh", border:"none" }}>
+                        <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}>
+                          <div style={{ fontSize:48, marginBottom:12 }}>📕</div>
+                          <div style={{ marginBottom:12 }}>PDF preview not supported in this browser.</div>
+                          <a href={preview.dataUrl} download={preview.name} style={{ color:"#1a6b3c", fontWeight:500 }}>⬇ Download PDF</a>
+                        </div>
+                      </object>
                   : preview.dataUrl
                     ? <iframe src={preview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
                     : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
@@ -3772,7 +3783,7 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
-  const [form, setForm] = useState({ name: "", targetAmount: "", savedAmount: "", notes: "", priority: "medium" });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "" });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -3783,21 +3794,24 @@ function GoalsPage({ data, update }) {
   const displayed = activeTab === "needs" ? needs : wants;
 
   function addItem() {
-    if (!form.name.trim() || !form.targetAmount) return;
+    if (!form.name.trim()) return;
+    if (form.goalType === "money" && !form.targetAmount) return;
     update(p => ({
       needsWants: [...(p.needsWants || []), {
         id: Date.now(),
         kind: activeTab === "needs" ? "need" : "want",
+        goalType: form.goalType || "money",
         name: form.name.trim(),
-        targetAmount: parseFloat(form.targetAmount),
+        targetAmount: parseFloat(form.targetAmount) || 0,
         savedAmount: parseFloat(form.savedAmount) || 0,
         notes: form.notes,
         priority: form.priority,
+        dueDate: form.dueDate || "",
         createdAt: today(),
         completed: false,
       }]
     }));
-    setForm({ name: "", targetAmount: "", savedAmount: "", notes: "", priority: "medium" });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "" });
     setShowAdd(false);
   }
 
@@ -3855,20 +3869,39 @@ function GoalsPage({ data, update }) {
   function renderFormFields(values, onChange) {
     return (
       <div>
+        {/* Goal type toggle: Money vs Task */}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Goal Type</label>
+          <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
+            {[["money","💰 Money","#1a6b3c","#e8f5ee"],["task","✅ Task","#4da6ff","#e8f0ff"]].map(([v, lbl, color, bg]) => (
+              <button key={v} onClick={() => onChange({ ...values, goalType: v })}
+                style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", fontSize: 12, fontWeight: values.goalType === v ? 600 : 400, background: values.goalType === v ? bg : "transparent", color: values.goalType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
         <div style={{ marginBottom: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name *</label>
-          <input placeholder="e.g. Emergency Fund, New Laptop" value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          <input placeholder={values.goalType === "task" ? "e.g. Complete certification, Learn piano" : "e.g. Emergency Fund, New Laptop"} value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-          <div>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
-            <input type="text" inputMode="decimal" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+        {values.goalType === "money" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
+              <input type="text" inputMode="decimal" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
+              <input type="text" inputMode="decimal" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
           </div>
-          <div>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
-            <input type="text" inputMode="decimal" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+        ) : (
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Due Date (optional)</label>
+            <input type="date" value={values.dueDate || ""} onChange={e => onChange({ ...values, dueDate: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
           </div>
-        </div>
+        )}
         <div style={{ marginBottom: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Priority</label>
           <div style={{ display: "flex", gap: 6 }}>
@@ -3893,6 +3926,14 @@ function GoalsPage({ data, update }) {
     const remaining = item.targetAmount - item.savedAmount;
     const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
     const accounts = data.banks || [];
+    const isTask = item.goalType === "task";
+
+    // For task goals: show due date and completion status
+    const dueDateEl = isTask && item.dueDate ? (() => {
+      const diff = Math.round((new Date(item.dueDate) - new Date()) / 86400000);
+      const color = diff < 0 ? "#d44" : diff <= 3 ? "#f0a020" : "#1a6b3c";
+      return <span style={{ fontSize: 11, color, fontWeight: 500 }}>📅 {new Date(item.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})} {diff < 0 ? "(overdue)" : diff === 0 ? "(today)" : `(${diff}d left)`}</span>;
+    })() : null;
 
     return (
       <div style={{
@@ -3909,37 +3950,50 @@ function GoalsPage({ data, update }) {
                 {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
                 {item.name}
               </span>
+              {isTask && <span style={{ fontSize: 10, background: "#e8f0ff", color: "#4da6ff", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>✅ Task</span>}
               <span style={{ fontSize: 10, background: item.priority === "high" ? "#fdf0f0" : item.priority === "medium" ? "#fffbe0" : "#e8f5ee", color: item.priority === "high" ? "#d44" : item.priority === "medium" ? "#b8860b" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500 }}>
                 {item.priority === "high" ? "🔴" : item.priority === "medium" ? "🟡" : "🟢"} {item.priority}
               </span>
             </div>
             {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
+            {dueDateEl && <div style={{ marginTop: 4 }}>{dueDateEl}</div>}
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
             <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {item.completed ? "↩" : "✓"}
             </button>
-            <ThreeDotMenu onEdit={() => setEditItem({ ...item })} onDelete={() => deleteItem(item.id)} />
+            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money" })} onDelete={() => deleteItem(item.id)} />
           </div>
         </div>
 
-        {/* Progress */}
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
-            <span style={{ color: "var(--color-text-secondary)" }}>Saved: <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{fmtCur(item.savedAmount)}</span></span>
-            <span style={{ color: "var(--color-text-secondary)" }}>Target: <span style={{ fontWeight: 600, color: cardAccent }}>{fmtCur(item.targetAmount)}</span></span>
+        {/* Money goal progress */}
+        {!isTask && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
+              <span style={{ color: "var(--color-text-secondary)" }}>Saved: <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{fmtCur(item.savedAmount)}</span></span>
+              <span style={{ color: "var(--color-text-secondary)" }}>Target: <span style={{ fontWeight: 600, color: cardAccent }}>{fmtCur(item.targetAmount)}</span></span>
+            </div>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 7, overflow: "hidden" }}>
+              <div style={{ width: pct + "%", height: "100%", background: pct >= 100 ? "#1a6b3c" : cardAccent, borderRadius: 6, transition: "width 0.5s ease" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, color: "var(--color-text-secondary)" }}>
+              <span>{pct.toFixed(1)}% complete</span>
+              {remaining > 0 ? <span>{fmtCur(remaining)} remaining</span> : <span style={{ color: "#1a6b3c", fontWeight: 500 }}>🎉 Goal reached!</span>}
+            </div>
           </div>
-          <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 7, overflow: "hidden" }}>
-            <div style={{ width: pct + "%", height: "100%", background: pct >= 100 ? "#1a6b3c" : cardAccent, borderRadius: 6, transition: "width 0.5s ease" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, color: "var(--color-text-secondary)" }}>
-            <span>{pct.toFixed(1)}% complete</span>
-            {remaining > 0 ? <span>{fmtCur(remaining)} remaining</span> : <span style={{ color: "#1a6b3c", fontWeight: 500 }}>🎉 Goal reached!</span>}
-          </div>
-        </div>
+        )}
 
-        {/* Add savings — state lives in a separate stable child component */}
-        {!item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
+        {/* Task goal completion indicator */}
+        {isTask && !item.completed && (
+          <div style={{ marginBottom: 10 }}>
+            <button onClick={() => toggleComplete(item.id)} style={{ width: "100%", background: "#e8f5ee", border: "1px solid #1a6b3c", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 }}>
+              ✓ Mark as Done
+            </button>
+          </div>
+        )}
+
+        {/* Add savings — only for money goals */}
+        {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
       </div>
     );
   }
@@ -5123,8 +5177,33 @@ function ProjectsPage({ data, update }) {
             )}
 
             {/* ── FILES TAB ── */}
-            {leftTab === "files" && (
+            {leftTab === "files" && (() => {
+              const [filePreview, setFilePreview] = React.useState(null);
+              return (
               <div>
+                {filePreview && (
+                  <div onClick={() => setFilePreview(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.78)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+                    <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"92vw", maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
+                      <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
+                        <span style={{ fontWeight:600, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{filePreview.name}</span>
+                        <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
+                          {filePreview.dataUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
+                          <button onClick={() => setFilePreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
+                        </div>
+                      </div>
+                      <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
+                        {filePreview.dataUrl?.startsWith("data:image")
+                          ? <img src={filePreview.dataUrl} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
+                          : filePreview.dataUrl?.startsWith("data:application/pdf") || filePreview.type === "application/pdf"
+                            ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
+                            : filePreview.dataUrl
+                              ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
+                              : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "flex-end" }}>
                   <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
                     + Upload
@@ -5143,21 +5222,28 @@ function ProjectsPage({ data, update }) {
                   <div style={{ padding: "0.5rem 0" }}>
                     {files.map(f => (
                       <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                        <span style={{ fontSize: 20, flexShrink: 0 }}>{fileIcon(f.type)}</span>
+                        <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: f.dataUrl ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
+                          {f.type?.startsWith("image/") && f.dataUrl
+                            ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : <span>{fileIcon(f.type)}</span>
+                          }
+                        </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <a href={f.dataUrl} download={f.name} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{f.name}</a>
+                          <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: f.dataUrl ? "pointer" : "default" }}>{f.name}</div>
                           <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
                         </div>
-                        {f.type.startsWith("image/") && (
-                          <img src={f.dataUrl} alt={f.name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "0.5px solid var(--color-border-secondary)" }} />
+                        {f.dataUrl && (
+                          <button onClick={() => setFilePreview(f)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)", flexShrink: 0 }}>👁 Preview</button>
                         )}
+                        <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
                         <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-            )}
+              );
+            })()}
             {/* ── NOTES TAB — Merged Note + MindMap + Undo/Redo ── */}
             {leftTab === "notes" && (() => {
               function makeDefaultMindmap() {
@@ -5701,8 +5787,17 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     setEdges(p => [...p, { id: "e" + Date.now(), from: parentId, to: id }]);
     setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New node"); }, 0);
   }
+  function addRootNode() {
+    snap();
+    const id = "root" + Date.now();
+    setNodes(p => [...p, { id, label: "Central Idea", x: 200 + Math.random() * 200 - pan.x, y: 150 + Math.random() * 100 - pan.y, isRoot: true, color: "#ede9fe" }]);
+    setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("Central Idea"); }, 0);
+  }
   function deleteNode(nodeId) {
-    if (nodeId === "root") return; snap();
+    // Allow deleting any node that isn't the very last root node
+    const rootNodes = nodes.filter(n => n.isRoot);
+    if (nodeId === "root" && rootNodes.length <= 1) return; // don't delete the only root
+    snap();
     const del = new Set(), q = [nodeId];
     while (q.length) { const id = q.shift(); del.add(id); edges.filter(e => e.from === id).forEach(e => q.push(e.to)); }
     setNodes(p => p.filter(n => !del.has(n.id))); setEdges(p => p.filter(e => !del.has(e.from) && !del.has(e.to))); setSelected(null);
@@ -5789,6 +5884,11 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           T&nbsp; Text
         </button>
 
+        <button onClick={addRootNode} title="Add a new Central Idea node"
+          style={{ ...btn, background: "#ede9fe", border: "1.5px solid #7c3aed", color: "#5b21b6", fontWeight: 700, fontSize: 12, padding: "4px 11px", display: "flex", alignItems: "center", gap: 5 }}>
+          ＋ Central Idea
+        </button>
+
         <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
 
         {/* Canvas bg color dots */}
@@ -5803,6 +5903,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Node:</span>
           <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btn }}>✏️ Rename</button>
           {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
+          {selNode.isRoot && nodes.filter(n => n.isRoot).length > 1 && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
           <div style={{ display: "flex", gap: 3 }}>
             {NC.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
           </div>
@@ -5870,10 +5971,10 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           {textBlocks.map(tb => (
             <div key={tb.id} data-nocanvas="1"
               style={{ position: "absolute", left: tb.x + pan.x, top: tb.y + pan.y, zIndex: 7, minWidth: 60 }}>
-              {/* Invisible drag strip above text */}
+              {/* Drag strip + controls above text */}
               <div
                 onMouseDown={e => onTextBlockMouseDown(e, tb.id)}
-                style={{ height: 14, cursor: dragging?.id === tb.id ? "grabbing" : "grab", display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 2, opacity: 0.45 }}>
+                style={{ height: 20, cursor: dragging?.id === tb.id ? "grabbing" : "grab", display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 2, background: "rgba(109,40,217,0.07)", borderRadius: "4px 4px 0 0", paddingLeft: 4, borderBottom: "1px dashed rgba(109,40,217,0.2)" }}>
                 {/* Formatting mini-bar */}
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }} onMouseDown={e => e.stopPropagation()}>
                   <button onClick={() => updateTextBlock(tb.id, { bold: !tb.bold })}
@@ -5922,7 +6023,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           {/* Canvas hint */}
           <div style={{ position:"absolute", bottom:10, right:14, fontSize:10, color:"#c0bedd", pointerEvents:"none", textAlign:"right", lineHeight:1.7 }}>
             <b style={{color:"#6d28d9"}}>T Text</b> in toolbar or <b>double-click</b> empty space to add text<br/>
-            <span style={{color:"#a78bfa"}}>+</span> = add child · <span style={{color:"#6d28d9"}}>●</span> = collapse · drag canvas = pan
+            <span style={{color:"#7c3aed"}}>＋ Central Idea</span> = add new idea · <span style={{color:"#a78bfa"}}>+</span> = add child · drag purple bar = move text
           </div>
         </div>
       </div>
