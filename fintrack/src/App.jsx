@@ -1764,11 +1764,11 @@ function SettingsPage({ data, update, tab, setTab }) {
   const effectiveTab = (!foOn && tab === "trading") ? "accounts" : tab;
 
   const settingsTabs = foOn
-    ? ["trading", "accounts", "categories", "projects", "features"]
-    : ["accounts", "categories", "projects", "features"];
+    ? ["trading", "accounts", "categories", "projects", "documents", "features"]
+    : ["accounts", "categories", "projects", "documents", "features"];
   const settingsLabels = foOn
-    ? ["Trading Settings", "Account Settings", "Categories", "Projects", "Features"]
-    : ["Account Settings", "Categories", "Projects", "Features"];
+    ? ["Trading Settings", "Account Settings", "Categories", "Projects", "Documents", "Features"]
+    : ["Account Settings", "Categories", "Projects", "Documents", "Features"];
 
   return (
     <div>
@@ -1792,6 +1792,9 @@ function SettingsPage({ data, update, tab, setTab }) {
 
       {/* ── Projects ── */}
       {effectiveTab === "projects" && <ProjectSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Documents ── */}
+      {effectiveTab === "documents" && <DocumentsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
       {/* ── Feature Toggles ── */}
       {effectiveTab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
@@ -1909,6 +1912,180 @@ function ProjectSettings({ data, update, cardStyle, sectionTitle }) {
           💡 These types appear in the task type dropdown when adding or editing tasks in any project. Deleting a type won't remove it from existing tasks.
         </p>
       </div>
+    </div>
+  );
+}
+
+// ─── Documents Settings ───────────────────────────────────────────────────────
+function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
+  const folders = data.documentFolders || [];
+
+  const [newFolderName, setNewFolderName] = useState("");
+  const [openFolderId, setOpenFolderId]   = useState(null);
+  const [docPreview,   setDocPreview]     = useState(null); // { src, name, type }
+
+  function addFolder() {
+    const name = newFolderName.trim();
+    if (!name) return;
+    update(p => ({ documentFolders: [...(p.documentFolders || []), { id: "f" + Date.now(), name, files: [] }] }));
+    setNewFolderName("");
+  }
+  function deleteFolder(folderId) {
+    update(p => ({ documentFolders: (p.documentFolders || []).filter(f => f.id !== folderId) }));
+    if (openFolderId === folderId) setOpenFolderId(null);
+  }
+  function uploadFile(folderId, file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const fileObj = { id: "d" + Date.now(), name: file.name, type: file.type, size: file.size, data: ev.target.result, uploadedAt: new Date().toISOString() };
+      update(p => ({ documentFolders: (p.documentFolders || []).map(f =>
+        f.id === folderId ? { ...f, files: [...(f.files || []), fileObj] } : f
+      )}));
+    };
+    reader.readAsDataURL(file);
+  }
+  function deleteFile(folderId, fileId) {
+    update(p => ({ documentFolders: (p.documentFolders || []).map(f =>
+      f.id === folderId ? { ...f, files: (f.files || []).filter(d => d.id !== fileId) } : f
+    )}));
+  }
+  function fmtSize(bytes) {
+    if (!bytes) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + " KB";
+    return (bytes/(1024*1024)).toFixed(1) + " MB";
+  }
+  function fileIcon(type) {
+    if (!type) return "📄";
+    if (type.startsWith("image/")) return "🖼";
+    if (type === "application/pdf") return "📕";
+    if (type.includes("word")) return "📝";
+    if (type.includes("sheet") || type.includes("excel") || type.includes("csv")) return "📊";
+    if (type.includes("zip") || type.includes("rar")) return "🗜";
+    return "📄";
+  }
+
+  return (
+    <div>
+      {sectionTitle("🗂", "Documents", "Organise files into folders. Click a file to preview it.")}
+
+      {/* Add folder */}
+      <div style={cardStyle}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <input
+            value={newFolderName}
+            onChange={e => setNewFolderName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addFolder()}
+            placeholder="New folder name…"
+            style={{ flex:1, border:"0.5px solid var(--color-border-secondary)", borderRadius:8, padding:"8px 12px", fontSize:13, outline:"none", fontFamily:"inherit", background:"var(--color-background-primary)", color:"var(--color-text-primary)" }}
+          />
+          <button onClick={addFolder}
+            style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:"pointer", fontSize:13, fontWeight:500, whiteSpace:"nowrap" }}>
+            + New Folder
+          </button>
+        </div>
+      </div>
+
+      {/* Folder list */}
+      {folders.length === 0 ? (
+        <div style={{ ...cardStyle, textAlign:"center", color:"var(--color-text-secondary)", fontSize:13, padding:"2rem" }}>
+          <div style={{ fontSize:36, marginBottom:8 }}>🗂</div>
+          No folders yet. Create one above.
+        </div>
+      ) : folders.map(folder => {
+        const isOpen = openFolderId === folder.id;
+        return (
+          <div key={folder.id} style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:10 }}>
+            {/* Folder header */}
+            <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", cursor:"pointer", background: isOpen?"#f0fdf4":"var(--color-background-primary)", borderBottom: isOpen?"0.5px solid var(--color-border-tertiary)":"none" }}
+              onClick={() => setOpenFolderId(isOpen ? null : folder.id)}>
+              <span style={{ fontSize:18 }}>{isOpen ? "📂" : "📁"}</span>
+              <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{folder.name}</span>
+              <span style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{(folder.files||[]).length} file{(folder.files||[]).length !== 1 ? "s" : ""}</span>
+              <span style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{isOpen ? "▲" : "▼"}</span>
+              <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }}
+                style={{ background:"#fee2e2", border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#dc2626", marginLeft:4 }}>🗑</button>
+            </div>
+
+            {/* Files inside folder */}
+            {isOpen && (
+              <div style={{ padding:"10px 14px" }}>
+                {/* Upload button */}
+                <label style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#f0fdf4", border:"1px dashed #1a6b3c", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:12, color:"#1a6b3c", fontWeight:500, marginBottom:10 }}>
+                  📎 Upload File
+                  <input type="file" multiple style={{ display:"none" }}
+                    onChange={e => Array.from(e.target.files).forEach(f => uploadFile(folder.id, f))} />
+                </label>
+
+                {/* File list */}
+                {(folder.files || []).length === 0 ? (
+                  <div style={{ fontSize:12, color:"var(--color-text-secondary)", padding:"8px 0" }}>No files yet.</div>
+                ) : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {(folder.files || []).map(file => (
+                      <div key={file.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 10px", borderRadius:8, background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-tertiary)" }}>
+                        {/* Thumbnail / icon */}
+                        <div onClick={() => setDocPreview({ src: file.data, name: file.name, type: file.type })}
+                          style={{ width:34, height:34, borderRadius:6, overflow:"hidden", border:"0.5px solid var(--color-border-secondary)", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"#f9fafb", fontSize:20 }}>
+                          {file.type?.startsWith("image/")
+                            ? <img src={file.data} alt={file.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                            : fileIcon(file.type)}
+                        </div>
+                        {/* Info */}
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div onClick={() => setDocPreview({ src: file.data, name: file.name, type: file.type })}
+                            style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }}
+                            title={file.name}>{file.name}</div>
+                          <div style={{ fontSize:10, color:"var(--color-text-secondary)" }}>
+                            {fmtSize(file.size)} &nbsp;·&nbsp; {new Date(file.uploadedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+                          </div>
+                        </div>
+                        {/* Actions */}
+                        <a href={file.data} download={file.name} title="Download"
+                          style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"4px 8px", border:"0.5px solid #1a6b3c", borderRadius:6, whiteSpace:"nowrap" }}>⬇</a>
+                        <button onClick={() => deleteFile(folder.id, file.id)}
+                          style={{ background:"none", border:"0.5px solid #d44", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11, color:"#d44" }}>🗑</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Preview modal */}
+      {docPreview && (
+        <div onClick={() => setDocPreview(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"90vw", maxHeight:"90vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
+            <div style={{ padding:"12px 18px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
+              <span style={{ fontWeight:600, fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{docPreview.name}</span>
+              <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
+                <a href={docPreview.src} download={docPreview.name}
+                  style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"4px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>
+                <button onClick={() => setDocPreview(null)}
+                  style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
+              </div>
+            </div>
+            <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+              {docPreview.type?.startsWith("image/")
+                ? <img src={docPreview.src} alt={docPreview.name} style={{ maxWidth:"80vw", maxHeight:"75vh", objectFit:"contain", borderRadius:6 }} />
+                : docPreview.type === "application/pdf"
+                  ? <iframe src={docPreview.src} style={{ width:"80vw", height:"75vh", border:"none" }} title="Document preview" />
+                  : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}>
+                      <div style={{ fontSize:48, marginBottom:12 }}>📄</div>
+                      <div style={{ fontSize:14 }}>Preview not available for this file type.</div>
+                      <a href={docPreview.src} download={docPreview.name} style={{ display:"inline-block", marginTop:12, color:"#1a6b3c" }}>Download to view</a>
+                    </div>
+              }
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5121,6 +5298,7 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
 
 // ─── Merged Note + MindMap Editor — Split view (Note left · Map right) ────────
 // ─── Merged Note + MindMap Editor ────────────────────────────────────────────
+// ─── Merged Note + MindMap Editor ────────────────────────────────────────────
 function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, makeDefaultMindmap }) {
   const MAX_HISTORY = 80;
   const NC  = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
@@ -5141,12 +5319,12 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   const [panStart,   setPanStart]   = useState(null);
 
   // ── 2. ALL useRef ────────────────────────────────────────────────────────
-  const undoStack      = useRef([]);
-  const redoStack      = useRef([]);
-  const nodesRef       = useRef(nodes);
-  const edgesRef       = useRef(edges);
-  const textBlocksRef  = useRef(textBlocks);
-  const saveTimer      = useRef(null);
+  const undoStack     = useRef([]);
+  const redoStack     = useRef([]);
+  const nodesRef      = useRef(nodes);
+  const edgesRef      = useRef(edges);
+  const textBlocksRef = useRef(textBlocks);
+  const saveTimer     = useRef(null);
 
   // ── 3. ALL useEffect ─────────────────────────────────────────────────────
   useEffect(() => { nodesRef.current      = nodes;      }, [nodes]);
@@ -5173,28 +5351,19 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
 
   // ── Undo / Redo ──────────────────────────────────────────────────────────
   function snap() {
-    undoStack.current.push({
-      nodes:      JSON.parse(JSON.stringify(nodesRef.current)),
-      edges:      JSON.parse(JSON.stringify(edgesRef.current)),
-      textBlocks: JSON.parse(JSON.stringify(textBlocksRef.current)),
-    });
+    undoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)), textBlocks: JSON.parse(JSON.stringify(textBlocksRef.current)) });
     if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
-    redoStack.current = [];
-    setHistVer(v => v + 1);
+    redoStack.current = []; setHistVer(v => v + 1);
   }
   function undo() {
     if (!undoStack.current.length) return;
     redoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)), textBlocks: JSON.parse(JSON.stringify(textBlocksRef.current)) });
-    const p = undoStack.current.pop();
-    setNodes(p.nodes); setEdges(p.edges); setTextBlocks(p.textBlocks);
-    setHistVer(v => v + 1);
+    const p = undoStack.current.pop(); setNodes(p.nodes); setEdges(p.edges); setTextBlocks(p.textBlocks); setHistVer(v => v + 1);
   }
   function redo() {
     if (!redoStack.current.length) return;
     undoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)), textBlocks: JSON.parse(JSON.stringify(textBlocksRef.current)) });
-    const nx = redoStack.current.pop();
-    setNodes(nx.nodes); setEdges(nx.edges); setTextBlocks(nx.textBlocks);
-    setHistVer(v => v + 1);
+    const nx = redoStack.current.pop(); setNodes(nx.nodes); setEdges(nx.edges); setTextBlocks(nx.textBlocks); setHistVer(v => v + 1);
   }
 
   // ── Collapse ─────────────────────────────────────────────────────────────
@@ -5207,6 +5376,28 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   const hiddenSet    = getHidden(collapsed);
   const visibleNodes = nodes.filter(n => !hiddenSet.has(n.id));
   const visibleEdges = edges.filter(e => !hiddenSet.has(e.from) && !hiddenSet.has(e.to));
+
+  // ── Central Idea (root) actions ───────────────────────────────────────────
+  function addCentralIdea() {
+    snap();
+    const id = "root_" + Date.now();
+    // Place new root offset from existing ones
+    const rootNodes = nodes.filter(n => n.isRoot);
+    const lastRoot  = rootNodes[rootNodes.length - 1];
+    const x = lastRoot ? lastRoot.x + 240 : 300;
+    const y = lastRoot ? lastRoot.y        : 200;
+    setNodes(p => [...p, { id, label: "Central Idea", x, y, isRoot: true, color: "#ede9fe" }]);
+    setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("Central Idea"); }, 0);
+  }
+  function deleteCentralIdea(rootId) {
+    snap();
+    // Delete root + its entire subtree
+    const del = new Set(), q = [rootId];
+    while (q.length) { const id = q.shift(); del.add(id); edges.filter(e => e.from === id).forEach(e => q.push(e.to)); }
+    setNodes(p => p.filter(n => !del.has(n.id)));
+    setEdges(p => p.filter(e => !del.has(e.from) && !del.has(e.to)));
+    setSelected(null);
+  }
 
   // ── Map node actions ─────────────────────────────────────────────────────
   function addChild(parentId) {
@@ -5221,7 +5412,10 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New node"); }, 0);
   }
   function deleteNode(nodeId) {
-    if (nodeId === "root") return; snap();
+    // If it's a root node, use deleteCentralIdea
+    const node = nodes.find(n => n.id === nodeId);
+    if (node?.isRoot) { deleteCentralIdea(nodeId); return; }
+    snap();
     const del = new Set(), q = [nodeId];
     while (q.length) { const id = q.shift(); del.add(id); edges.filter(e => e.from === id).forEach(e => q.push(e.to)); }
     setNodes(p => p.filter(n => !del.has(n.id))); setEdges(p => p.filter(e => !del.has(e.from) && !del.has(e.to))); setSelected(null);
@@ -5237,17 +5431,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   }
 
   // ── Text block actions ───────────────────────────────────────────────────
-  // Each textBlock: { id, x, y, text, fontSize, bold, color }
   function addTextBlock(x, y) {
     snap();
     const id = "tb" + Date.now();
     setTextBlocks(p => [...p, { id, x, y, text: "Text", fontSize: 16, bold: false, color: "#1a1a2e" }]);
-    setTimeout(() => { const el = document.getElementById("tb-" + id); if (el) { el.focus(); el.select(); } }, 50);
+    setTimeout(() => { const el = document.getElementById("tb-" + id); if (el) { el.focus(); const r = document.createRange(); r.selectNodeContents(el); window.getSelection().removeAllRanges(); window.getSelection().addRange(r); } }, 50);
   }
-  function addTextBlockCenter() {
-    addTextBlock(320 - pan.x + Math.random() * 40, 180 - pan.y + Math.random() * 40);
-  }
-  function updateTextBlock(id, changes) { setTextBlocks(p => p.map(t => t.id === id ? { ...t, ...changes } : t)); }
+  function addTextBlockCenter() { addTextBlock(300 - pan.x + Math.random()*40, 160 - pan.y + Math.random()*40); }
+  function updateTextBlock(id, ch) { setTextBlocks(p => p.map(t => t.id === id ? { ...t, ...ch } : t)); }
   function deleteTextBlock(id) { snap(); setTextBlocks(p => p.filter(t => t.id !== id)); }
 
   // ── Drag / Pan ───────────────────────────────────────────────────────────
@@ -5256,15 +5447,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
     const node = nodes.find(n => n.id === nodeId);
     setDragging({ type: "node", nodeId, offsetX: e.clientX - node.x, offsetY: e.clientY - node.y, moved: false });
   }
-  function onTextBlockMouseDown(e, tbId) {
+  function onTBMouseDown(e, tbId) {
     e.stopPropagation();
     const tb = textBlocks.find(t => t.id === tbId); if (!tb) return;
     setDragging({ type: "tb", id: tbId, offsetX: e.clientX - tb.x - pan.x, offsetY: e.clientY - tb.y - pan.y });
   }
   function onCanvasMouseDown(e) {
     if (editingId) { commitEdit(); return; }
-    setSelected(null);
-    setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    setSelected(null); setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   }
   function onCanvasDblClick(e) {
     let el = e.target;
@@ -5278,106 +5468,111 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
       setDragging(d => ({ ...d, moved: true }));
     } else if (dragging?.type === "tb") {
       setTextBlocks(p => p.map(t => t.id === dragging.id ? { ...t, x: e.clientX - dragging.offsetX - pan.x, y: e.clientY - dragging.offsetY - pan.y } : t));
-    } else if (panStart) {
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-    }
+    } else if (panStart) { setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y }); }
   }
-  function onMouseUp() {
-    if (dragging?.moved) snap();
-    setDragging(null); setPanStart(null);
-  }
+  function onMouseUp() { if (dragging?.moved) snap(); setDragging(null); setPanStart(null); }
 
-  const selNode  = nodes.find(n => n.id === selected);
-  const canUndo  = undoStack.current.length > 0;
-  const canRedo  = redoStack.current.length > 0;
-  const btn      = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
+  const selNode = nodes.find(n => n.id === selected);
+  const canUndo = undoStack.current.length > 0;
+  const canRedo = redoStack.current.length > 0;
+  const btn     = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
+  const rootNodes = nodes.filter(n => n.isRoot);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-
       {/* ── Toolbar ── */}
       <div style={{ padding: "6px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.97)", flexShrink: 0, flexWrap: "wrap" }}>
-        <button onClick={undo} disabled={!canUndo} title="Undo Ctrl+Z" style={{ ...btn, opacity: canUndo ? 1 : 0.3 }}>↩ Undo</button>
-        <button onClick={redo} disabled={!canRedo} title="Redo Ctrl+Y" style={{ ...btn, opacity: canRedo ? 1 : 0.3 }}>↪ Redo</button>
+        <button onClick={undo} disabled={!canUndo} title="Undo Ctrl+Z" style={{ ...btn, opacity: canUndo?1:0.3 }}>↩ Undo</button>
+        <button onClick={redo} disabled={!canRedo} title="Redo Ctrl+Y" style={{ ...btn, opacity: canRedo?1:0.3 }}>↪ Redo</button>
+        <div style={{ width:1, height:16, background:"var(--color-border-secondary)" }} />
 
-        <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+        {/* + Central Idea */}
+        <button onClick={addCentralIdea}
+          style={{ ...btn, background:"#ede9fe", border:"1.5px solid #7c3aed", color:"#4c1d95", fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
+          ＋ Central Idea
+        </button>
 
-        {/* ── TEXT button — replaces Note ── */}
-        <button onClick={addTextBlockCenter} title="Add text anywhere on canvas (or double-click canvas)"
-          style={{ ...btn, background: "#f0f4ff", border: "1.5px solid #6d28d9", color: "#4c1d95", fontWeight: 700, fontSize: 12, padding: "4px 11px", display: "flex", alignItems: "center", gap: 5 }}>
+        {/* T Text */}
+        <button onClick={addTextBlockCenter}
+          style={{ ...btn, background:"#f0f4ff", border:"1.5px solid #6d28d9", color:"#4c1d95", fontWeight:700, fontSize:12, padding:"4px 11px" }}>
           T&nbsp; Text
         </button>
 
-        <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
-
-        {/* Canvas bg color dots */}
+        <div style={{ width:1, height:16, background:"var(--color-border-secondary)" }} />
         {NOTE_COLORS.map(c => (
-          <button key={c} onClick={() => updateNote(note.id, { color: c })}
-            style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />
+          <button key={c} onClick={() => updateNote(note.id, { color:c })}
+            style={{ width:13, height:13, borderRadius:"50%", background:c, border: note.color===c?"2px solid #1a6b3c":"1px solid #ccc", cursor:"pointer", padding:0 }} />
         ))}
 
         {/* Node selected actions */}
         {selNode && (<>
-          <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
-          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Node:</span>
+          <div style={{ width:1, height:16, background:"var(--color-border-secondary)" }} />
+          <span style={{ fontSize:10, color:"var(--color-text-secondary)" }}>{selNode.isRoot ? "Root:" : "Node:"}</span>
           <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btn }}>✏️ Rename</button>
-          {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
-          <div style={{ display: "flex", gap: 3 }}>
-            {NC.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
+          <button onClick={() => deleteNode(selected)} style={{ ...btn, color:"#d44", borderColor:"#d44" }}>
+            {selNode.isRoot ? "🗑 Delete tree" : "🗑"}
+          </button>
+          <div style={{ display:"flex", gap:3 }}>
+            {NC.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width:13, height:13, borderRadius:"50%", background:c, border: selNode.color===c?"2px solid #6d28d9":"1px solid #ccc", cursor:"pointer", padding:0 }} />)}
           </div>
         </>)}
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btn, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
-          <button onClick={() => deleteNote(note.id)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑 Delete note</button>
+        <div style={{ marginLeft:"auto", display:"flex", gap:6 }}>
+          <button onClick={() => setPan({ x:0, y:0 })} style={{ ...btn, color:"var(--color-text-secondary)" }}>⊙ Reset</button>
+          <button onClick={() => deleteNote(note.id)} style={{ ...btn, color:"#d44", borderColor:"#d44" }}>🗑 Delete note</button>
         </div>
       </div>
 
       {/* ── Canvas ── */}
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
-        <div
-          onMouseDown={onCanvasMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseUp}
-          onDoubleClick={onCanvasDblClick}
-          style={{ position: "relative", width: 2800, height: 2000, background: note.color || "#f0eff8", cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
-        >
+      <div style={{ flex:1, minHeight:0, overflow:"auto", position:"relative" }}>
+        <div onMouseDown={onCanvasMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDoubleClick={onCanvasDblClick}
+          style={{ position:"relative", width:2800, height:2000, background: note.color||"#f0eff8", cursor: panStart?"grabbing":"default", userSelect:"none" }}>
+
           {/* SVG edges */}
-          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+          <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none" }}>
             <g transform={`translate(${pan.x},${pan.y})`}>
               {visibleEdges.map(edge => {
-                const f = nodes.find(n => n.id === edge.from), t = nodes.find(n => n.id === edge.to);
-                if (!f || !t) return null;
-                const mx = (f.x + t.x) / 2;
+                const f = nodes.find(n => n.id===edge.from), t = nodes.find(n => n.id===edge.to);
+                if (!f||!t) return null;
+                const mx = (f.x+t.x)/2;
                 return <path key={edge.id} d={`M ${f.x} ${f.y} C ${mx} ${f.y} ${mx} ${t.y} ${t.x} ${t.y}`} stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.6} />;
               })}
             </g>
           </svg>
 
           {/* Mind-map nodes */}
-          <div data-nocanvas="1" style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
+          <div data-nocanvas="1" style={{ position:"absolute", inset:0, transform:`translate(${pan.x}px,${pan.y}px)` }}>
             {visibleNodes.map(node => {
               const isSel    = selected === node.id;
-              const hasKids  = edges.some(e => e.from === node.id);
+              const hasKids  = edges.some(e => e.from===node.id);
               const isCol    = collapsed.has(node.id);
-              const kidCount = edges.filter(e => e.from === node.id).length;
-              const NW = 130, NH = 36;
+              const kidCount = edges.filter(e => e.from===node.id).length;
+              const NW = node.isRoot ? 150 : 130, NH = node.isRoot ? 40 : 36;
               return (
-                <div key={node.id} style={{ position: "absolute", left: node.x - NW/2, top: node.y - NH/2 }}>
+                <div key={node.id} style={{ position:"absolute", left: node.x-NW/2, top: node.y-NH/2 }}>
                   <div onMouseDown={e => onNodeMouseDown(e, node.id)} onDoubleClick={() => { setEditingId(node.id); setEditLabel(node.label); }}
-                    style={{ width: NW, minHeight: NH, background: node.color || "#ede9fe", border: isSel ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.1)", borderRadius: node.isRoot ? 14 : 9, padding: "5px 12px", cursor: dragging?.nodeId === node.id ? "grabbing" : "grab", userSelect: "none", zIndex: isSel ? 10 : 2, boxShadow: isSel ? "0 3px 14px rgba(109,40,217,0.22)" : "0 1px 5px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                    {editingId === node.id
-                      ? <input autoFocus value={editLabel} onChange={e => setEditLabel(e.target.value)} onBlur={commitEdit} onKeyDown={e => (e.key==="Enter"||e.key==="Escape") && commitEdit()} onMouseDown={e => e.stopPropagation()} style={{ border:"none", outline:"none", background:"transparent", fontSize: node.isRoot?13:12, fontWeight: node.isRoot?700:500, width:"100%", fontFamily:"inherit", color:"#111", textAlign:"center" }} />
-                      : <span style={{ fontSize: node.isRoot?13:12, fontWeight: node.isRoot?700:500, color:"#111", wordBreak:"break-word", textAlign:"center", lineHeight:1.35 }}>{node.label}</span>}
+                    style={{ width:NW, minHeight:NH, background: node.color||"#ede9fe", border: isSel?"2px solid #6d28d9":"1.5px solid rgba(0,0,0,0.1)", borderRadius: node.isRoot?14:9, padding:"5px 12px", cursor: dragging?.nodeId===node.id?"grabbing":"grab", userSelect:"none", zIndex: isSel?10:2, boxShadow: isSel?"0 3px 14px rgba(109,40,217,0.22)":"0 1px 5px rgba(0,0,0,0.08)", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+                    {editingId===node.id
+                      ? <input autoFocus value={editLabel} onChange={e => setEditLabel(e.target.value)} onBlur={commitEdit} onKeyDown={e => (e.key==="Enter"||e.key==="Escape")&&commitEdit()} onMouseDown={e => e.stopPropagation()} style={{ border:"none", outline:"none", background:"transparent", fontSize: node.isRoot?14:12, fontWeight: node.isRoot?700:500, width:"100%", fontFamily:"inherit", color:"#111", textAlign:"center" }} />
+                      : <span style={{ fontSize: node.isRoot?14:12, fontWeight: node.isRoot?700:500, color:"#111", wordBreak:"break-word", textAlign:"center", lineHeight:1.35 }}>{node.label}</span>
+                    }
                   </div>
-                  {/* + child */}
+
+                  {/* + add child — right edge */}
                   <div onMouseDown={e => { e.stopPropagation(); addChild(node.id); }} title="Add child"
                     style={{ position:"absolute", right:-11, top:"50%", transform:"translateY(-50%)", width:20, height:20, borderRadius:"50%", background:"#1a6b3c", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, cursor:"pointer", zIndex:20, boxShadow:"0 1px 4px rgba(0,0,0,0.18)", lineHeight:1 }}>+</div>
+
+                  {/* 🗑 delete root — top-left corner, only for root nodes */}
+                  {node.isRoot && (
+                    <div onMouseDown={e => { e.stopPropagation(); deleteCentralIdea(node.id); }} title="Delete this central idea + its tree"
+                      style={{ position:"absolute", left:-10, top:-10, width:18, height:18, borderRadius:"50%", background:"#fee2e2", border:"1.5px solid #f87171", color:"#dc2626", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, cursor:"pointer", zIndex:20, boxShadow:"0 1px 3px rgba(0,0,0,0.15)", fontWeight:700 }}>✕</div>
+                  )}
+
+                  {/* Collapse/expand — bottom edge */}
                   {hasKids && (
-                    <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCol ? `Show ${kidCount}` : "Collapse"}
+                    <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCol?`Show ${kidCount}`:"Collapse"}
                       style={{ position:"absolute", bottom:-11, left:"50%", transform:"translateX(-50%)", width:20, height:20, borderRadius:"50%", background: isCol?"#6d28d9":"#e5e7eb", color: isCol?"#fff":"#6b7280", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, cursor:"pointer", zIndex:20, border:"1.5px solid "+(isCol?"#5b21b6":"#d1d5db") }}>
-                      {isCol ? `+${kidCount}` : "−"}
+                      {isCol?`+${kidCount}`:"−"}
                     </div>
                   )}
                 </div>
@@ -5385,69 +5580,38 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
             })}
           </div>
 
-          {/* ── Text blocks — plain draggable text ── */}
+          {/* Text blocks */}
           {textBlocks.map(tb => (
-            <div key={tb.id} data-nocanvas="1"
-              style={{ position: "absolute", left: tb.x + pan.x, top: tb.y + pan.y, zIndex: 7, minWidth: 60 }}>
-              {/* Invisible drag strip above text */}
-              <div
-                onMouseDown={e => onTextBlockMouseDown(e, tb.id)}
-                style={{ height: 14, cursor: dragging?.id === tb.id ? "grabbing" : "grab", display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 2, opacity: 0.45 }}>
-                {/* Formatting mini-bar */}
-                <div style={{ display: "flex", gap: 3, alignItems: "center" }} onMouseDown={e => e.stopPropagation()}>
-                  <button onClick={() => updateTextBlock(tb.id, { bold: !tb.bold })}
-                    style={{ background: tb.bold ? "#6d28d9" : "none", border: "0.5px solid #ccc", borderRadius: 3, padding: "0 4px", fontSize: 10, fontWeight: 700, cursor: "pointer", color: tb.bold ? "#fff" : "#555", lineHeight: "13px" }}>B</button>
-                  <select value={tb.fontSize || 16} onChange={e => updateTextBlock(tb.id, { fontSize: parseInt(e.target.value) })}
-                    onMouseDown={e => e.stopPropagation()}
-                    style={{ fontSize: 9, border: "0.5px solid #ccc", borderRadius: 3, padding: "0 2px", cursor: "pointer", background: "#fff", height: 14 }}>
+            <div key={tb.id} data-nocanvas="1" style={{ position:"absolute", left: tb.x+pan.x, top: tb.y+pan.y, zIndex:7, minWidth:60 }}>
+              <div onMouseDown={e => onTBMouseDown(e, tb.id)}
+                style={{ height:14, cursor: dragging?.id===tb.id?"grabbing":"grab", display:"flex", alignItems:"center", justifyContent:"space-between", paddingRight:2, opacity:0.5 }}>
+                <div style={{ display:"flex", gap:3, alignItems:"center" }} onMouseDown={e => e.stopPropagation()}>
+                  <button onClick={() => updateTextBlock(tb.id, { bold:!tb.bold })} style={{ background: tb.bold?"#6d28d9":"none", border:"0.5px solid #ccc", borderRadius:3, padding:"0 4px", fontSize:10, fontWeight:700, cursor:"pointer", color: tb.bold?"#fff":"#555", lineHeight:"13px" }}>B</button>
+                  <select value={tb.fontSize||16} onChange={e => updateTextBlock(tb.id, { fontSize:parseInt(e.target.value) })} onMouseDown={e => e.stopPropagation()} style={{ fontSize:9, border:"0.5px solid #ccc", borderRadius:3, padding:"0 2px", cursor:"pointer", background:"#fff", height:14 }}>
                     {[10,12,14,16,18,20,24,28,32,40].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
-                  {/* Color dots for text */}
                   {["#1a1a2e","#1a6b3c","#6d28d9","#d44","#d97706","#0ea5e9"].map(c => (
-                    <button key={c} onMouseDown={e => e.stopPropagation()} onClick={() => updateTextBlock(tb.id, { color: c })}
-                      style={{ width: 10, height: 10, borderRadius: "50%", background: c, border: tb.color===c?"2px solid #000":"1px solid rgba(0,0,0,0.2)", cursor: "pointer", padding: 0, flexShrink: 0 }} />
+                    <button key={c} onMouseDown={e => e.stopPropagation()} onClick={() => updateTextBlock(tb.id, { color:c })} style={{ width:10, height:10, borderRadius:"50%", background:c, border: tb.color===c?"2px solid #000":"1px solid rgba(0,0,0,0.2)", cursor:"pointer", padding:0, flexShrink:0 }} />
                   ))}
                 </div>
-                {/* Delete */}
-                <button onMouseDown={e => e.stopPropagation()} onClick={() => deleteTextBlock(tb.id)}
-                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#d44", padding: 0, lineHeight: 1, marginLeft: 4 }}>✕</button>
+                <button onMouseDown={e => e.stopPropagation()} onClick={() => deleteTextBlock(tb.id)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, color:"#d44", padding:0, lineHeight:1, marginLeft:4 }}>✕</button>
               </div>
-              {/* The editable text */}
-              <div
-                id={"tb-" + tb.id}
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={e => updateTextBlock(tb.id, { text: e.currentTarget.innerText })}
-                onMouseDown={e => e.stopPropagation()}
-                style={{
-                  fontSize: tb.fontSize || 16,
-                  fontWeight: tb.bold ? 700 : 400,
-                  color: tb.color || "#1a1a2e",
-                  fontFamily: "inherit",
-                  outline: "none",
-                  minWidth: 40,
-                  cursor: "text",
-                  lineHeight: 1.4,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  padding: "1px 2px",
-                  borderBottom: "1.5px dashed rgba(109,40,217,0.25)",
-                }}
-                dangerouslySetInnerHTML={{ __html: tb.text }}
-              />
+              <div id={"tb-"+tb.id} contentEditable suppressContentEditableWarning onBlur={e => updateTextBlock(tb.id, { text: e.currentTarget.innerText })} onMouseDown={e => e.stopPropagation()}
+                style={{ fontSize: tb.fontSize||16, fontWeight: tb.bold?700:400, color: tb.color||"#1a1a2e", fontFamily:"inherit", outline:"none", minWidth:40, cursor:"text", lineHeight:1.4, whiteSpace:"pre-wrap", wordBreak:"break-word", padding:"1px 2px", borderBottom:"1.5px dashed rgba(109,40,217,0.25)" }}
+                dangerouslySetInnerHTML={{ __html: tb.text }} />
             </div>
           ))}
 
-          {/* Canvas hint */}
+          {/* Hint */}
           <div style={{ position:"absolute", bottom:10, right:14, fontSize:10, color:"#c0bedd", pointerEvents:"none", textAlign:"right", lineHeight:1.7 }}>
-            <b style={{color:"#6d28d9"}}>T Text</b> in toolbar or <b>double-click</b> empty space to add text<br/>
-            <span style={{color:"#a78bfa"}}>+</span> = add child · <span style={{color:"#6d28d9"}}>●</span> = collapse · drag canvas = pan
+            <b style={{color:"#7c3aed"}}>＋ Central Idea</b> adds a new root &nbsp;·&nbsp; <b style={{color:"#6d28d9"}}>T Text</b> or double-click = free text<br/>
+            <span style={{color:"#f87171"}}>✕</span> on root = delete tree &nbsp;·&nbsp; <span style={{color:"#a78bfa"}}>+</span> = child &nbsp;·&nbsp; <span style={{color:"#6d28d9"}}>●</span> = collapse
           </div>
         </div>
       </div>
 
-      {/* Note title bar at bottom */}
-      <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", flexShrink: 0, padding: "8px 16px" }}>
+      {/* Note title bar */}
+      <div style={{ borderTop:"0.5px solid var(--color-border-tertiary)", background:"var(--color-background-primary)", flexShrink:0, padding:"8px 16px" }}>
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Note title…"
           style={{ display:"block", width:"100%", boxSizing:"border-box", border:"none", outline:"none", background:"transparent", fontSize:14, fontWeight:600, fontFamily:"inherit", color:"var(--color-text-primary)" }} />
       </div>
