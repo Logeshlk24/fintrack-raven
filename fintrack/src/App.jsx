@@ -672,7 +672,7 @@ function AddAssetMini({ update }) {
 function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
   const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const [period, setPeriod] = useState("all"); // "all" | "year" | "month"
+  const [period, setPeriod] = useState(data.overviewDefaultPeriod || "all");
 
   const thisYear  = new Date().getFullYear();
   const thisMonth = new Date().getMonth();
@@ -2011,9 +2011,14 @@ function SettingsPage({ data, update, tab, setTab }) {
 
 function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
   const toggles = data.featureToggles || { fo: true };
+  const defaultPeriod = data.overviewDefaultPeriod || "all";
 
   function toggle(key) {
     update(p => ({ featureToggles: { ...(p.featureToggles || { fo: true }), [key]: !(p.featureToggles || { fo: true })[key] } }));
+  }
+
+  function setDefaultPeriod(val) {
+    update(() => ({ overviewDefaultPeriod: val }));
   }
 
   const features = [
@@ -2025,8 +2030,37 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
     },
   ];
 
+  const PERIODS = [
+    { key: "all",   label: "All Time",   icon: "∞" },
+    { key: "year",  label: "This Year",  icon: "📅" },
+    { key: "month", label: "This Month", icon: "🗓" },
+  ];
+
   return (
     <div style={{ marginTop: 16 }}>
+      {/* Default Period preference */}
+      <div style={{ ...cardStyle, marginBottom: 16 }}>
+        {sectionTitle("📊", "Overview Default Period", "Choose which period Income & Expenses show by default on the Overview page.")}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+          {PERIODS.map(p => (
+            <button key={p.key} onClick={() => setDefaultPeriod(p.key)}
+              style={{
+                flex: 1, minWidth: 100, padding: "14px 10px", borderRadius: 12,
+                border: defaultPeriod === p.key ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)",
+                background: defaultPeriod === p.key ? "#e8f5ee" : "var(--color-background-secondary)",
+                cursor: "pointer", textAlign: "center",
+              }}>
+              <div style={{ fontSize: 22, marginBottom: 4 }}>{p.icon}</div>
+              <div style={{ fontWeight: defaultPeriod === p.key ? 700 : 500, fontSize: 13, color: defaultPeriod === p.key ? "#1a6b3c" : "var(--color-text-primary)" }}>{p.label}</div>
+              {defaultPeriod === p.key && <div style={{ fontSize: 10, color: "#1a6b3c", marginTop: 3, fontWeight: 600 }}>✓ Default</div>}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
+          💡 This sets what Income & Expenses cards show when you first open Overview. You can still switch periods on the fly.
+        </p>
+      </div>
+
       <div style={cardStyle}>
         {sectionTitle("🔧", "Feature Toggles", "Turn features on or off. Your data is always preserved — just hidden until you switch back on.")}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
