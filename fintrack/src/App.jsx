@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   auth,
   signInWithGoogle,
@@ -342,12 +342,12 @@ export default function App() {
 
   if (onboarding) return <Onboarding step={onboardStep} setStep={setOnboardStep} data={data} update={update} done={() => setOnboarding(false)} />;
 
-  const toggles = data.featureToggles || { fo: true, portfolio: true };
+  const toggles = data.featureToggles || { fo: true };
   const navItems = [
     { id: "overview", label: "Overview", icon: "⊞" },
     { id: "money", label: "Money", icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
-    ...(toggles.portfolio !== false ? [{ id: "portfolio", label: "Portfolio", icon: "📈" }] : []),
+    { id: "portfolio", label: "Portfolio", icon: "📈" },
     { id: "goals", label: "Goals", icon: "◎" },
     { id: "business", label: "Business", icon: "🏢" },
     { id: "projects", label: "Projects", icon: "📋" },
@@ -2066,12 +2066,11 @@ function SettingsPage({ data, update, tab, setTab }) {
 }
 
 function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
-  const toggles = data.featureToggles || { fo: true, portfolio: true };
+  const toggles = data.featureToggles || { fo: true };
   const defaultPeriod = data.overviewDefaultPeriod || "all";
 
   function toggle(key) {
-    const defaults = { fo: true, portfolio: true };
-    update(p => ({ featureToggles: { ...defaults, ...(p.featureToggles || defaults), [key]: !((p.featureToggles || defaults)[key] !== false) } }));
+    update(p => ({ featureToggles: { ...(p.featureToggles || { fo: true }), [key]: !(p.featureToggles || { fo: true })[key] } }));
   }
 
   function setDefaultPeriod(val) {
@@ -2084,12 +2083,6 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
       icon: "◉",
       label: "F&O Tracker",
       sub: "Futures & Options trade journal, P&L calculator, broker charge breakdown and charge profiles.",
-    },
-    {
-      key: "portfolio",
-      icon: "📈",
-      label: "Portfolio",
-      sub: "Track your stock, MF, and other investment holdings. View allocation, current value and returns.",
     },
   ];
 
@@ -7072,8 +7065,8 @@ function PortfolioPage({ data, update }) {
   }, []);
 
   useEffect(() => {
-    if (holdings.length > 0) fetchPrices(holdings);
-  }, [holdings.length]); // eslint-disable-line
+    if (mergedHoldings.length > 0) fetchPrices(mergedHoldings);
+  }, [mergedHoldings.length]); // eslint-disable-line
 
   // ── autocomplete logic ──────────────────────────────────────────────────────
   function handleSymbolInput(raw) {
@@ -7116,13 +7109,53 @@ function PortfolioPage({ data, update }) {
       update(p => ({ portfolioHoldings: [...(p.portfolioHoldings || []), newH] }));
     }
     closeForm();
-    setTimeout(() => fetchPrices([...holdings.filter(h => h.id !== editId), newH]), 300);
+    setTimeout(() => {
+      const updated = editId
+        ? holdings.map(h => h.id === editId ? { ...h, ...newH } : h)
+        : [...holdings, newH];
+      // Re-compute merged before fetching
+      const map = new Map();
+      updated.forEach(h => {
+        const key = `${h.symbol.trim().toUpperCase()}|${h.exchange || "NSE"}`;
+        if (!map.has(key)) map.set(key, h);
+        else {
+          const e = map.get(key);
+          const tq = e.qty + h.qty;
+          map.set(key, { ...e, qty: tq, buyPrice: ((e.buyPrice*e.qty)+(h.buyPrice*h.qty))/tq });
+        }
+      });
+      fetchPrices(Array.from(map.values()));
+    }, 300);
   }
 
   function deleteHolding(id) { update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).filter(h => h.id !== id) })); }
 
-  // ── enriched rows ───────────────────────────────────────────────────────────
-  const rows = holdings.map(h => {
+  // ── Auto-merge duplicate symbol+exchange holdings into weighted avg ────────
+  const mergedHoldings = useMemo(() => {
+    const map = new Map();
+    holdings.forEach(h => {
+      const key = `${h.symbol.trim().toUpperCase()}|${h.exchange || "NSE"}`;
+      if (!map.has(key)) {
+        map.set(key, { ...h, _ids: [h.id] });
+      } else {
+        const existing = map.get(key);
+        const totalQty = existing.qty + h.qty;
+        const avgPrice = ((existing.buyPrice * existing.qty) + (h.buyPrice * h.qty)) / totalQty;
+        map.set(key, {
+          ...existing,
+          qty: totalQty,
+          buyPrice: Math.round(avgPrice * 100) / 100,
+          _ids: [...existing._ids, h.id],
+          _merged: true,
+          _originalCount: (existing._originalCount || 1) + 1,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [holdings]);
+
+  // ── enriched rows using mergedHoldings ──────────────────────────────────────
+  const rows = mergedHoldings.map(h => {
     const ticker   = toYahooTicker(h.symbol, h.exchange);
     const pd       = prices[ticker] || {};
     const cur      = pd.price ?? null;
@@ -7159,7 +7192,7 @@ function PortfolioPage({ data, update }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => fetchPrices(holdings)} disabled={loading || holdings.length === 0}
+          <button onClick={() => fetchPrices(mergedHoldings)} disabled={loading || mergedHoldings.length === 0}
             style={{ padding: "7px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.6 : 1 }}>
             <span style={{ display: "inline-block", animation: loading ? "spin 1s linear infinite" : "none" }}>↻</span>
             {loading ? "Refreshing…" : "Refresh"}
@@ -7173,13 +7206,20 @@ function PortfolioPage({ data, update }) {
 
       {/* Summary cards */}
       {holdings.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
-          <StatCard label="Total Invested" value={fmtCur(totalInvested)} icon="💰" />
-          <StatCard label="Current Value"  value={fmtCur(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
-          <StatCard label="Total P&L"      value={fmtCur(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
-          <StatCard label="Day's P&L"      value={fmtCur(dayPnl)}         icon="📅" pnl={dayPnl} />
-          <StatCard label="Holdings"       value={holdings.length}        icon="🗂" />
-        </div>
+        <>
+          {mergedHoldings.some(h => h._merged) && (
+            <div style={{ fontSize: 12, color: "#92400e", background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 8, padding: "6px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+              ⚡ <strong>{holdings.length - mergedHoldings.length}</strong> duplicate entr{holdings.length - mergedHoldings.length === 1 ? "y" : "ies"} auto-merged into weighted avg price. Showing {mergedHoldings.length} unique holdings.
+            </div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
+            <StatCard label="Total Invested" value={fmtCur(totalInvested)} icon="💰" />
+            <StatCard label="Current Value"  value={fmtCur(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
+            <StatCard label="Total P&L"      value={fmtCur(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
+            <StatCard label="Day's P&L"      value={fmtCur(dayPnl)}         icon="📅" pnl={dayPnl} />
+            <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
+          </div>
+        </>
       )}
 
       {/* Add/Edit form */}
@@ -7269,7 +7309,10 @@ function PortfolioPage({ data, update }) {
       {holdings.length > 0 && (
         <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontWeight: 500, fontSize: 14 }}>Holdings ({holdings.length})</span>
+            <span style={{ fontWeight: 500, fontSize: 14 }}>
+              Holdings ({mergedHoldings.length})
+              {holdings.length !== mergedHoldings.length && <span style={{ fontSize: 11, color: "#92400e", background: "#fef9c3", borderRadius: 4, padding: "1px 6px", marginLeft: 6 }}>⚡ {holdings.length} entries merged</span>}
+            </span>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Sort:</span>
               {[["symbol","A-Z"],["value","Value"],["pnl","P&L"],["pct","% Return"]].map(([k,l]) => (
@@ -7291,21 +7334,37 @@ function PortfolioPage({ data, update }) {
 
           {/* Rows */}
           {sorted.map(h => (
-            <div key={h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
+            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
               <div>
-                <div style={{ fontWeight: 500 }}>{h.symbol}
-                  <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", marginLeft: 6, fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
+                <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                  {h.symbol}
+                  <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
+                  {h._merged && (
+                    <span title={`${h._originalCount} entries merged — avg buy price`} style={{ fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600, cursor: "help" }}>
+                      ⚡ avg {h._originalCount}×
+                    </span>
+                  )}
                 </div>
                 {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
                 <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ ₹{fmt(h.buyPrice)}</div>
               </div>
 
-              {/* LTP */}
+              {/* LTP — with retry on failure */}
               <div style={{ textAlign: "right" }}>
-                {loading ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
-                  : h.fetchFailed ? <span style={{ fontSize: 11, color: "#f0a020" }} title="Check symbol spelling">⚠ N/A</span>
-                  : h.cur != null ? <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
-                  : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                {loading
+                  ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
+                  : h.fetchFailed
+                    ? <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                        <span style={{ fontSize: 10, color: "#f0a020" }} title="Price fetch failed — symbol may not be listed on Yahoo Finance">⚠ N/A</span>
+                        <button onClick={() => fetchPrices([h])} style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", cursor: "pointer", color: "#92400e" }}>↻ retry</button>
+                      </div>
+                    : h.cur != null
+                      ? <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                      : <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                          <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>—</span>
+                          <button onClick={() => fetchPrices([h])} style={{ fontSize: 9, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 5px", cursor: "pointer", color: "var(--color-text-secondary)" }}>↻ fetch</button>
+                        </div>
+                }
               </div>
 
               {/* Day change */}
@@ -7329,7 +7388,18 @@ function PortfolioPage({ data, update }) {
               </div>
 
               <div style={{ textAlign: "right" }}>
-                <ThreeDotMenu onEdit={() => openEdit(h)} onDelete={() => deleteHolding(h.id)} />
+                <ThreeDotMenu
+                  onEdit={() => openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h)}
+                  onDelete={() => {
+                    if (h._merged && h._ids?.length > 1) {
+                      if (window.confirm(`This will delete all ${h._ids.length} entries for ${h.symbol}. Continue?`)) {
+                        h._ids.forEach(id => deleteHolding(id));
+                      }
+                    } else {
+                      deleteHolding(h._ids?.[0] ?? h.id);
+                    }
+                  }}
+                />
               </div>
             </div>
           ))}
