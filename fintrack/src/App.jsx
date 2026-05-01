@@ -7041,9 +7041,31 @@ function PortfolioPage({ data, update }) {
     return s;
   }
 
-  // ── CORS-safe price fetch ───────────────────────────────────────────────────
-  // Strategy: try 3 approaches in order so we always have a fallback
-  // ── Fetch via our own Vercel serverless route (server-side, no CORS) ─────────
+  // ── Auto-merge duplicate symbol+exchange into weighted avg — MUST be before useEffect ──
+  const mergedHoldings = useMemo(() => {
+    const map = new Map();
+    holdings.forEach(h => {
+      const key = `${h.symbol.trim().toUpperCase()}|${h.exchange || "NSE"}`;
+      if (!map.has(key)) {
+        map.set(key, { ...h, _ids: [h.id], _merged: false, _originalCount: 1 });
+      } else {
+        const existing = map.get(key);
+        const totalQty = existing.qty + h.qty;
+        const avgPrice = ((existing.buyPrice * existing.qty) + (h.buyPrice * h.qty)) / totalQty;
+        map.set(key, {
+          ...existing,
+          qty: totalQty,
+          buyPrice: Math.round(avgPrice * 100) / 100,
+          _ids: [...existing._ids, h.id],
+          _merged: true,
+          _originalCount: existing._originalCount + 1,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [holdings]); // eslint-disable-line
+
+  // ── CORS-safe price fetch ────────────────────────────────────────────────────
   const fetchPrices = useCallback(async (holdingsList) => {
     if (!holdingsList || holdingsList.length === 0) return;
     setLoading(true);
@@ -7062,11 +7084,11 @@ function PortfolioPage({ data, update }) {
     }
     setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
     setLoading(false);
-  }, []);
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     if (mergedHoldings.length > 0) fetchPrices(mergedHoldings);
-  }, [mergedHoldings.length]); // eslint-disable-line
+  }, [holdings.length]); // eslint-disable-line
 
   // ── autocomplete logic ──────────────────────────────────────────────────────
   function handleSymbolInput(raw) {
@@ -7129,30 +7151,6 @@ function PortfolioPage({ data, update }) {
   }
 
   function deleteHolding(id) { update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).filter(h => h.id !== id) })); }
-
-  // ── Auto-merge duplicate symbol+exchange holdings into weighted avg ────────
-  const mergedHoldings = useMemo(() => {
-    const map = new Map();
-    holdings.forEach(h => {
-      const key = `${h.symbol.trim().toUpperCase()}|${h.exchange || "NSE"}`;
-      if (!map.has(key)) {
-        map.set(key, { ...h, _ids: [h.id] });
-      } else {
-        const existing = map.get(key);
-        const totalQty = existing.qty + h.qty;
-        const avgPrice = ((existing.buyPrice * existing.qty) + (h.buyPrice * h.qty)) / totalQty;
-        map.set(key, {
-          ...existing,
-          qty: totalQty,
-          buyPrice: Math.round(avgPrice * 100) / 100,
-          _ids: [...existing._ids, h.id],
-          _merged: true,
-          _originalCount: (existing._originalCount || 1) + 1,
-        });
-      }
-    });
-    return Array.from(map.values());
-  }, [holdings]);
 
   // ── enriched rows using mergedHoldings ──────────────────────────────────────
   const rows = mergedHoldings.map(h => {
