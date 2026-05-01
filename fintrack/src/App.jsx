@@ -7043,49 +7043,25 @@ function PortfolioPage({ data, update }) {
 
   // ── CORS-safe price fetch ───────────────────────────────────────────────────
   // Strategy: try 3 approaches in order so we always have a fallback
-  async function fetchOneTicker(ticker) {
-    // Approach 1: corsproxy.io wrapping Yahoo v8 chart
-    const yUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
-    const proxies = [
-      `https://corsproxy.io/?${encodeURIComponent(yUrl)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`,
-    ];
-    for (const proxy of proxies) {
-      try {
-        const res = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
-        if (!res.ok) continue;
-        const json = await res.json();
-        const meta = json?.chart?.result?.[0]?.meta;
-        if (!meta || meta.regularMarketPrice == null) continue;
-        const price = meta.regularMarketPrice;
-        const prev  = meta.chartPreviousClose ?? meta.previousClose ?? null;
-        return {
-          price,
-          prevClose: prev,
-          change:    prev != null ? price - prev : null,
-          changePct: prev != null ? ((price - prev) / prev) * 100 : null,
-          currency:  meta.currency ?? "INR",
-        };
-      } catch { /* try next proxy */ }
-    }
-    return null; // all failed
-  }
-
+  // ── Fetch via our own Vercel serverless route (server-side, no CORS) ─────────
   const fetchPrices = useCallback(async (holdingsList) => {
     if (!holdingsList || holdingsList.length === 0) return;
     setLoading(true);
     setPriceError("");
     const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange)))];
-    const results = {};
-    await Promise.all(tickers.map(async (ticker) => {
-      const d = await fetchOneTicker(ticker);
-      results[ticker] = d ? { ...d, ok: true } : { ok: false };
-    }));
-    setPrices(results);
+    try {
+      const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
+      if (!res.ok) throw new Error("API error " + res.status);
+      const data = await res.json();
+      setPrices(data);
+      const failed = Object.values(data).filter(r => !r.ok).length;
+      if (failed > 0) setPriceError(`${failed} ticker(s) could not be fetched — check symbol spelling.`);
+      else setPriceError("");
+    } catch (e) {
+      setPriceError("Could not reach price API — try refreshing.");
+    }
     setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
     setLoading(false);
-    const failed = Object.values(results).filter(r => !r.ok).length;
-    if (failed > 0) setPriceError(`${failed} ticker(s) could not be fetched — check symbol spelling.`);
   }, []);
 
   useEffect(() => {
