@@ -6930,107 +6930,224 @@ function filterByPeriod(dateStr, period) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PORTFOLIO PAGE — Real-time stock prices via Yahoo Finance (yh-finance proxy)
+// NSE STOCK DATABASE — symbol → company name (top ~200 stocks)
 // ═══════════════════════════════════════════════════════════════════════════════
-// Price fetching uses a public CORS-friendly Yahoo Finance endpoint.
-// For Indian stocks append ".NS" (NSE) or ".BO" (BSE) to the symbol.
-// ─────────────────────────────────────────────────────────────────────────────
+const NSE_STOCKS = [
+  ["RELIANCE","Reliance Industries Ltd"],["TCS","Tata Consultancy Services"],["HDFCBANK","HDFC Bank Ltd"],
+  ["INFY","Infosys Ltd"],["ICICIBANK","ICICI Bank Ltd"],["HINDUNILVR","Hindustan Unilever Ltd"],
+  ["ITC","ITC Ltd"],["SBIN","State Bank of India"],["BHARTIARTL","Bharti Airtel Ltd"],
+  ["KOTAKBANK","Kotak Mahindra Bank Ltd"],["LT","Larsen & Toubro Ltd"],["HCLTECH","HCL Technologies Ltd"],
+  ["AXISBANK","Axis Bank Ltd"],["ASIANPAINT","Asian Paints Ltd"],["MARUTI","Maruti Suzuki India Ltd"],
+  ["SUNPHARMA","Sun Pharmaceutical Industries"],["TITAN","Titan Company Ltd"],["BAJFINANCE","Bajaj Finance Ltd"],
+  ["WIPRO","Wipro Ltd"],["ULTRACEMCO","UltraTech Cement Ltd"],["ONGC","Oil & Natural Gas Corp"],
+  ["NTPC","NTPC Ltd"],["POWERGRID","Power Grid Corp of India"],["TECHM","Tech Mahindra Ltd"],
+  ["NESTLEIND","Nestle India Ltd"],["ADANIENT","Adani Enterprises Ltd"],["ADANIPORTS","Adani Ports & SEZ Ltd"],
+  ["JSWSTEEL","JSW Steel Ltd"],["TATASTEEL","Tata Steel Ltd"],["COALINDIA","Coal India Ltd"],
+  ["DRREDDY","Dr Reddy's Laboratories"],["DIVISLAB","Divi's Laboratories"],["CIPLA","Cipla Ltd"],
+  ["HINDALCO","Hindalco Industries Ltd"],["GRASIM","Grasim Industries Ltd"],["BAJAJFINSV","Bajaj Finserv Ltd"],
+  ["EICHERMOT","Eicher Motors Ltd"],["HEROMOTOCO","Hero MotoCorp Ltd"],["BPCL","Bharat Petroleum Corp"],
+  ["TATAMOTORS","Tata Motors Ltd"],["M&M","Mahindra & Mahindra Ltd"],["INDUSINDBK","IndusInd Bank Ltd"],
+  ["BRITANNIA","Britannia Industries Ltd"],["APOLLOHOSP","Apollo Hospitals Enterprise"],
+  ["SBILIFE","SBI Life Insurance Co"],["HDFCLIFE","HDFC Life Insurance Co"],["BAJAJ-AUTO","Bajaj Auto Ltd"],
+  ["TATACONSUM","Tata Consumer Products Ltd"],["UPL","UPL Ltd"],["SHREECEM","Shree Cement Ltd"],
+  ["PIDILITIND","Pidilite Industries Ltd"],["DMART","Avenue Supermarts Ltd"],["MUTHOOTFIN","Muthoot Finance Ltd"],
+  ["HAVELLS","Havells India Ltd"],["VOLTAS","Voltas Ltd"],["BERGEPAINT","Berger Paints India Ltd"],
+  ["GODREJCP","Godrej Consumer Products"],["DABUR","Dabur India Ltd"],["MARICO","Marico Ltd"],
+  ["COLPAL","Colgate-Palmolive (India)"],["AMBUJACEM","Ambuja Cements Ltd"],["ACC","ACC Ltd"],
+  ["INDIGO","InterGlobe Aviation Ltd"],["ZOMATO","Zomato Ltd"],["NYKAA","FSN E-Commerce Ventures"],
+  ["PAYTM","One 97 Communications"],["POLICYBZR","PB Fintech Ltd"],["DELHIVERY","Delhivery Ltd"],
+  ["TATAPOWER","Tata Power Co Ltd"],["ADANIGREEN","Adani Green Energy Ltd"],["ADANITRANS","Adani Transmission Ltd"],
+  ["ADANIPOWER","Adani Power Ltd"],["ADANIWILMAR","Adani Wilmar Ltd"],["SIEMENS","Siemens Ltd"],
+  ["ABB","ABB India Ltd"],["BOSCHLTD","Bosch Ltd"],["MCDOWELL-N","United Spirits Ltd"],
+  ["TATAELXSI","Tata Elxsi Ltd"],["COFORGE","Coforge Ltd"],["MPHASIS","Mphasis Ltd"],
+  ["LTIM","LTIMindtree Ltd"],["PERSISTENT","Persistent Systems Ltd"],["OFSS","Oracle Financial Services"],
+  ["KPITTECH","KPIT Technologies Ltd"],["IRCTC","Indian Railway Catering & Tourism"],
+  ["ZYDUSLIFE","Zydus Lifesciences Ltd"],["TORNTPHARM","Torrent Pharmaceuticals"],
+  ["AUROPHARMA","Aurobindo Pharma Ltd"],["LUPIN","Lupin Ltd"],["BIOCON","Biocon Ltd"],
+  ["GLAND","Gland Pharma Ltd"],["ALKEM","Alkem Laboratories Ltd"],["IPCALAB","IPCA Laboratories"],
+  ["BANKBARODA","Bank of Baroda"],["PNB","Punjab National Bank"],["CANBK","Canara Bank"],
+  ["FEDERALBNK","Federal Bank Ltd"],["RBLBANK","RBL Bank Ltd"],["BANDHANBNK","Bandhan Bank Ltd"],
+  ["IDFCFIRSTB","IDFC First Bank Ltd"],["AUBANK","AU Small Finance Bank"],
+  ["CHOLAFIN","Cholamandalam Investment"],["SHRIRAMFIN","Shriram Finance Ltd"],["LICHSGFIN","LIC Housing Finance Ltd"],
+  ["PNBHOUSING","PNB Housing Finance Ltd"],["MANAPPURAM","Manappuram Finance Ltd"],
+  ["M&MFIN","Mahindra & Mahindra Financial"],["RECLTD","REC Ltd"],["PFC","Power Finance Corp"],
+  ["IRFC","Indian Railway Finance Corp"],["HUDCO","Housing & Urban Dev Corp"],
+  ["DLF","DLF Ltd"],["GODREJPROP","Godrej Properties Ltd"],["OBEROIRLTY","Oberoi Realty Ltd"],
+  ["PRESTIGE","Prestige Estates Projects"],["PHOENIXLTD","Phoenix Mills Ltd"],
+  ["ZEEL","Zee Entertainment Enterprises"],["SUNTV","Sun TV Network Ltd"],["PVRINOX","PVR INOX Ltd"],
+  ["JUBLFOOD","Jubilant FoodWorks Ltd"],["DEVYANI","Devyani International Ltd"],
+  ["WESTLIFE","Westlife Foodworld Ltd"],["SAPPHIRE","Sapphire Foods India Ltd"],
+  ["VEDL","Vedanta Ltd"],["NMDC","NMDC Ltd"],["SAIL","Steel Authority of India"],
+  ["JINDALSTEL","Jindal Steel & Power Ltd"],["JSWENERGY","JSW Energy Ltd"],
+  ["TORNTPOWER","Torrent Power Ltd"],["CESC","CESC Ltd"],["NHPC","NHPC Ltd"],["SJVN","SJVN Ltd"],
+  ["GAIL","GAIL (India) Ltd"],["IOC","Indian Oil Corp"],["HPCL","Hindustan Petroleum Corp"],
+  ["MRF","MRF Ltd"],["APOLLOTYRE","Apollo Tyres Ltd"],["CEAT","CEAT Ltd"],["BALKRISIND","Balkrishna Industries"],
+  ["MOTHERSON","Samvardhana Motherson Intl"],["BHARATFORG","Bharat Forge Ltd"],["SUNDRMFAST","Sundram Fasteners Ltd"],
+  ["ENDURANCE","Endurance Technologies"],["SWARAJENG","Swaraj Engines Ltd"],
+  ["PAGEIND","Page Industries Ltd"],["KALYANKJIL","Kalyan Jewellers India"],
+  ["RAJESHEXPO","Rajesh Exports Ltd"],["TRIBHOVANDAS","Tribhovandas Bhimji Zaveri"],
+  ["TRENT","Trent Ltd"],["ABFRL","Aditya Birla Fashion & Retail"],["SHOPERSTOP","Shopper's Stop Ltd"],
+  ["VBL","Varun Beverages Ltd"],["RADICO","Radico Khaitan Ltd"],["UBL","United Breweries Ltd"],
+  ["GLAXO","GlaxoSmithKline Pharmaceuticals"],["PFIZER","Pfizer Ltd"],["ABBOTINDIA","Abbott India Ltd"],
+  ["SANOFI","Sanofi India Ltd"],["3MINDIA","3M India Ltd"],["HONAUT","Honeywell Automation India"],
+  ["CUMMINSIND","Cummins India Ltd"],["THERMAX","Thermax Ltd"],["AIAENG","AIA Engineering Ltd"],
+  ["GRINDWELL","Grindwell Norton Ltd"],["CARBORUNIV","Carborundum Universal Ltd"],
+  ["ASTRAL","Astral Ltd"],["SUPREMEIND","Supreme Industries Ltd"],["FINOLEX","Finolex Cables Ltd"],
+  ["POLYCAB","Polycab India Ltd"],["KEI","KEI Industries Ltd"],
+  ["DIXON","Dixon Technologies India"],["AMBER","Amber Enterprises India"],
+  ["BLUESTARCO","Blue Star Ltd"],["WHIRLPOOL","Whirlpool of India Ltd"],
+  ["BATAINDIA","Bata India Ltd"],["VIPIND","VIP Industries Ltd"],
+  ["ICICIlombard","ICICI Lombard General Insurance"],["STARHEALTH","Star Health & Allied Insurance"],
+  ["GICRE","General Insurance Corp of India"],["NIACL","New India Assurance Co"],
+  ["CDSL","Central Depository Services"],["BSE","BSE Ltd"],["MCX","Multi Commodity Exchange"],
+  ["CAMS","Computer Age Management Services"],["ANGELONE","Angel One Ltd"],["ICICIPRULI","ICICI Prudential Life Insurance"],
+  ["ICICIGI","ICICI Lombard General Insurance"],["360ONE","360 One WAM Ltd"],
+  ["LICI","Life Insurance Corp of India"],["PGHH","Procter & Gamble Hygiene"],
+  ["HINDPETRO","Hindustan Petroleum Corp"],["CONCOR","Container Corp of India"],
+  ["GMRINFRA","GMR Airports Infrastructure"],["IRB","IRB Infrastructure Developers"],
+  ["ASHOKA","Ashoka Buildcon Ltd"],["KNR","KNR Constructions Ltd"],
+  ["NCC","NCC Ltd"],["NBCC","NBCC (India) Ltd"],
+];
 
+// Build lookup maps
+const NSE_BY_SYMBOL = Object.fromEntries(NSE_STOCKS.map(([s,n]) => [s, n]));
+const NSE_SEARCH = NSE_STOCKS.map(([symbol, name]) => ({ symbol, name, lower: symbol.toLowerCase() + " " + name.toLowerCase() }));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO PAGE — CORS-safe prices via corsproxy.io + stock autocomplete
+// ═══════════════════════════════════════════════════════════════════════════════
 function PortfolioPage({ data, update }) {
   const holdings = data.portfolioHoldings || [];
 
   // ── local UI state ──────────────────────────────────────────────────────────
-  const [form, setForm]       = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" });
-  const [editId, setEditId]   = useState(null);
+  const [form, setForm]         = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" });
+  const [editId, setEditId]     = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [prices, setPrices]   = useState({}); // { symbol: { price, change, changePct, updatedAt } }
-  const [loading, setLoading] = useState(false);
+  const [prices, setPrices]     = useState({});
+  const [loading, setLoading]   = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [error, setError]     = useState("");
-  const [sortBy, setSortBy]   = useState("symbol"); // symbol | pnl | value | pct
-  const [viewTab, setViewTab] = useState("holdings"); // holdings | summary
+  const [priceError, setPriceError]   = useState("");
+  const [sortBy, setSortBy]     = useState("symbol");
+  // Autocomplete state
+  const [acResults, setAcResults]   = useState([]);
+  const [acOpen, setAcOpen]         = useState(false);
+  const acRef = useRef(null);
 
-  // ── derived ticker (append exchange suffix for Yahoo) ───────────────────────
+  // ── ticker helper ───────────────────────────────────────────────────────────
   function toYahooTicker(symbol, exchange) {
     const s = symbol.trim().toUpperCase();
     if (exchange === "NSE") return s + ".NS";
     if (exchange === "BSE") return s + ".BO";
-    return s; // US / already suffixed
+    return s;
   }
 
-  // ── fetch prices for all holdings ──────────────────────────────────────────
+  // ── CORS-safe price fetch ───────────────────────────────────────────────────
+  // Strategy: try 3 approaches in order so we always have a fallback
+  async function fetchOneTicker(ticker) {
+    // Approach 1: corsproxy.io wrapping Yahoo v8 chart
+    const yUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
+    const proxies = [
+      `https://corsproxy.io/?${encodeURIComponent(yUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`,
+    ];
+    for (const proxy of proxies) {
+      try {
+        const res = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) continue;
+        const json = await res.json();
+        const meta = json?.chart?.result?.[0]?.meta;
+        if (!meta || meta.regularMarketPrice == null) continue;
+        const price = meta.regularMarketPrice;
+        const prev  = meta.chartPreviousClose ?? meta.previousClose ?? null;
+        return {
+          price,
+          prevClose: prev,
+          change:    prev != null ? price - prev : null,
+          changePct: prev != null ? ((price - prev) / prev) * 100 : null,
+          currency:  meta.currency ?? "INR",
+        };
+      } catch { /* try next proxy */ }
+    }
+    return null; // all failed
+  }
+
   const fetchPrices = useCallback(async (holdingsList) => {
     if (!holdingsList || holdingsList.length === 0) return;
     setLoading(true);
-    setError("");
+    setPriceError("");
     const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange)))];
     const results = {};
-
     await Promise.all(tickers.map(async (ticker) => {
-      try {
-        // Yahoo Finance v8 quote endpoint — no API key needed
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const json = await res.json();
-        const meta = json?.chart?.result?.[0]?.meta;
-        if (!meta) throw new Error("No data");
-        results[ticker] = {
-          price:     meta.regularMarketPrice ?? null,
-          prevClose: meta.chartPreviousClose ?? meta.previousClose ?? null,
-          currency:  meta.currency ?? "INR",
-          updatedAt: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
-        };
-        if (results[ticker].price != null && results[ticker].prevClose != null) {
-          results[ticker].change    = results[ticker].price - results[ticker].prevClose;
-          results[ticker].changePct = ((results[ticker].change) / results[ticker].prevClose) * 100;
-        }
-      } catch (e) {
-        results[ticker] = { price: null, error: true };
-      }
+      const d = await fetchOneTicker(ticker);
+      results[ticker] = d ? { ...d, ok: true } : { ok: false };
     }));
-
     setPrices(results);
     setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
     setLoading(false);
+    const failed = Object.values(results).filter(r => !r.ok).length;
+    if (failed > 0) setPriceError(`${failed} ticker(s) could not be fetched — check symbol spelling.`);
   }, []);
 
-  // Auto-fetch on mount and when holdings change
   useEffect(() => {
     if (holdings.length > 0) fetchPrices(holdings);
   }, [holdings.length]); // eslint-disable-line
 
+  // ── autocomplete logic ──────────────────────────────────────────────────────
+  function handleSymbolInput(raw) {
+    const val = raw.toUpperCase();
+    setForm(f => ({ ...f, symbol: val }));
+    if (val.length < 1) { setAcResults([]); setAcOpen(false); return; }
+    const q = val.toLowerCase();
+    const matches = NSE_SEARCH.filter(s => s.lower.includes(q)).slice(0, 8);
+    setAcResults(matches);
+    setAcOpen(matches.length > 0);
+  }
+
+  function selectAcStock(stock) {
+    setForm(f => ({ ...f, symbol: stock.symbol, name: stock.name, exchange: "NSE" }));
+    setAcResults([]);
+    setAcOpen(false);
+  }
+
+  // Close autocomplete on outside click
+  useEffect(() => {
+    function handler(e) { if (acRef.current && !acRef.current.contains(e.target)) setAcOpen(false); }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   // ── form helpers ────────────────────────────────────────────────────────────
-  function openAdd() { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" }); setEditId(null); setShowForm(true); }
-  function openEdit(h) { setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE" }); setEditId(h.id); setShowForm(true); }
-  function closeForm() { setShowForm(false); setEditId(null); }
+  function openAdd()  { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" }); setEditId(null); setShowForm(true); setAcOpen(false); }
+  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE" }); setEditId(h.id); setShowForm(true); }
+  function closeForm(){ setShowForm(false); setEditId(null); setAcOpen(false); }
 
   function saveHolding() {
     const sym = form.symbol.trim().toUpperCase();
     if (!sym || !form.buyPrice || !form.qty) return;
-    const newH = { id: editId || Date.now(), symbol: sym, name: form.name.trim() || sym, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, addedAt: editId ? undefined : today() };
+    // Auto-fill name from NSE db if blank
+    const resolvedName = form.name.trim() || NSE_BY_SYMBOL[sym] || sym;
+    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, addedAt: editId ? undefined : today() };
     if (editId) {
       update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
     } else {
       update(p => ({ portfolioHoldings: [...(p.portfolioHoldings || []), newH] }));
     }
     closeForm();
-    // fetch price for new/edited ticker
     setTimeout(() => fetchPrices([...holdings.filter(h => h.id !== editId), newH]), 300);
   }
 
   function deleteHolding(id) { update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).filter(h => h.id !== id) })); }
 
-  // ── compute enriched rows ───────────────────────────────────────────────────
+  // ── enriched rows ───────────────────────────────────────────────────────────
   const rows = holdings.map(h => {
-    const ticker  = toYahooTicker(h.symbol, h.exchange);
-    const pd      = prices[ticker] || {};
-    const cur     = pd.price;
+    const ticker   = toYahooTicker(h.symbol, h.exchange);
+    const pd       = prices[ticker] || {};
+    const cur      = pd.price ?? null;
     const invested = h.buyPrice * h.qty;
     const curVal   = cur != null ? cur * h.qty : null;
     const pnl      = curVal != null ? curVal - invested : null;
     const pnlPct   = pnl != null ? (pnl / invested) * 100 : null;
-    return { ...h, ticker, cur, invested, curVal, pnl, pnlPct, dayChange: pd.change, dayChangePct: pd.changePct, priceError: pd.error, updatedAt: pd.updatedAt };
+    return { ...h, ticker, cur, invested, curVal, pnl, pnlPct, dayChange: pd.change ?? null, dayChangePct: pd.changePct ?? null, fetchFailed: pd.ok === false };
   });
 
   const sorted = [...rows].sort((a, b) => {
@@ -7046,7 +7163,6 @@ function PortfolioPage({ data, update }) {
   const totalPnlPct   = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
   const dayPnl        = rows.filter(r => r.dayChange != null).reduce((s, r) => s + r.dayChange * r.qty, 0);
 
-  // ── styles ──────────────────────────────────────────────────────────────────
   const pnlColor = (v) => v == null ? "var(--color-text-secondary)" : v >= 0 ? "#1a6b3c" : "#d44";
 
   return (
@@ -7056,7 +7172,7 @@ function PortfolioPage({ data, update }) {
         <div>
           <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 24 }}>Portfolio</h2>
           <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
-            {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add holdings to get started"}
+            {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add your demat holdings to get started"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -7076,10 +7192,10 @@ function PortfolioPage({ data, update }) {
       {holdings.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
           <StatCard label="Total Invested" value={fmtCur(totalInvested)} icon="💰" />
-          <StatCard label="Current Value" value={fmtCur(totalCurVal)} icon="📊" accent={totalPnl > 0} />
-          <StatCard label="Total P&L" value={fmtCur(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
-          <StatCard label="Day's P&L" value={fmtCur(dayPnl)} icon="📅" pnl={dayPnl} />
-          <StatCard label="Holdings" value={holdings.length} icon="🗂" />
+          <StatCard label="Current Value"  value={fmtCur(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
+          <StatCard label="Total P&L"      value={fmtCur(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
+          <StatCard label="Day's P&L"      value={fmtCur(dayPnl)}         icon="📅" pnl={dayPnl} />
+          <StatCard label="Holdings"       value={holdings.length}        icon="🗂" />
         </div>
       )}
 
@@ -7087,27 +7203,68 @@ function PortfolioPage({ data, update }) {
       {showForm && (
         <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
           <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+
+            {/* Exchange selector */}
             <div>
               <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Exchange</label>
               <select value={form.exchange} onChange={e => setForm(f => ({ ...f, exchange: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
                 <option value="NSE">NSE (India)</option>
                 <option value="BSE">BSE (India)</option>
-                <option value="US">US (NYSE/NASDAQ)</option>
-                <option value="OTHER">Other / Already suffixed</option>
+                <option value="US">US (NYSE / NASDAQ)</option>
+                <option value="OTHER">Other (full ticker)</option>
               </select>
             </div>
-            <LabelInput label="Symbol (e.g. RELIANCE)" placeholder="INFY" value={form.symbol} onChange={v => setForm(f => ({ ...f, symbol: v.toUpperCase() }))} />
-            <LabelInput label="Company Name (optional)" placeholder="Infosys Ltd" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} />
+
+            {/* Symbol with autocomplete */}
+            <div ref={acRef} style={{ position: "relative" }}>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>
+                {form.exchange === "NSE" || form.exchange === "BSE" ? "Search Stock / Symbol" : "Symbol"}
+              </label>
+              <input
+                type="text"
+                placeholder={form.exchange === "NSE" ? "e.g. INFY or Infosys" : form.exchange === "US" ? "e.g. AAPL" : "Symbol"}
+                value={form.symbol}
+                onChange={e => handleSymbolInput(e.target.value)}
+                onFocus={() => { if (acResults.length > 0) setAcOpen(true); }}
+                style={{ width: "100%", boxSizing: "border-box" }}
+                autoComplete="off"
+              />
+              {/* Dropdown */}
+              {acOpen && acResults.length > 0 && (
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 300, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,0.12)", marginTop: 2, maxHeight: 220, overflowY: "auto" }}>
+                  {acResults.map(s => (
+                    <div key={s.symbol} onMouseDown={() => selectAcStock(s)}
+                      style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{s.symbol}</span>
+                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)", maxWidth: 180, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Company name (auto-filled) */}
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Company Name</label>
+              <input type="text" placeholder="Auto-filled for NSE stocks" value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                style={{ width: "100%", boxSizing: "border-box", background: form.name ? "#fff" : "#f9f9f9" }} />
+            </div>
+
             <LabelInput label="Avg Buy Price (₹)" placeholder="1500" type="number" value={form.buyPrice} onChange={v => setForm(f => ({ ...f, buyPrice: v }))} />
-            <LabelInput label="Quantity (shares)" placeholder="10" type="number" value={form.qty} onChange={v => setForm(f => ({ ...f, qty: v }))} />
+            <LabelInput label="Quantity (shares)"  placeholder="10"   type="number" value={form.qty}      onChange={v => setForm(f => ({ ...f, qty: v }))} />
           </div>
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
-            {form.exchange === "NSE" && "NSE symbols: RELIANCE, INFY, TCS, HDFC, ICICIBANK …"}
-            {form.exchange === "BSE" && "BSE symbols: same as NSE, e.g. RELIANCE, TCS …"}
-            {form.exchange === "US"  && "US symbols: AAPL, MSFT, TSLA, GOOGL …"}
-            {form.exchange === "OTHER" && "Paste the full Yahoo Finance ticker, e.g. RELIANCE.NS"}
+
+          {/* Hint line */}
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", margin: "8px 0 12px" }}>
+            {(form.exchange === "NSE" || form.exchange === "BSE") && "Start typing the symbol or company name — suggestions will appear."}
+            {form.exchange === "US"    && "Use US tickers: AAPL, MSFT, TSLA, GOOGL, AMZN …"}
+            {form.exchange === "OTHER" && "Enter full Yahoo Finance ticker e.g. RELIANCE.NS or BTC-USD"}
           </div>
+
           <div style={{ display: "flex", gap: 8 }}>
             <GreenBtn onClick={saveHolding} label={editId ? "Save Changes" : "Add Holding"} />
             <button onClick={closeForm} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
@@ -7128,7 +7285,6 @@ function PortfolioPage({ data, update }) {
       {/* Holdings table */}
       {holdings.length > 0 && (
         <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-          {/* Table header / sort controls */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontWeight: 500, fontSize: 14 }}>Holdings ({holdings.length})</span>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -7140,48 +7296,46 @@ function PortfolioPage({ data, update }) {
           </div>
 
           {/* Column headers */}
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.2fr 60px", gap: 0, padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
             <span>STOCK</span>
             <span style={{ textAlign: "right" }}>LTP</span>
             <span style={{ textAlign: "right" }}>DAY CHG</span>
             <span style={{ textAlign: "right" }}>INVESTED</span>
             <span style={{ textAlign: "right" }}>CUR VALUE</span>
-            <span style={{ textAlign: "right" }}>P&L</span>
-            <span></span>
+            <span style={{ textAlign: "right" }}>P&amp;L</span>
+            <span />
           </div>
 
           {/* Rows */}
           {sorted.map(h => (
-            <div key={h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.2fr 60px", gap: 0, padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
-              {/* Stock name + symbol */}
+            <div key={h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
               <div>
-                <div style={{ fontWeight: 500 }}>{h.symbol}</div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name !== h.symbol ? h.name : ""} <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 4px", marginLeft: 2 }}>{h.exchange}</span></div>
+                <div style={{ fontWeight: 500 }}>{h.symbol}
+                  <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", marginLeft: 6, fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
+                </div>
+                {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
                 <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ ₹{fmt(h.buyPrice)}</div>
               </div>
+
               {/* LTP */}
               <div style={{ textAlign: "right" }}>
-                {h.priceError ? (
-                  <span style={{ fontSize: 11, color: "#f0a020" }} title={`Could not fetch price for ${h.ticker}. Check symbol.`}>⚠ N/A</span>
-                ) : h.cur != null ? (
-                  <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
-                ) : (
-                  <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>—</span>
-                )}
+                {loading ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
+                  : h.fetchFailed ? <span style={{ fontSize: 11, color: "#f0a020" }} title="Check symbol spelling">⚠ N/A</span>
+                  : h.cur != null ? <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                  : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
               </div>
+
               {/* Day change */}
               <div style={{ textAlign: "right", color: pnlColor(h.dayChangePct), fontSize: 12 }}>
-                {h.dayChangePct != null ? (
-                  <>{h.dayChangePct >= 0 ? "▲" : "▼"} {Math.abs(h.dayChangePct).toFixed(2)}%</>
-                ) : "—"}
+                {h.dayChangePct != null ? <>{h.dayChangePct >= 0 ? "▲" : "▼"} {Math.abs(h.dayChangePct).toFixed(2)}%</> : "—"}
               </div>
-              {/* Invested */}
+
               <div style={{ textAlign: "right" }}>{fmtCur(h.invested)}</div>
-              {/* Current value */}
+
               <div style={{ textAlign: "right" }}>
                 {h.curVal != null ? fmtCur(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
               </div>
-              {/* P&L */}
+
               <div style={{ textAlign: "right" }}>
                 {h.pnl != null ? (
                   <div>
@@ -7190,22 +7344,21 @@ function PortfolioPage({ data, update }) {
                   </div>
                 ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
               </div>
-              {/* Actions */}
+
               <div style={{ textAlign: "right" }}>
                 <ThreeDotMenu onEdit={() => openEdit(h)} onDelete={() => deleteHolding(h.id)} />
               </div>
             </div>
           ))}
 
-          {/* Footer note */}
-          <div style={{ padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>Prices from Yahoo Finance · 15-min delayed · For informational purposes only</span>
-            {error && <span style={{ color: "#d44" }}>{error}</span>}
+          {/* Footer */}
+          <div style={{ padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+            <span>Prices via Yahoo Finance · 15-min delayed · For informational purposes only</span>
+            {priceError && <span style={{ color: "#f0a020" }}>⚠ {priceError}</span>}
           </div>
         </div>
       )}
 
-      {/* Spin animation */}
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
