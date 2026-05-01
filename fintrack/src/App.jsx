@@ -66,7 +66,7 @@ const defaultData = {
   snapshots: [],
   scheduledPayments: [],
   needsWants: [],
-  featureToggles: { fo: true },
+  featureToggles: { fo: true, portfolio: true },
   businessData: [],
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
@@ -342,12 +342,13 @@ export default function App() {
 
   if (onboarding) return <Onboarding step={onboardStep} setStep={setOnboardStep} data={data} update={update} done={() => setOnboarding(false)} />;
 
-  const toggles = data.featureToggles || { fo: true };
+  const toggles = data.featureToggles || { fo: true, portfolio: true };
+  const portfolioOn = toggles.portfolio !== false;
   const navItems = [
     { id: "overview", label: "Overview", icon: "⊞" },
     { id: "money", label: "Money", icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
-    { id: "portfolio", label: "Portfolio", icon: "📈" },
+    ...(portfolioOn ? [{ id: "portfolio", label: "Portfolio", icon: "📈" }] : []),
     { id: "goals", label: "Goals", icon: "◎" },
     { id: "business", label: "Business", icon: "🏢" },
     { id: "projects", label: "Projects", icon: "📋" },
@@ -456,7 +457,7 @@ export default function App() {
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
-        {page === "portfolio" && <PortfolioPage data={data} update={update} />}
+        {page === "portfolio" && portfolioOn && <PortfolioPage data={data} update={update} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
         {page === "business" && <BusinessPage data={data} update={update} />}
         {page === "projects" && <ProjectsPage data={data} update={update} />}
@@ -2083,6 +2084,12 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
       icon: "◉",
       label: "F&O Tracker",
       sub: "Futures & Options trade journal, P&L calculator, broker charge breakdown and charge profiles.",
+    },
+    {
+      key: "portfolio",
+      icon: "📈",
+      label: "Portfolio",
+      sub: "Track your demat holdings, live LTP prices, P&L, day change and auto-merge duplicate entries.",
     },
   ];
 
@@ -7035,35 +7042,29 @@ function PortfolioPage({ data, update }) {
 
   // ── ticker helper ───────────────────────────────────────────────────────────
   function toYahooTicker(symbol, exchange) {
-    const s = symbol.trim().toUpperCase();
+    const s = (symbol || "").trim().toUpperCase();
     if (exchange === "NSE") return s + ".NS";
     if (exchange === "BSE") return s + ".BO";
     return s;
   }
 
-  // ── Auto-merge duplicate symbol+exchange into weighted avg — MUST be before useEffect ──
-  const mergedHoldings = useMemo(() => {
+  // ── Auto-merge duplicate symbol+exchange into weighted avg ──────────────────
+  function computeMerged(list) {
     const map = new Map();
-    holdings.forEach(h => {
-      const key = `${h.symbol.trim().toUpperCase()}|${h.exchange || "NSE"}`;
+    (list || []).forEach(h => {
+      const key = `${(h.symbol || "").trim().toUpperCase()}|${h.exchange || "NSE"}`;
       if (!map.has(key)) {
         map.set(key, { ...h, _ids: [h.id], _merged: false, _originalCount: 1 });
       } else {
-        const existing = map.get(key);
-        const totalQty = existing.qty + h.qty;
-        const avgPrice = ((existing.buyPrice * existing.qty) + (h.buyPrice * h.qty)) / totalQty;
-        map.set(key, {
-          ...existing,
-          qty: totalQty,
-          buyPrice: Math.round(avgPrice * 100) / 100,
-          _ids: [...existing._ids, h.id],
-          _merged: true,
-          _originalCount: existing._originalCount + 1,
-        });
+        const ex = map.get(key);
+        const totalQty = ex.qty + h.qty;
+        const avgPrice = ((ex.buyPrice * ex.qty) + (h.buyPrice * h.qty)) / totalQty;
+        map.set(key, { ...ex, qty: totalQty, buyPrice: Math.round(avgPrice * 100) / 100, _ids: [...ex._ids, h.id], _merged: true, _originalCount: ex._originalCount + 1 });
       }
     });
     return Array.from(map.values());
-  }, [holdings]); // eslint-disable-line
+  }
+  const mergedHoldings = computeMerged(holdings);
 
   // ── CORS-safe price fetch ────────────────────────────────────────────────────
   const fetchPrices = useCallback(async (holdingsList) => {
@@ -7086,9 +7087,12 @@ function PortfolioPage({ data, update }) {
     setLoading(false);
   }, []); // eslint-disable-line
 
+  // Fetch prices on mount and when holdings count changes
+  const holdingsLen = holdings.length;
   useEffect(() => {
-    if (mergedHoldings.length > 0) fetchPrices(mergedHoldings);
-  }, [holdings.length]); // eslint-disable-line
+    const merged = computeMerged(data.portfolioHoldings || []);
+    if (merged.length > 0) fetchPrices(merged);
+  }, [holdingsLen]); // eslint-disable-line
 
   // ── autocomplete logic ──────────────────────────────────────────────────────
   function handleSymbolInput(raw) {
