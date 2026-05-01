@@ -7068,6 +7068,8 @@ function PortfolioPage({ data, update }) {
   function toYahooTicker(symbol, exchange, override) {
     if (override && override.trim()) return override.trim().toUpperCase();
     let s = (symbol || "").trim().toUpperCase();
+    // If symbol already contains a full Yahoo ticker (e.g. "ABCAPITAL.NS"), use it directly
+    if (s.endsWith(".NS") || s.endsWith(".BO")) return s;
     // Apply known corrections
     s = YAHOO_CORRECTIONS[s] || s;
     // Replace & with - (Yahoo convention for NSE)
@@ -7480,7 +7482,7 @@ function PortfolioPage({ data, update }) {
             <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
               <div>
                 <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-                  {h.symbol}
+                  {h.symbol.replace(/\.(NS|BO)$/i, "")}
                   <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
                   {h._merged && (
                     <span title={`${h._originalCount} entries merged — avg buy price`} style={{ fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600, cursor: "help" }}>
