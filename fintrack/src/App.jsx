@@ -61,6 +61,7 @@ const defaultData = {
   ],
   lotSizes: { "Nifty 50": 65, "Bank Nifty": 30, "Sensex": 20, "Crude Oil": 100, "Crude Oil M": 10, "Natural Gas": 1250, "Natural Gas M": 250, "Gold": 100, "Gold M": 10 },
   customInstruments: { "Index Options": [], "Stock Options": [], "Commodities": [] },
+  portfolioHoldings: [],
   goals: [],
   snapshots: [],
   scheduledPayments: [],
@@ -346,6 +347,7 @@ export default function App() {
     { id: "overview", label: "Overview", icon: "⊞" },
     { id: "money", label: "Money", icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
+    { id: "portfolio", label: "Portfolio", icon: "📈" },
     { id: "goals", label: "Goals", icon: "◎" },
     { id: "business", label: "Business", icon: "🏢" },
     { id: "projects", label: "Projects", icon: "📋" },
@@ -454,6 +456,7 @@ export default function App() {
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
+        {page === "portfolio" && <PortfolioPage data={data} update={update} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
         {page === "business" && <BusinessPage data={data} update={update} />}
         {page === "projects" && <ProjectsPage data={data} update={update} />}
@@ -6924,4 +6927,286 @@ function filterByPeriod(dateStr, period) {
   if (period === "Last Month") { const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1); return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear(); }
   if (period === "6M") { const s = new Date(now); s.setMonth(now.getMonth() - 6); return d >= s; }
   return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO PAGE — Real-time stock prices via Yahoo Finance (yh-finance proxy)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Price fetching uses a public CORS-friendly Yahoo Finance endpoint.
+// For Indian stocks append ".NS" (NSE) or ".BO" (BSE) to the symbol.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PortfolioPage({ data, update }) {
+  const holdings = data.portfolioHoldings || [];
+
+  // ── local UI state ──────────────────────────────────────────────────────────
+  const [form, setForm]       = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" });
+  const [editId, setEditId]   = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [prices, setPrices]   = useState({}); // { symbol: { price, change, changePct, updatedAt } }
+  const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [error, setError]     = useState("");
+  const [sortBy, setSortBy]   = useState("symbol"); // symbol | pnl | value | pct
+  const [viewTab, setViewTab] = useState("holdings"); // holdings | summary
+
+  // ── derived ticker (append exchange suffix for Yahoo) ───────────────────────
+  function toYahooTicker(symbol, exchange) {
+    const s = symbol.trim().toUpperCase();
+    if (exchange === "NSE") return s + ".NS";
+    if (exchange === "BSE") return s + ".BO";
+    return s; // US / already suffixed
+  }
+
+  // ── fetch prices for all holdings ──────────────────────────────────────────
+  const fetchPrices = useCallback(async (holdingsList) => {
+    if (!holdingsList || holdingsList.length === 0) return;
+    setLoading(true);
+    setError("");
+    const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange)))];
+    const results = {};
+
+    await Promise.all(tickers.map(async (ticker) => {
+      try {
+        // Yahoo Finance v8 quote endpoint — no API key needed
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const json = await res.json();
+        const meta = json?.chart?.result?.[0]?.meta;
+        if (!meta) throw new Error("No data");
+        results[ticker] = {
+          price:     meta.regularMarketPrice ?? null,
+          prevClose: meta.chartPreviousClose ?? meta.previousClose ?? null,
+          currency:  meta.currency ?? "INR",
+          updatedAt: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+        };
+        if (results[ticker].price != null && results[ticker].prevClose != null) {
+          results[ticker].change    = results[ticker].price - results[ticker].prevClose;
+          results[ticker].changePct = ((results[ticker].change) / results[ticker].prevClose) * 100;
+        }
+      } catch (e) {
+        results[ticker] = { price: null, error: true };
+      }
+    }));
+
+    setPrices(results);
+    setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+    setLoading(false);
+  }, []);
+
+  // Auto-fetch on mount and when holdings change
+  useEffect(() => {
+    if (holdings.length > 0) fetchPrices(holdings);
+  }, [holdings.length]); // eslint-disable-line
+
+  // ── form helpers ────────────────────────────────────────────────────────────
+  function openAdd() { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" }); setEditId(null); setShowForm(true); }
+  function openEdit(h) { setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE" }); setEditId(h.id); setShowForm(true); }
+  function closeForm() { setShowForm(false); setEditId(null); }
+
+  function saveHolding() {
+    const sym = form.symbol.trim().toUpperCase();
+    if (!sym || !form.buyPrice || !form.qty) return;
+    const newH = { id: editId || Date.now(), symbol: sym, name: form.name.trim() || sym, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, addedAt: editId ? undefined : today() };
+    if (editId) {
+      update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
+    } else {
+      update(p => ({ portfolioHoldings: [...(p.portfolioHoldings || []), newH] }));
+    }
+    closeForm();
+    // fetch price for new/edited ticker
+    setTimeout(() => fetchPrices([...holdings.filter(h => h.id !== editId), newH]), 300);
+  }
+
+  function deleteHolding(id) { update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).filter(h => h.id !== id) })); }
+
+  // ── compute enriched rows ───────────────────────────────────────────────────
+  const rows = holdings.map(h => {
+    const ticker  = toYahooTicker(h.symbol, h.exchange);
+    const pd      = prices[ticker] || {};
+    const cur     = pd.price;
+    const invested = h.buyPrice * h.qty;
+    const curVal   = cur != null ? cur * h.qty : null;
+    const pnl      = curVal != null ? curVal - invested : null;
+    const pnlPct   = pnl != null ? (pnl / invested) * 100 : null;
+    return { ...h, ticker, cur, invested, curVal, pnl, pnlPct, dayChange: pd.change, dayChangePct: pd.changePct, priceError: pd.error, updatedAt: pd.updatedAt };
+  });
+
+  const sorted = [...rows].sort((a, b) => {
+    if (sortBy === "pnl")   return (b.pnl ?? -Infinity) - (a.pnl ?? -Infinity);
+    if (sortBy === "value") return (b.curVal ?? -Infinity) - (a.curVal ?? -Infinity);
+    if (sortBy === "pct")   return (b.pnlPct ?? -Infinity) - (a.pnlPct ?? -Infinity);
+    return a.symbol.localeCompare(b.symbol);
+  });
+
+  const totalInvested = rows.reduce((s, r) => s + r.invested, 0);
+  const totalCurVal   = rows.filter(r => r.curVal != null).reduce((s, r) => s + r.curVal, 0);
+  const totalPnl      = rows.filter(r => r.pnl != null).reduce((s, r) => s + r.pnl, 0);
+  const totalPnlPct   = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+  const dayPnl        = rows.filter(r => r.dayChange != null).reduce((s, r) => s + r.dayChange * r.qty, 0);
+
+  // ── styles ──────────────────────────────────────────────────────────────────
+  const pnlColor = (v) => v == null ? "var(--color-text-secondary)" : v >= 0 ? "#1a6b3c" : "#d44";
+
+  return (
+    <div style={{ maxWidth: 960, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 24 }}>Portfolio</h2>
+          <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+            {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add holdings to get started"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => fetchPrices(holdings)} disabled={loading || holdings.length === 0}
+            style={{ padding: "7px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.6 : 1 }}>
+            <span style={{ display: "inline-block", animation: loading ? "spin 1s linear infinite" : "none" }}>↻</span>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button onClick={openAdd}
+            style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            + Add Stock
+          </button>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      {holdings.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
+          <StatCard label="Total Invested" value={fmtCur(totalInvested)} icon="💰" />
+          <StatCard label="Current Value" value={fmtCur(totalCurVal)} icon="📊" accent={totalPnl > 0} />
+          <StatCard label="Total P&L" value={fmtCur(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
+          <StatCard label="Day's P&L" value={fmtCur(dayPnl)} icon="📅" pnl={dayPnl} />
+          <StatCard label="Holdings" value={holdings.length} icon="🗂" />
+        </div>
+      )}
+
+      {/* Add/Edit form */}
+      {showForm && (
+        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
+          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Exchange</label>
+              <select value={form.exchange} onChange={e => setForm(f => ({ ...f, exchange: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <option value="NSE">NSE (India)</option>
+                <option value="BSE">BSE (India)</option>
+                <option value="US">US (NYSE/NASDAQ)</option>
+                <option value="OTHER">Other / Already suffixed</option>
+              </select>
+            </div>
+            <LabelInput label="Symbol (e.g. RELIANCE)" placeholder="INFY" value={form.symbol} onChange={v => setForm(f => ({ ...f, symbol: v.toUpperCase() }))} />
+            <LabelInput label="Company Name (optional)" placeholder="Infosys Ltd" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} />
+            <LabelInput label="Avg Buy Price (₹)" placeholder="1500" type="number" value={form.buyPrice} onChange={v => setForm(f => ({ ...f, buyPrice: v }))} />
+            <LabelInput label="Quantity (shares)" placeholder="10" type="number" value={form.qty} onChange={v => setForm(f => ({ ...f, qty: v }))} />
+          </div>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
+            {form.exchange === "NSE" && "NSE symbols: RELIANCE, INFY, TCS, HDFC, ICICIBANK …"}
+            {form.exchange === "BSE" && "BSE symbols: same as NSE, e.g. RELIANCE, TCS …"}
+            {form.exchange === "US"  && "US symbols: AAPL, MSFT, TSLA, GOOGL …"}
+            {form.exchange === "OTHER" && "Paste the full Yahoo Finance ticker, e.g. RELIANCE.NS"}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <GreenBtn onClick={saveHolding} label={editId ? "Save Changes" : "Add Holding"} />
+            <button onClick={closeForm} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {holdings.length === 0 && !showForm && (
+        <div style={{ textAlign: "center", padding: "4rem 1rem", background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 6 }}>No holdings yet</div>
+          <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>Add your demat account stocks to track real-time P&L</div>
+          <GreenBtn onClick={openAdd} label="+ Add Your First Stock" />
+        </div>
+      )}
+
+      {/* Holdings table */}
+      {holdings.length > 0 && (
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+          {/* Table header / sort controls */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontWeight: 500, fontSize: 14 }}>Holdings ({holdings.length})</span>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Sort:</span>
+              {[["symbol","A-Z"],["value","Value"],["pnl","P&L"],["pct","% Return"]].map(([k,l]) => (
+                <button key={k} onClick={() => setSortBy(k)} style={{ padding: "3px 9px", borderRadius: 6, border: "0.5px solid", borderColor: sortBy === k ? "#1a6b3c" : "var(--color-border-secondary)", background: sortBy === k ? "#1a6b3c" : "transparent", color: sortBy === k ? "#fff" : "var(--color-text-secondary)", fontSize: 11, cursor: "pointer" }}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Column headers */}
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.2fr 60px", gap: 0, padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            <span>STOCK</span>
+            <span style={{ textAlign: "right" }}>LTP</span>
+            <span style={{ textAlign: "right" }}>DAY CHG</span>
+            <span style={{ textAlign: "right" }}>INVESTED</span>
+            <span style={{ textAlign: "right" }}>CUR VALUE</span>
+            <span style={{ textAlign: "right" }}>P&L</span>
+            <span></span>
+          </div>
+
+          {/* Rows */}
+          {sorted.map(h => (
+            <div key={h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.2fr 60px", gap: 0, padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
+              {/* Stock name + symbol */}
+              <div>
+                <div style={{ fontWeight: 500 }}>{h.symbol}</div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name !== h.symbol ? h.name : ""} <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 4px", marginLeft: 2 }}>{h.exchange}</span></div>
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ ₹{fmt(h.buyPrice)}</div>
+              </div>
+              {/* LTP */}
+              <div style={{ textAlign: "right" }}>
+                {h.priceError ? (
+                  <span style={{ fontSize: 11, color: "#f0a020" }} title={`Could not fetch price for ${h.ticker}. Check symbol.`}>⚠ N/A</span>
+                ) : h.cur != null ? (
+                  <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                ) : (
+                  <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>—</span>
+                )}
+              </div>
+              {/* Day change */}
+              <div style={{ textAlign: "right", color: pnlColor(h.dayChangePct), fontSize: 12 }}>
+                {h.dayChangePct != null ? (
+                  <>{h.dayChangePct >= 0 ? "▲" : "▼"} {Math.abs(h.dayChangePct).toFixed(2)}%</>
+                ) : "—"}
+              </div>
+              {/* Invested */}
+              <div style={{ textAlign: "right" }}>{fmtCur(h.invested)}</div>
+              {/* Current value */}
+              <div style={{ textAlign: "right" }}>
+                {h.curVal != null ? fmtCur(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+              </div>
+              {/* P&L */}
+              <div style={{ textAlign: "right" }}>
+                {h.pnl != null ? (
+                  <div>
+                    <div style={{ color: pnlColor(h.pnl), fontWeight: 500 }}>{h.pnl >= 0 ? "+" : ""}{fmtCur(h.pnl)}</div>
+                    <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
+                  </div>
+                ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+              </div>
+              {/* Actions */}
+              <div style={{ textAlign: "right" }}>
+                <ThreeDotMenu onEdit={() => openEdit(h)} onDelete={() => deleteHolding(h.id)} />
+              </div>
+            </div>
+          ))}
+
+          {/* Footer note */}
+          <div style={{ padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>Prices from Yahoo Finance · 15-min delayed · For informational purposes only</span>
+            {error && <span style={{ color: "#d44" }}>{error}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Spin animation */}
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 }
