@@ -1014,7 +1014,7 @@ function MoneyPage({ data, update, tab, setTab }) {
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
-      <TabBar tabs={["expenses", "income", "scheduled", "liabilities"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Scheduled", "Liabilities"]} />
+      <TabBar tabs={["expenses", "income", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Scheduled", "Liabilities", "Analysis"]} />
 
       {/* ── Scheduled Payments Tab ── */}
       {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} />}
@@ -1130,6 +1130,8 @@ function MoneyPage({ data, update, tab, setTab }) {
 
       {/* ── Liabilities Tab ── */}
       {tab === "liabilities" && <LiabilitiesTab data={data} update={update} />}
+
+      {tab === "analysis" && <AnalysisTab data={data} />}
     </div>
   );
 }
@@ -2785,6 +2787,376 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
 }
 
 // ─── Scheduled Payments Tab ──────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANALYSIS TAB — Income/Expense graph · Category Pie chart · Calendar view
+// ═══════════════════════════════════════════════════════════════════════════════
+function AnalysisTab({ data }) {
+  const [view,      setView]      = useState("graph");   // "graph" | "pie" | "calendar"
+  const [period,    setPeriod]    = useState("6M");
+  const [calYear,   setCalYear]   = useState(new Date().getFullYear());
+  const [calMonth,  setCalMonth]  = useState(new Date().getMonth()); // 0-indexed
+  const [calDay,    setCalDay]    = useState(null);
+
+  const txns = data.transactions || [];
+  const cats = data.categories || {};
+
+  // ── Period filter ──────────────────────────────────────────────────────────
+  function inPeriod(t) {
+    const d = new Date(t.date); const now = new Date(); now.setHours(0,0,0,0);
+    if (period === "1M") { const s = new Date(now); s.setMonth(s.getMonth()-1); return d >= s; }
+    if (period === "3M") { const s = new Date(now); s.setMonth(s.getMonth()-3); return d >= s; }
+    if (period === "6M") { const s = new Date(now); s.setMonth(s.getMonth()-6); return d >= s; }
+    if (period === "1Y") { const s = new Date(now); s.setFullYear(s.getFullYear()-1); return d >= s; }
+    if (period === "All") return true;
+    return true;
+  }
+  const filtered = txns.filter(inPeriod);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const fmtCur = n => "₹" + Math.abs(n).toLocaleString("en-IN");
+  const COLORS  = ["#6d28d9","#1a6b3c","#f59e0b","#ef4444","#3b82f6","#10b981","#f97316","#8b5cf6","#ec4899","#14b8a6","#a78bfa","#84cc16"];
+
+  // ══════════════════════════ GRAPH VIEW ══════════════════════════════════════
+  function GraphView() {
+    // Build monthly buckets
+    const buckets = {};
+    filtered.forEach(t => {
+      const d = new Date(t.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      if (!buckets[key]) buckets[key] = { income:0, expense:0, label:"" };
+      const short = d.toLocaleString("en-IN",{month:"short"}) + " " + String(d.getFullYear()).slice(2);
+      buckets[key].label = short;
+      if (t.type==="income")  buckets[key].income  += Number(t.amount||0);
+      if (t.type==="expense") buckets[key].expense += Number(t.amount||0);
+    });
+    const months = Object.keys(buckets).sort();
+    const pts = months.map(k => buckets[k]);
+
+    if (!pts.length) return (
+      <div style={{textAlign:"center",padding:"4rem",color:"var(--color-text-secondary)"}}>
+        <div style={{fontSize:40,marginBottom:8}}>📊</div>No transactions in this period.
+      </div>
+    );
+
+    const maxVal = Math.max(...pts.map(p => Math.max(p.income, p.expense)), 1);
+    const W = 700, H = 220, PL = 54, PR = 16, PT = 16, PB = 44;
+    const cw = W - PL - PR, ch = H - PT - PB;
+    const n = pts.length;
+    const xOf = i => PL + (n > 1 ? (i / (n-1)) * cw : cw/2);
+    const yOf = v => PT + ch - (v / maxVal) * ch;
+
+    function polyline(key, color, fill) {
+      const points = pts.map((p,i) => `${xOf(i)},${yOf(p[key])}`).join(" ");
+      const area   = `M${xOf(0)},${PT+ch} L${pts.map((p,i)=>`${xOf(i)},${yOf(p[key])}`).join(" L")} L${xOf(n-1)},${PT+ch} Z`;
+      return (
+        <g key={key}>
+          <defs>
+            <linearGradient id={`grad_${key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.18"/>
+              <stop offset="100%" stopColor={color} stopOpacity="0.01"/>
+            </linearGradient>
+          </defs>
+          <path d={area} fill={`url(#grad_${key})`}/>
+          <polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
+          {pts.map((p,i) => (
+            <circle key={i} cx={xOf(i)} cy={yOf(p[key])} r={3.5} fill={color}/>
+          ))}
+        </g>
+      );
+    }
+
+    // Y-axis grid
+    const gridLines = [0, 0.25, 0.5, 0.75, 1].map(f => ({
+      y: yOf(maxVal*f), val: maxVal*f
+    }));
+
+    return (
+      <div>
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
+          {/* Grid */}
+          {gridLines.map((g,i) => (
+            <g key={i}>
+              <line x1={PL} x2={W-PR} y1={g.y} y2={g.y} stroke="#e5e7eb" strokeWidth={0.8}/>
+              <text x={PL-6} y={g.y+4} textAnchor="end" fontSize={9} fill="#9ca3af">
+                {g.val>=100000 ? (g.val/100000).toFixed(1)+"L" : g.val>=1000 ? (g.val/1000).toFixed(0)+"K" : g.val.toFixed(0)}
+              </text>
+            </g>
+          ))}
+          {/* Lines */}
+          {polyline("income",  "#1a6b3c")}
+          {polyline("expense", "#ef4444")}
+          {/* X labels */}
+          {pts.map((p,i) => (
+            <text key={i} x={xOf(i)} y={PT+ch+16} textAnchor="middle" fontSize={9} fill="#6b7280">{p.label}</text>
+          ))}
+        </svg>
+        {/* Legend */}
+        <div style={{display:"flex",gap:20,justifyContent:"center",marginTop:8}}>
+          {[["Income","#1a6b3c"],["Expense","#ef4444"]].map(([l,c]) => (
+            <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"var(--color-text-secondary)"}}>
+              <span style={{width:10,height:10,borderRadius:"50%",background:c,display:"inline-block"}}/>
+              {l}
+            </div>
+          ))}
+        </div>
+        {/* Monthly summary table */}
+        <div style={{marginTop:20,overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:"var(--color-background-secondary)"}}>
+                {["Month","Income","Expense","Net"].map(h => (
+                  <th key={h} style={{padding:"6px 12px",textAlign:"left",fontSize:11,color:"var(--color-text-secondary)",fontWeight:500}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pts.map((p,i) => (
+                <tr key={i} style={{borderTop:"0.5px solid var(--color-border-tertiary)"}}>
+                  <td style={{padding:"7px 12px",fontWeight:500}}>{p.label}</td>
+                  <td style={{padding:"7px 12px",color:"#1a6b3c",fontWeight:600}}>{fmtCur(p.income)}</td>
+                  <td style={{padding:"7px 12px",color:"#ef4444",fontWeight:600}}>{fmtCur(p.expense)}</td>
+                  <td style={{padding:"7px 12px",color:(p.income-p.expense)>=0?"#1a6b3c":"#ef4444",fontWeight:600}}>
+                    {(p.income-p.expense)>=0?"+":""}{fmtCur(p.income-p.expense)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════ PIE CHART VIEW ══════════════════════════════════
+  function PieView() {
+    const [pieType, setPieType] = useState("expense");
+    const relevant = filtered.filter(t => t.type === pieType);
+
+    // Aggregate by category
+    const catMap = {};
+    relevant.forEach(t => {
+      const c = t.category || "Other";
+      catMap[c] = (catMap[c]||0) + Number(t.amount||0);
+    });
+    const entries = Object.entries(catMap).sort((a,b) => b[1]-a[1]);
+    const total   = entries.reduce((s,[,v]) => s+v, 0);
+
+    if (!entries.length) return (
+      <div style={{textAlign:"center",padding:"4rem",color:"var(--color-text-secondary)"}}>
+        <div style={{fontSize:40,marginBottom:8}}>🥧</div>No {pieType} data in this period.
+      </div>
+    );
+
+    // Build SVG pie slices
+    const R = 90, CX = 120, CY = 110;
+    let angle = -Math.PI/2;
+    const slices = entries.map(([cat, val], i) => {
+      const frac    = val / total;
+      const sweep   = frac * 2 * Math.PI;
+      const x1 = CX + R * Math.cos(angle);
+      const y1 = CY + R * Math.sin(angle);
+      angle += sweep;
+      const x2 = CX + R * Math.cos(angle);
+      const y2 = CY + R * Math.sin(angle);
+      const large = sweep > Math.PI ? 1 : 0;
+      return { cat, val, frac, color: COLORS[i % COLORS.length], x1, y1, x2, y2, large, midAngle: angle - sweep/2 };
+    });
+
+    return (
+      <div>
+        {/* Type toggle */}
+        <div style={{display:"flex",gap:0,background:"var(--color-background-secondary)",borderRadius:8,padding:3,width:"fit-content",marginBottom:20}}>
+          {["expense","income"].map(t => (
+            <button key={t} onClick={()=>setPieType(t)}
+              style={{padding:"5px 18px",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500,
+                background:pieType===t?"#fff":"transparent",color:pieType===t?(t==="expense"?"#ef4444":"#1a6b3c"):"var(--color-text-secondary)",
+                boxShadow:pieType===t?"0 1px 3px rgba(0,0,0,0.1)":"none"}}>
+              {t==="expense"?"Expenses":"Income"}
+            </button>
+          ))}
+        </div>
+
+        <div style={{display:"flex",gap:32,alignItems:"flex-start",flexWrap:"wrap"}}>
+          {/* SVG Pie */}
+          <svg width={240} height={220} style={{flexShrink:0}}>
+            {slices.map((s,i) => (
+              <path key={i}
+                d={`M${CX},${CY} L${s.x1},${s.y1} A${R},${R} 0 ${s.large},1 ${s.x2},${s.y2} Z`}
+                fill={s.color} stroke="#fff" strokeWidth={2}
+              />
+            ))}
+            {/* Center label */}
+            <text x={CX} y={CY-6} textAnchor="middle" fontSize={11} fill="#6b7280">Total</text>
+            <text x={CX} y={CY+12} textAnchor="middle" fontSize={13} fontWeight="700" fill="var(--color-text-primary)">{fmtCur(total)}</text>
+          </svg>
+
+          {/* Legend */}
+          <div style={{flex:1,minWidth:180}}>
+            {entries.map(([cat,val],i) => (
+              <div key={cat} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <span style={{width:12,height:12,borderRadius:3,background:COLORS[i%COLORS.length],flexShrink:0}}/>
+                <span style={{flex:1,fontSize:13,fontWeight:500}}>{cat}</span>
+                <span style={{fontSize:13,color:pieType==="expense"?"#ef4444":"#1a6b3c",fontWeight:600}}>{fmtCur(val)}</span>
+                <span style={{fontSize:11,color:"var(--color-text-secondary)",minWidth:36,textAlign:"right"}}>
+                  {(val/total*100).toFixed(1)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════ CALENDAR VIEW ═══════════════════════════════════
+  function CalendarView() {
+    const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+    // Build day → {income, expense, txns}
+    const dayMap = {};
+    txns.forEach(t => {
+      const d = new Date(t.date);
+      if (d.getFullYear()!==calYear || d.getMonth()!==calMonth) return;
+      const key = d.getDate();
+      if (!dayMap[key]) dayMap[key] = {income:0,expense:0,txns:[]};
+      if (t.type==="income")  dayMap[key].income  += Number(t.amount||0);
+      if (t.type==="expense") dayMap[key].expense += Number(t.amount||0);
+      dayMap[key].txns.push(t);
+    });
+
+    const firstDay  = new Date(calYear, calMonth, 1).getDay();
+    const daysCount = new Date(calYear, calMonth+1, 0).getDate();
+    const cells = [];
+    for (let i=0; i<firstDay; i++) cells.push(null);
+    for (let d=1; d<=daysCount; d++) cells.push(d);
+
+    const selectedTxns = calDay ? (dayMap[calDay]?.txns || []) : [];
+
+    function prevMonth(){ if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); setCalDay(null); }
+    function nextMonth(){ if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); setCalDay(null); }
+
+    return (
+      <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"flex-start"}}>
+        {/* Calendar grid */}
+        <div style={{flex:"0 0 auto",minWidth:320}}>
+          {/* Month nav */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+            <button onClick={prevMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--color-text-secondary)"}}>‹</button>
+            <span style={{fontWeight:700,fontSize:15}}>{MONTHS[calMonth]} {calYear}</span>
+            <button onClick={nextMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--color-text-secondary)"}}>›</button>
+          </div>
+          {/* Day headers */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+            {DAYS.map(d => <div key={d} style={{textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:500,padding:"4px 0"}}>{d}</div>)}
+          </div>
+          {/* Day cells */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+            {cells.map((day,i) => {
+              if (!day) return <div key={i}/>;
+              const info = dayMap[day];
+              const isToday = day===new Date().getDate() && calMonth===new Date().getMonth() && calYear===new Date().getFullYear();
+              const isSel = day===calDay;
+              return (
+                <div key={day} onClick={()=>setCalDay(isSel?null:day)}
+                  style={{borderRadius:8,padding:"5px 3px",minHeight:50,cursor:info?"pointer":"default",
+                    background:isSel?"#1a6b3c":isToday?"#f0fdf4":"var(--color-background-secondary)",
+                    border:isSel?"2px solid #1a6b3c":isToday?"1.5px solid #bbf7d0":"1px solid var(--color-border-tertiary)",
+                    display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <span style={{fontSize:12,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isToday?"#1a6b3c":"var(--color-text-primary)"}}>{day}</span>
+                  {info?.income  > 0 && <span style={{fontSize:8,background:"#dcfce7",color:"#166534",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>+{fmtCur(info.income)}</span>}
+                  {info?.expense > 0 && <span style={{fontSize:8,background:"#fee2e2",color:"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>-{fmtCur(info.expense)}</span>}
+                </div>
+              );
+            })}
+          </div>
+          {/* Month total */}
+          <div style={{marginTop:12,display:"flex",gap:12,fontSize:12}}>
+            <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(Object.values(dayMap).reduce((s,d)=>s+d.income,0))}</span>
+            <span style={{color:"#ef4444",fontWeight:600}}>Expense: {fmtCur(Object.values(dayMap).reduce((s,d)=>s+d.expense,0))}</span>
+          </div>
+        </div>
+
+        {/* Day detail panel */}
+        <div style={{flex:1,minWidth:220}}>
+          {calDay ? (
+            <>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>
+                {calDay} {MONTHS[calMonth]} {calYear}
+              </div>
+              {selectedTxns.length===0
+                ? <div style={{color:"var(--color-text-secondary)",fontSize:13}}>No transactions this day.</div>
+                : selectedTxns.map(t => (
+                    <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,marginBottom:6,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
+                      <span style={{width:8,height:8,borderRadius:"50%",background:t.type==="income"?"#1a6b3c":"#ef4444",flexShrink:0}}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}</div>
+                        {t.note && <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
+                      </div>
+                      <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
+                        {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
+                      </span>
+                    </div>
+                  ))
+              }
+            </>
+          ) : (
+            <div style={{color:"var(--color-text-secondary)",fontSize:13,paddingTop:8}}>
+              Click a day to see transactions.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const views = [
+    { id:"graph",    label:"📈 Income vs Expense" },
+    { id:"pie",      label:"🥧 Category Breakdown" },
+    { id:"calendar", label:"📅 Calendar" },
+  ];
+
+  return (
+    <div style={{marginTop:16}}>
+      {/* View switcher */}
+      <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+        {views.map(v => (
+          <button key={v.id} onClick={()=>setView(v.id)}
+            style={{padding:"7px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,
+              background:view===v.id?"#1a6b3c":"var(--color-background-secondary)",
+              color:view===v.id?"#fff":"var(--color-text-secondary)",
+              boxShadow:view===v.id?"0 2px 8px rgba(26,107,60,0.18)":"none",transition:"all 0.15s"}}>
+            {v.label}
+          </button>
+        ))}
+
+        {/* Period picker — not for calendar */}
+        {view !== "calendar" && (
+          <div style={{marginLeft:"auto",display:"flex",gap:4}}>
+            {["1M","3M","6M","1Y","All"].map(p => (
+              <button key={p} onClick={()=>setPeriod(p)}
+                style={{padding:"5px 10px",borderRadius:6,border:"0.5px solid var(--color-border-secondary)",cursor:"pointer",fontSize:11,fontWeight:500,
+                  background:period===p?"#1a6b3c":"none",color:period===p?"#fff":"var(--color-text-secondary)"}}>
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Card wrapper */}
+      <div style={{background:"var(--color-background-primary)",borderRadius:14,border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"}}>
+        {view==="graph"    && <GraphView/>}
+        {view==="pie"      && <PieView/>}
+        {view==="calendar" && <CalendarView/>}
+      </div>
+    </div>
+  );
+}
+// ════════════════════════════════════════════════════════════════════════════════
+
 function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
   const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
