@@ -1130,7 +1130,6 @@ function MoneyPage({ data, update, tab, setTab }) {
 
       {/* ── Liabilities Tab ── */}
       {tab === "liabilities" && <LiabilitiesTab data={data} update={update} />}
-
       {tab === "analysis" && <AnalysisTab data={data} />}
     </div>
   );
@@ -2788,45 +2787,43 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
 
 // ─── Scheduled Payments Tab ──────────────────────────────────────────────────
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ANALYSIS TAB — Income/Expense graph · Category Pie chart · Calendar view
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════ ANALYSIS TAB ═══════════════════════════════════
 function AnalysisTab({ data }) {
-  const [view,      setView]      = useState("graph");   // "graph" | "pie" | "calendar"
-  const [period,    setPeriod]    = useState("6M");
-  const [calYear,   setCalYear]   = useState(new Date().getFullYear());
-  const [calMonth,  setCalMonth]  = useState(new Date().getMonth()); // 0-indexed
-  const [calDay,    setCalDay]    = useState(null);
+  const [view,     setView]     = useState("graph");
+  const [period,   setPeriod]   = useState("6M");
+  const [calYear,  setCalYear]  = useState(new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(new Date().getMonth());
+  const [calDay,   setCalDay]   = useState(null);
 
   const txns = data.transactions || [];
-  const cats = data.categories || {};
+  const fmtCur = n => "₹" + Math.abs(Number(n)||0).toLocaleString("en-IN", {maximumFractionDigits:0});
+  const COLORS = ["#6d28d9","#1a6b3c","#f59e0b","#ef4444","#3b82f6","#10b981","#f97316","#8b5cf6","#ec4899","#14b8a6","#a78bfa","#84cc16"];
 
-  // ── Period filter ──────────────────────────────────────────────────────────
   function inPeriod(t) {
-    const d = new Date(t.date); const now = new Date(); now.setHours(0,0,0,0);
-    if (period === "1M") { const s = new Date(now); s.setMonth(s.getMonth()-1); return d >= s; }
-    if (period === "3M") { const s = new Date(now); s.setMonth(s.getMonth()-3); return d >= s; }
-    if (period === "6M") { const s = new Date(now); s.setMonth(s.getMonth()-6); return d >= s; }
-    if (period === "1Y") { const s = new Date(now); s.setFullYear(s.getFullYear()-1); return d >= s; }
-    if (period === "All") return true;
-    return true;
+    const d = new Date(t.date), now = new Date(); now.setHours(0,0,0,0);
+    const s = new Date(now);
+    if (period==="1M") s.setMonth(s.getMonth()-1);
+    else if (period==="3M") s.setMonth(s.getMonth()-3);
+    else if (period==="6M") s.setMonth(s.getMonth()-6);
+    else if (period==="1Y") s.setFullYear(s.getFullYear()-1);
+    else return true;
+    return d >= s;
   }
   const filtered = txns.filter(inPeriod);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const fmtCur = n => "₹" + Math.abs(n).toLocaleString("en-IN");
-  const COLORS  = ["#6d28d9","#1a6b3c","#f59e0b","#ef4444","#3b82f6","#10b981","#f97316","#8b5cf6","#ec4899","#14b8a6","#a78bfa","#84cc16"];
-
-  // ══════════════════════════ GRAPH VIEW ══════════════════════════════════════
+  // ── GRAPH VIEW with mouse-tracking tooltip ──────────────────────────────
   function GraphView() {
+    const [hovered, setHovered] = useState(null); // index
+    const [mouse,   setMouse]   = useState({x:0,y:0});
+    const svgRef = React.useRef(null);
+
     // Build monthly buckets
     const buckets = {};
     filtered.forEach(t => {
       const d = new Date(t.date);
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-      if (!buckets[key]) buckets[key] = { income:0, expense:0, label:"" };
-      const short = d.toLocaleString("en-IN",{month:"short"}) + " " + String(d.getFullYear()).slice(2);
-      buckets[key].label = short;
+      if (!buckets[key]) buckets[key] = {income:0,expense:0,label:""};
+      buckets[key].label = d.toLocaleString("en-IN",{month:"short"})+" '"+String(d.getFullYear()).slice(2);
       if (t.type==="income")  buckets[key].income  += Number(t.amount||0);
       if (t.type==="expense") buckets[key].expense += Number(t.amount||0);
     });
@@ -2835,85 +2832,159 @@ function AnalysisTab({ data }) {
 
     if (!pts.length) return (
       <div style={{textAlign:"center",padding:"4rem",color:"var(--color-text-secondary)"}}>
-        <div style={{fontSize:40,marginBottom:8}}>📊</div>No transactions in this period.
+        <div style={{fontSize:40,marginBottom:8}}>📊</div>No data in this period.
       </div>
     );
 
-    const maxVal = Math.max(...pts.map(p => Math.max(p.income, p.expense)), 1);
-    const W = 700, H = 220, PL = 54, PR = 16, PT = 16, PB = 44;
-    const cw = W - PL - PR, ch = H - PT - PB;
+    const W=680, H=220, PL=52, PR=20, PT=16, PB=40;
+    const cw = W-PL-PR, ch = H-PT-PB;
     const n = pts.length;
-    const xOf = i => PL + (n > 1 ? (i / (n-1)) * cw : cw/2);
-    const yOf = v => PT + ch - (v / maxVal) * ch;
+    const maxVal = Math.max(...pts.map(p=>Math.max(p.income,p.expense)),1);
+    const xOf = i => PL + (n>1 ? (i/(n-1))*cw : cw/2);
+    const yOf = v => PT + ch - (v/maxVal)*ch;
 
-    function polyline(key, color, fill) {
-      const points = pts.map((p,i) => `${xOf(i)},${yOf(p[key])}`).join(" ");
-      const area   = `M${xOf(0)},${PT+ch} L${pts.map((p,i)=>`${xOf(i)},${yOf(p[key])}`).join(" L")} L${xOf(n-1)},${PT+ch} Z`;
-      return (
-        <g key={key}>
-          <defs>
-            <linearGradient id={`grad_${key}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity="0.18"/>
-              <stop offset="100%" stopColor={color} stopOpacity="0.01"/>
-            </linearGradient>
-          </defs>
-          <path d={area} fill={`url(#grad_${key})`}/>
-          <polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
-          {pts.map((p,i) => (
-            <circle key={i} cx={xOf(i)} cy={yOf(p[key])} r={3.5} fill={color}/>
-          ))}
-        </g>
-      );
+    function mkPath(key) {
+      return pts.map((p,i)=>`${i===0?"M":"L"}${xOf(i).toFixed(1)},${yOf(p[key]).toFixed(1)}`).join(" ");
+    }
+    function mkArea(key) {
+      const base = PT+ch;
+      return `M${xOf(0)},${base} ${pts.map((p,i)=>`L${xOf(i).toFixed(1)},${yOf(p[key]).toFixed(1)}`).join(" ")} L${xOf(n-1)},${base} Z`;
     }
 
-    // Y-axis grid
-    const gridLines = [0, 0.25, 0.5, 0.75, 1].map(f => ({
-      y: yOf(maxVal*f), val: maxVal*f
-    }));
+    function onSvgMouseMove(e) {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const svgX = (e.clientX - rect.left) * (W / rect.width);
+      // Find closest data point
+      let closest = 0, minDist = Infinity;
+      for (let i=0;i<n;i++) {
+        const d = Math.abs(svgX - xOf(i));
+        if (d < minDist) { minDist=d; closest=i; }
+      }
+      setHovered(closest);
+      setMouse({x: e.clientX - rect.left, y: e.clientY - rect.top});
+    }
+
+    const gridVals = [0,0.25,0.5,0.75,1].map(f=>({y:yOf(maxVal*f),v:maxVal*f}));
+    const p = hovered!==null ? pts[hovered] : null;
 
     return (
-      <div>
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
-          {/* Grid */}
-          {gridLines.map((g,i) => (
+      <div style={{position:"relative"}}>
+        <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H+PB}`}
+          style={{display:"block",overflow:"visible",cursor:"crosshair"}}
+          onMouseMove={onSvgMouseMove}
+          onMouseLeave={()=>setHovered(null)}>
+          <defs>
+            <linearGradient id="gInc" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1a6b3c" stopOpacity="0.2"/>
+              <stop offset="100%" stopColor="#1a6b3c" stopOpacity="0.01"/>
+            </linearGradient>
+            <linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.15"/>
+              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.01"/>
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          {gridVals.map((g,i)=>(
             <g key={i}>
               <line x1={PL} x2={W-PR} y1={g.y} y2={g.y} stroke="#e5e7eb" strokeWidth={0.8}/>
               <text x={PL-6} y={g.y+4} textAnchor="end" fontSize={9} fill="#9ca3af">
-                {g.val>=100000 ? (g.val/100000).toFixed(1)+"L" : g.val>=1000 ? (g.val/1000).toFixed(0)+"K" : g.val.toFixed(0)}
+                {g.v>=1e7?(g.v/1e7).toFixed(1)+"Cr":g.v>=1e5?(g.v/1e5).toFixed(1)+"L":g.v>=1e3?(g.v/1e3).toFixed(0)+"K":g.v.toFixed(0)}
               </text>
             </g>
           ))}
+
+          {/* Area fills */}
+          <path d={mkArea("income")}  fill="url(#gInc)"/>
+          <path d={mkArea("expense")} fill="url(#gExp)"/>
+
           {/* Lines */}
-          {polyline("income",  "#1a6b3c")}
-          {polyline("expense", "#ef4444")}
-          {/* X labels */}
-          {pts.map((p,i) => (
-            <text key={i} x={xOf(i)} y={PT+ch+16} textAnchor="middle" fontSize={9} fill="#6b7280">{p.label}</text>
+          <path d={mkPath("income")}  fill="none" stroke="#1a6b3c" strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round"/>
+          <path d={mkPath("expense")} fill="none" stroke="#ef4444" strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round"/>
+
+          {/* Hover vertical line */}
+          {hovered!==null && (
+            <line x1={xOf(hovered)} x2={xOf(hovered)} y1={PT} y2={PT+ch}
+              stroke="#6b7280" strokeWidth={1} strokeDasharray="4,3" opacity={0.6}/>
+          )}
+
+          {/* Dots */}
+          {pts.map((p,i)=>(
+            <g key={i}>
+              {/* Invisible wide hit target */}
+              <rect x={xOf(i)-(n>1?cw/(n-1)/2:30)} y={PT} width={n>1?cw/(n-1):60} height={ch} fill="transparent"/>
+              <circle cx={xOf(i)} cy={yOf(p.income)}  r={hovered===i?6:3.5} fill="#1a6b3c" stroke="#fff" strokeWidth={hovered===i?2:0} style={{transition:"r 0.1s"}}/>
+              <circle cx={xOf(i)} cy={yOf(p.expense)} r={hovered===i?6:3.5} fill="#ef4444" stroke="#fff" strokeWidth={hovered===i?2:0} style={{transition:"r 0.1s"}}/>
+              <text x={xOf(i)} y={PT+ch+16} textAnchor="middle" fontSize={9}
+                fill={hovered===i?"#111":"#9ca3af"} fontWeight={hovered===i?"700":"400"}>
+                {p.label}
+              </text>
+            </g>
+          ))}
+
+          {/* Legend */}
+          {[["Income","#1a6b3c",0],["Expense","#ef4444",70]].map(([l,c,off])=>(
+            <g key={l}>
+              <circle cx={W/2-60+off} cy={PT+ch+34} r={4} fill={c}/>
+              <text x={W/2-54+off} y={PT+ch+38} fontSize={10} fill="#6b7280">{l}</text>
+            </g>
           ))}
         </svg>
-        {/* Legend */}
-        <div style={{display:"flex",gap:20,justifyContent:"center",marginTop:8}}>
-          {[["Income","#1a6b3c"],["Expense","#ef4444"]].map(([l,c]) => (
-            <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"var(--color-text-secondary)"}}>
-              <span style={{width:10,height:10,borderRadius:"50%",background:c,display:"inline-block"}}/>
-              {l}
+
+        {/* Tooltip — follows mouse */}
+        {hovered!==null && p && (
+          <div style={{
+            position:"absolute",
+            left: mouse.x + 14,
+            top:  Math.max(0, mouse.y - 80),
+            background:"#1e293b",
+            color:"#f8fafc",
+            borderRadius:10,
+            padding:"10px 14px",
+            pointerEvents:"none",
+            zIndex:50,
+            minWidth:160,
+            boxShadow:"0 8px 24px rgba(0,0,0,0.25)",
+            fontSize:12,
+          }}>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:8,borderBottom:"0.5px solid rgba(255,255,255,0.15)",paddingBottom:6}}>
+              {pts[hovered].label}
             </div>
-          ))}
-        </div>
-        {/* Monthly summary table */}
-        <div style={{marginTop:20,overflowX:"auto"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:"#1a6b3c",display:"inline-block"}}/>
+              <span style={{color:"#94a3b8",flex:1}}>Income</span>
+              <span style={{fontWeight:700,color:"#4ade80"}}>{fmtCur(pts[hovered].income)}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>
+              <span style={{color:"#94a3b8",flex:1}}>Expense</span>
+              <span style={{fontWeight:700,color:"#f87171"}}>{fmtCur(pts[hovered].expense)}</span>
+            </div>
+            <div style={{borderTop:"0.5px solid rgba(255,255,255,0.15)",paddingTop:6,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background: pts[hovered].income-pts[hovered].expense>=0?"#4ade80":"#f87171",display:"inline-block"}}/>
+              <span style={{color:"#94a3b8",flex:1}}>Net</span>
+              <span style={{fontWeight:700,color:pts[hovered].income-pts[hovered].expense>=0?"#4ade80":"#f87171"}}>
+                {pts[hovered].income-pts[hovered].expense>=0?"+":""}{fmtCur(pts[hovered].income-pts[hovered].expense)}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Summary table */}
+        <div style={{marginTop:12,overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{background:"var(--color-background-secondary)"}}>
-                {["Month","Income","Expense","Net"].map(h => (
+                {["Month","Income","Expense","Net"].map(h=>(
                   <th key={h} style={{padding:"6px 12px",textAlign:"left",fontSize:11,color:"var(--color-text-secondary)",fontWeight:500}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {pts.map((p,i) => (
-                <tr key={i} style={{borderTop:"0.5px solid var(--color-border-tertiary)"}}>
-                  <td style={{padding:"7px 12px",fontWeight:500}}>{p.label}</td>
+              {pts.map((p,i)=>(
+                <tr key={i} style={{borderTop:"0.5px solid var(--color-border-tertiary)",background:hovered===i?"#f0fdf4":"transparent",transition:"background 0.1s"}}>
+                  <td style={{padding:"7px 12px",fontWeight:hovered===i?600:400}}>{p.label}</td>
                   <td style={{padding:"7px 12px",color:"#1a6b3c",fontWeight:600}}>{fmtCur(p.income)}</td>
                   <td style={{padding:"7px 12px",color:"#ef4444",fontWeight:600}}>{fmtCur(p.expense)}</td>
                   <td style={{padding:"7px 12px",color:(p.income-p.expense)>=0?"#1a6b3c":"#ef4444",fontWeight:600}}>
@@ -2928,73 +2999,69 @@ function AnalysisTab({ data }) {
     );
   }
 
-  // ══════════════════════════ PIE CHART VIEW ══════════════════════════════════
+  // ── PIE CHART ──────────────────────────────────────────────────────────────
   function PieView() {
     const [pieType, setPieType] = useState("expense");
-    const relevant = filtered.filter(t => t.type === pieType);
-
-    // Aggregate by category
+    const [hovSlice, setHovSlice] = useState(null);
+    const relevant = filtered.filter(t=>t.type===pieType);
     const catMap = {};
-    relevant.forEach(t => {
-      const c = t.category || "Other";
-      catMap[c] = (catMap[c]||0) + Number(t.amount||0);
-    });
-    const entries = Object.entries(catMap).sort((a,b) => b[1]-a[1]);
-    const total   = entries.reduce((s,[,v]) => s+v, 0);
-
+    relevant.forEach(t=>{ const c=t.category||"Other"; catMap[c]=(catMap[c]||0)+Number(t.amount||0); });
+    const entries = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+    const total = entries.reduce((s,[,v])=>s+v,0);
     if (!entries.length) return (
       <div style={{textAlign:"center",padding:"4rem",color:"var(--color-text-secondary)"}}>
         <div style={{fontSize:40,marginBottom:8}}>🥧</div>No {pieType} data in this period.
       </div>
     );
-
-    // Build SVG pie slices
-    const R = 90, CX = 120, CY = 110;
-    let angle = -Math.PI/2;
-    const slices = entries.map(([cat, val], i) => {
-      const frac    = val / total;
-      const sweep   = frac * 2 * Math.PI;
-      const x1 = CX + R * Math.cos(angle);
-      const y1 = CY + R * Math.sin(angle);
-      angle += sweep;
-      const x2 = CX + R * Math.cos(angle);
-      const y2 = CY + R * Math.sin(angle);
-      const large = sweep > Math.PI ? 1 : 0;
-      return { cat, val, frac, color: COLORS[i % COLORS.length], x1, y1, x2, y2, large, midAngle: angle - sweep/2 };
+    const R=90, CX=120, CY=110;
+    let angle=-Math.PI/2;
+    const slices = entries.map(([cat,val],i)=>{
+      const sweep=val/total*2*Math.PI;
+      const x1=CX+R*Math.cos(angle), y1=CY+R*Math.sin(angle);
+      angle+=sweep;
+      const x2=CX+R*Math.cos(angle), y2=CY+R*Math.sin(angle);
+      return {cat,val,frac:val/total,color:COLORS[i%COLORS.length],x1,y1,x2,y2,large:sweep>Math.PI?1:0};
     });
-
     return (
       <div>
-        {/* Type toggle */}
         <div style={{display:"flex",gap:0,background:"var(--color-background-secondary)",borderRadius:8,padding:3,width:"fit-content",marginBottom:20}}>
-          {["expense","income"].map(t => (
+          {["expense","income"].map(t=>(
             <button key={t} onClick={()=>setPieType(t)}
               style={{padding:"5px 18px",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500,
-                background:pieType===t?"#fff":"transparent",color:pieType===t?(t==="expense"?"#ef4444":"#1a6b3c"):"var(--color-text-secondary)",
+                background:pieType===t?"#fff":"transparent",
+                color:pieType===t?(t==="expense"?"#ef4444":"#1a6b3c"):"var(--color-text-secondary)",
                 boxShadow:pieType===t?"0 1px 3px rgba(0,0,0,0.1)":"none"}}>
               {t==="expense"?"Expenses":"Income"}
             </button>
           ))}
         </div>
-
         <div style={{display:"flex",gap:32,alignItems:"flex-start",flexWrap:"wrap"}}>
-          {/* SVG Pie */}
           <svg width={240} height={220} style={{flexShrink:0}}>
-            {slices.map((s,i) => (
+            {slices.map((s,i)=>(
               <path key={i}
                 d={`M${CX},${CY} L${s.x1},${s.y1} A${R},${R} 0 ${s.large},1 ${s.x2},${s.y2} Z`}
-                fill={s.color} stroke="#fff" strokeWidth={2}
+                fill={s.color} stroke="#fff" strokeWidth={hovSlice===i?3:2}
+                opacity={hovSlice===null||hovSlice===i?1:0.6}
+                style={{cursor:"pointer",transition:"opacity 0.15s"}}
+                onMouseEnter={()=>setHovSlice(i)} onMouseLeave={()=>setHovSlice(null)}
               />
             ))}
-            {/* Center label */}
             <text x={CX} y={CY-6} textAnchor="middle" fontSize={11} fill="#6b7280">Total</text>
-            <text x={CX} y={CY+12} textAnchor="middle" fontSize={13} fontWeight="700" fill="var(--color-text-primary)">{fmtCur(total)}</text>
+            <text x={CX} y={CY+14} textAnchor="middle" fontSize={14} fontWeight="700" fill="var(--color-text-primary)">
+              {hovSlice!==null ? fmtCur(slices[hovSlice].val) : fmtCur(total)}
+            </text>
+            {hovSlice!==null && (
+              <text x={CX} y={CY+30} textAnchor="middle" fontSize={10} fill="#6b7280">
+                {slices[hovSlice].cat} · {(slices[hovSlice].frac*100).toFixed(1)}%
+              </text>
+            )}
           </svg>
-
-          {/* Legend */}
           <div style={{flex:1,minWidth:180}}>
-            {entries.map(([cat,val],i) => (
-              <div key={cat} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            {entries.map(([cat,val],i)=>(
+              <div key={cat}
+                onMouseEnter={()=>setHovSlice(i)} onMouseLeave={()=>setHovSlice(null)}
+                style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"6px 8px",borderRadius:7,
+                  background:hovSlice===i?"var(--color-background-secondary)":"transparent",cursor:"default",transition:"background 0.1s"}}>
                 <span style={{width:12,height:12,borderRadius:3,background:COLORS[i%COLORS.length],flexShrink:0}}/>
                 <span style={{flex:1,fontSize:13,fontWeight:500}}>{cat}</span>
                 <span style={{fontSize:13,color:pieType==="expense"?"#ef4444":"#1a6b3c",fontWeight:600}}>{fmtCur(val)}</span>
@@ -3009,90 +3076,82 @@ function AnalysisTab({ data }) {
     );
   }
 
-  // ══════════════════════════ CALENDAR VIEW ═══════════════════════════════════
+  // ── CALENDAR VIEW ─────────────────────────────────────────────────────────
   function CalendarView() {
-    const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
-    // Build day → {income, expense, txns}
-    const dayMap = {};
-    txns.forEach(t => {
-      const d = new Date(t.date);
-      if (d.getFullYear()!==calYear || d.getMonth()!==calMonth) return;
-      const key = d.getDate();
-      if (!dayMap[key]) dayMap[key] = {income:0,expense:0,txns:[]};
-      if (t.type==="income")  dayMap[key].income  += Number(t.amount||0);
-      if (t.type==="expense") dayMap[key].expense += Number(t.amount||0);
-      dayMap[key].txns.push(t);
+    const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const dayMap={};
+    txns.forEach(t=>{
+      const d=new Date(t.date);
+      if(d.getFullYear()!==calYear||d.getMonth()!==calMonth) return;
+      const k=d.getDate();
+      if(!dayMap[k]) dayMap[k]={income:0,expense:0,txns:[]};
+      if(t.type==="income") dayMap[k].income+=Number(t.amount||0);
+      if(t.type==="expense") dayMap[k].expense+=Number(t.amount||0);
+      dayMap[k].txns.push(t);
     });
-
-    const firstDay  = new Date(calYear, calMonth, 1).getDay();
-    const daysCount = new Date(calYear, calMonth+1, 0).getDate();
-    const cells = [];
-    for (let i=0; i<firstDay; i++) cells.push(null);
-    for (let d=1; d<=daysCount; d++) cells.push(d);
-
-    const selectedTxns = calDay ? (dayMap[calDay]?.txns || []) : [];
-
-    function prevMonth(){ if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); setCalDay(null); }
-    function nextMonth(){ if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); setCalDay(null); }
-
+    const firstDay=new Date(calYear,calMonth,1).getDay();
+    const daysCount=new Date(calYear,calMonth+1,0).getDate();
+    const cells=[];
+    for(let i=0;i<firstDay;i++) cells.push(null);
+    for(let d=1;d<=daysCount;d++) cells.push(d);
+    const selTxns=calDay?(dayMap[calDay]?.txns||[]):[];
+    const today=new Date();
+    function prev(){if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);setCalDay(null);}
+    function next(){if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);setCalDay(null);}
+    const mIncome=Object.values(dayMap).reduce((s,d)=>s+d.income,0);
+    const mExpense=Object.values(dayMap).reduce((s,d)=>s+d.expense,0);
     return (
-      <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"flex-start"}}>
-        {/* Calendar grid */}
+      <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}}>
         <div style={{flex:"0 0 auto",minWidth:320}}>
-          {/* Month nav */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-            <button onClick={prevMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--color-text-secondary)"}}>‹</button>
+            <button onClick={prev} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>‹</button>
             <span style={{fontWeight:700,fontSize:15}}>{MONTHS[calMonth]} {calYear}</span>
-            <button onClick={nextMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--color-text-secondary)"}}>›</button>
+            <button onClick={next} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>›</button>
           </div>
-          {/* Day headers */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-            {DAYS.map(d => <div key={d} style={{textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:500,padding:"4px 0"}}>{d}</div>)}
+            {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600,padding:"4px 0"}}>{d}</div>)}
           </div>
-          {/* Day cells */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-            {cells.map((day,i) => {
-              if (!day) return <div key={i}/>;
-              const info = dayMap[day];
-              const isToday = day===new Date().getDate() && calMonth===new Date().getMonth() && calYear===new Date().getFullYear();
-              const isSel = day===calDay;
+            {cells.map((day,i)=>{
+              if(!day) return <div key={i}/>;
+              const info=dayMap[day];
+              const isToday=day===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
+              const isSel=day===calDay;
               return (
                 <div key={day} onClick={()=>setCalDay(isSel?null:day)}
-                  style={{borderRadius:8,padding:"5px 3px",minHeight:50,cursor:info?"pointer":"default",
+                  style={{borderRadius:8,padding:"5px 3px",minHeight:52,cursor:info?"pointer":"default",
                     background:isSel?"#1a6b3c":isToday?"#f0fdf4":"var(--color-background-secondary)",
                     border:isSel?"2px solid #1a6b3c":isToday?"1.5px solid #bbf7d0":"1px solid var(--color-border-tertiary)",
-                    display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                    display:"flex",flexDirection:"column",alignItems:"center",gap:2,transition:"background 0.1s"}}>
                   <span style={{fontSize:12,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isToday?"#1a6b3c":"var(--color-text-primary)"}}>{day}</span>
-                  {info?.income  > 0 && <span style={{fontSize:8,background:"#dcfce7",color:"#166534",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>+{fmtCur(info.income)}</span>}
-                  {info?.expense > 0 && <span style={{fontSize:8,background:"#fee2e2",color:"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>-{fmtCur(info.expense)}</span>}
+                  {info?.income>0&&<span style={{fontSize:8,background:isSel?"rgba(255,255,255,0.2)":"#dcfce7",color:isSel?"#fff":"#166534",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>+{fmtCur(info.income)}</span>}
+                  {info?.expense>0&&<span style={{fontSize:8,background:isSel?"rgba(255,255,255,0.2)":"#fee2e2",color:isSel?"#fff":"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>-{fmtCur(info.expense)}</span>}
                 </div>
               );
             })}
           </div>
-          {/* Month total */}
-          <div style={{marginTop:12,display:"flex",gap:12,fontSize:12}}>
-            <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(Object.values(dayMap).reduce((s,d)=>s+d.income,0))}</span>
-            <span style={{color:"#ef4444",fontWeight:600}}>Expense: {fmtCur(Object.values(dayMap).reduce((s,d)=>s+d.expense,0))}</span>
+          <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:10}}>
+            <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(mIncome)}</span>
+            <span style={{color:"#ef4444",fontWeight:600}}>Expense: {fmtCur(mExpense)}</span>
+            <span style={{color:(mIncome-mExpense)>=0?"#1a6b3c":"#ef4444",fontWeight:600}}>Net: {(mIncome-mExpense)>=0?"+":""}{fmtCur(mIncome-mExpense)}</span>
           </div>
         </div>
-
-        {/* Day detail panel */}
         <div style={{flex:1,minWidth:220}}>
           {calDay ? (
             <>
               <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>
                 {calDay} {MONTHS[calMonth]} {calYear}
+                <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>{selTxns.length} transaction{selTxns.length!==1?"s":""}</span>
               </div>
-              {selectedTxns.length===0
-                ? <div style={{color:"var(--color-text-secondary)",fontSize:13}}>No transactions this day.</div>
-                : selectedTxns.map(t => (
+              {selTxns.length===0
+                ? <div style={{color:"var(--color-text-secondary)",fontSize:13}}>No transactions.</div>
+                : selTxns.map(t=>(
                     <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,marginBottom:6,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
                       <span style={{width:8,height:8,borderRadius:"50%",background:t.type==="income"?"#1a6b3c":"#ef4444",flexShrink:0}}/>
                       <div style={{flex:1}}>
                         <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}</div>
-                        {t.note && <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
+                        {t.note&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
                       </div>
                       <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
                         {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
@@ -3102,8 +3161,9 @@ function AnalysisTab({ data }) {
               }
             </>
           ) : (
-            <div style={{color:"var(--color-text-secondary)",fontSize:13,paddingTop:8}}>
-              Click a day to see transactions.
+            <div style={{color:"var(--color-text-secondary)",fontSize:13,paddingTop:8,display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:28,marginBottom:4}}>📅</div>
+              Click any day with transactions to see details.
             </div>
           )}
         </div>
@@ -3111,31 +3171,27 @@ function AnalysisTab({ data }) {
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const views = [
-    { id:"graph",    label:"📈 Income vs Expense" },
-    { id:"pie",      label:"🥧 Category Breakdown" },
-    { id:"calendar", label:"📅 Calendar" },
+  // ── Main render ────────────────────────────────────────────────────────────
+  const views=[
+    {id:"graph",   label:"📈 Income vs Expense"},
+    {id:"pie",     label:"🥧 Category Breakdown"},
+    {id:"calendar",label:"📅 Calendar"},
   ];
-
   return (
     <div style={{marginTop:16}}>
-      {/* View switcher */}
-      <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
-        {views.map(v => (
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+        {views.map(v=>(
           <button key={v.id} onClick={()=>setView(v.id)}
             style={{padding:"7px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,
               background:view===v.id?"#1a6b3c":"var(--color-background-secondary)",
               color:view===v.id?"#fff":"var(--color-text-secondary)",
-              boxShadow:view===v.id?"0 2px 8px rgba(26,107,60,0.18)":"none",transition:"all 0.15s"}}>
+              boxShadow:view===v.id?"0 2px 8px rgba(26,107,60,0.2)":"none",transition:"all 0.15s"}}>
             {v.label}
           </button>
         ))}
-
-        {/* Period picker — not for calendar */}
-        {view !== "calendar" && (
+        {view!=="calendar" && (
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
-            {["1M","3M","6M","1Y","All"].map(p => (
+            {["1M","3M","6M","1Y","All"].map(p=>(
               <button key={p} onClick={()=>setPeriod(p)}
                 style={{padding:"5px 10px",borderRadius:6,border:"0.5px solid var(--color-border-secondary)",cursor:"pointer",fontSize:11,fontWeight:500,
                   background:period===p?"#1a6b3c":"none",color:period===p?"#fff":"var(--color-text-secondary)"}}>
@@ -3145,8 +3201,6 @@ function AnalysisTab({ data }) {
           </div>
         )}
       </div>
-
-      {/* Card wrapper */}
       <div style={{background:"var(--color-background-primary)",borderRadius:14,border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"}}>
         {view==="graph"    && <GraphView/>}
         {view==="pie"      && <PieView/>}
@@ -3155,7 +3209,7 @@ function AnalysisTab({ data }) {
     </div>
   );
 }
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
 
 function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
