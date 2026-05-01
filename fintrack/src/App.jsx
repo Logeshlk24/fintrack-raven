@@ -7097,24 +7097,32 @@ function PortfolioPage({ data, update }) {
   }
   const mergedHoldings = computeMerged(holdings);
 
-  // ── Direct Yahoo Finance fetch for a single ticker (CORS workaround) ─────────
+  // ── Fetch a single ticker via CORS proxy → Yahoo Finance v8 chart API ────────
   async function fetchYahooDirect(ticker) {
-    // Yahoo Finance v8 chart endpoint — works without API key, CORS-friendly via query1
-    try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
-      const res = await fetch(url, { headers: { "Accept": "application/json" } });
-      if (!res.ok) return null;
-      const json = await res.json();
-      const q = json?.chart?.result?.[0];
-      if (!q) return null;
-      const meta = q.meta;
-      const price = meta.regularMarketPrice ?? meta.previousClose ?? null;
-      if (price == null) return null;
-      const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
-      const change = price - prevClose;
-      const changePct = prevClose ? (change / prevClose) * 100 : 0;
-      return { ok: true, price, change, changePct };
-    } catch (_) { return null; }
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
+    // Try multiple CORS proxies in order
+    const proxies = [
+      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+      `https://thingproxy.freeboard.io/fetch/${yahooUrl}`,
+    ];
+    for (const proxyUrl of proxies) {
+      try {
+        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(6000) });
+        if (!res.ok) continue;
+        const json = await res.json();
+        const q = json?.chart?.result?.[0];
+        if (!q) continue;
+        const meta = q.meta;
+        const price = meta.regularMarketPrice ?? meta.previousClose ?? null;
+        if (price == null) continue;
+        const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
+        const change = price - prevClose;
+        const changePct = prevClose ? (change / prevClose) * 100 : 0;
+        return { ok: true, price, change, changePct };
+      } catch (_) { continue; }
+    }
+    return null;
   }
 
   // ── CORS-safe price fetch ────────────────────────────────────────────────────
@@ -7205,7 +7213,9 @@ function PortfolioPage({ data, update }) {
     const sym = form.symbol.trim().toUpperCase();
     if (!sym || !form.buyPrice || !form.qty) return;
     const resolvedName = form.name.trim() || NSE_BY_SYMBOL[sym] || sym;
-    const override = form.yahooOverride.trim().toUpperCase() || "";
+    let override = form.yahooOverride.trim().toUpperCase() || "";
+    // Auto-clear override if it equals what auto-detection already produces (redundant)
+    if (override && override === toYahooTicker(sym, form.exchange, "")) override = "";
     const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, addedAt: editId ? undefined : today() };
     if (editId) {
       update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
