@@ -7027,7 +7027,7 @@ function PortfolioPage({ data, update }) {
   const holdings = data.portfolioHoldings || [];
 
   // ── local UI state ──────────────────────────────────────────────────────────
-  const [form, setForm]         = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" });
+  const [form, setForm] = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE", yahooOverride: "" });
   const [editId, setEditId]     = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [prices, setPrices]     = useState({});
@@ -7041,8 +7041,28 @@ function PortfolioPage({ data, update }) {
   const acRef = useRef(null);
 
   // ── ticker helper ───────────────────────────────────────────────────────────
-  function toYahooTicker(symbol, exchange) {
-    const s = (symbol || "").trim().toUpperCase();
+  // ── Known NSE→Yahoo symbol corrections ──────────────────────────────────────
+  // Some NSE symbols differ from Yahoo Finance's naming convention
+  const YAHOO_CORRECTIONS = {
+    "ABCCAPITAL":   "ABCAPITAL",    // Aditya Birla Capital
+    "ADANIENSOL":   "ADANIENSOL",   // newly listed — try as-is
+    "M&M":          "M-M",          // Mahindra & Mahindra — & not valid
+    "ARM&M":        "ARM-M",
+    "L&TFH":        "L-TFH",
+    "AT&T":         "T",
+    "MUTHOOTFIN":   "MUTHOOTFIN",
+    "BANDHANBNK":   "BANDHANBNK",
+    "FEDERALBNK":   "FEDERALBNK",
+    "HCLTECH":      "HCLTECH",
+  };
+
+  function toYahooTicker(symbol, exchange, override) {
+    if (override && override.trim()) return override.trim().toUpperCase();
+    let s = (symbol || "").trim().toUpperCase();
+    // Apply known corrections
+    s = YAHOO_CORRECTIONS[s] || s;
+    // Replace & with - (Yahoo convention for NSE)
+    s = s.replace(/&/g, "-");
     if (exchange === "NSE") return s + ".NS";
     if (exchange === "BSE") return s + ".BO";
     return s;
@@ -7059,7 +7079,7 @@ function PortfolioPage({ data, update }) {
         const ex = map.get(key);
         const totalQty = ex.qty + h.qty;
         const avgPrice = ((ex.buyPrice * ex.qty) + (h.buyPrice * h.qty)) / totalQty;
-        map.set(key, { ...ex, qty: totalQty, buyPrice: Math.round(avgPrice * 100) / 100, _ids: [...ex._ids, h.id], _merged: true, _originalCount: ex._originalCount + 1 });
+        map.set(key, { ...ex, qty: totalQty, buyPrice: Math.round(avgPrice * 100) / 100, _ids: [...ex._ids, h.id], _merged: true, _originalCount: ex._originalCount + 1, yahooOverride: ex.yahooOverride || h.yahooOverride });
       }
     });
     return Array.from(map.values());
@@ -7119,8 +7139,8 @@ function PortfolioPage({ data, update }) {
   }, []);
 
   // ── form helpers ────────────────────────────────────────────────────────────
-  function openAdd()  { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE" }); setEditId(null); setShowForm(true); setAcOpen(false); }
-  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE" }); setEditId(h.id); setShowForm(true); }
+  function openAdd()  { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE", yahooOverride: "" }); setEditId(null); setShowForm(true); setAcOpen(false); }
+  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE", yahooOverride: h.yahooOverride || "" }); setEditId(h.id); setShowForm(true); }
   function closeForm(){ setShowForm(false); setEditId(null); setAcOpen(false); }
 
   function saveHolding() {
@@ -7128,7 +7148,7 @@ function PortfolioPage({ data, update }) {
     if (!sym || !form.buyPrice || !form.qty) return;
     // Auto-fill name from NSE db if blank
     const resolvedName = form.name.trim() || NSE_BY_SYMBOL[sym] || sym;
-    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, addedAt: editId ? undefined : today() };
+    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, yahooOverride: form.yahooOverride.trim() || "", addedAt: editId ? undefined : today() };
     if (editId) {
       update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
     } else {
@@ -7158,7 +7178,7 @@ function PortfolioPage({ data, update }) {
 
   // ── enriched rows using mergedHoldings ──────────────────────────────────────
   const rows = mergedHoldings.map(h => {
-    const ticker   = toYahooTicker(h.symbol, h.exchange);
+    const ticker   = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
     const pd       = prices[ticker] || {};
     const cur      = pd.price ?? null;
     const invested = h.buyPrice * h.qty;
@@ -7283,12 +7303,35 @@ function PortfolioPage({ data, update }) {
             <LabelInput label="Quantity (shares)"  placeholder="10"   type="number" value={form.qty}      onChange={v => setForm(f => ({ ...f, qty: v }))} />
           </div>
 
-          {/* Hint line */}
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", margin: "8px 0 12px" }}>
+          {/* Hint line + Yahoo ticker preview */}
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", margin: "8px 0 8px" }}>
             {(form.exchange === "NSE" || form.exchange === "BSE") && "Start typing the symbol or company name — suggestions will appear."}
             {form.exchange === "US"    && "Use US tickers: AAPL, MSFT, TSLA, GOOGL, AMZN …"}
             {form.exchange === "OTHER" && "Enter full Yahoo Finance ticker e.g. RELIANCE.NS or BTC-USD"}
           </div>
+
+          {/* Yahoo override — shown when symbol is filled */}
+          {form.symbol.trim() && (
+            <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: "#0369a1", marginBottom: 5, fontWeight: 600 }}>
+                📡 Yahoo Finance ticker: <code style={{ background: "#e0f2fe", borderRadius: 4, padding: "1px 6px" }}>{toYahooTicker(form.symbol, form.exchange, form.yahooOverride)}</code>
+                <span style={{ fontWeight: 400, marginLeft: 6, color: "#64748b" }}>— used to fetch live prices</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="Override ticker if wrong (e.g. ABCAPITAL.NS)"
+                  value={form.yahooOverride}
+                  onChange={e => setForm(f => ({ ...f, yahooOverride: e.target.value }))}
+                  style={{ flex: 1, fontSize: 11, padding: "4px 8px", border: "0.5px solid #bae6fd", borderRadius: 6, outline: "none", fontFamily: "monospace" }}
+                />
+                {form.yahooOverride && <button onClick={() => setForm(f => ({ ...f, yahooOverride: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>✕ Clear</button>}
+              </div>
+              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
+                Leave blank to use auto-detected ticker. If LTP shows N/A, check the ticker on <a href="https://finance.yahoo.com" target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>Yahoo Finance</a> and paste it here.
+              </div>
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 8 }}>
             <GreenBtn onClick={saveHolding} label={editId ? "Save Changes" : "Add Holding"} />
@@ -7351,21 +7394,23 @@ function PortfolioPage({ data, update }) {
                 <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ ₹{fmt(h.buyPrice)}</div>
               </div>
 
-              {/* LTP — with retry on failure */}
+              {/* LTP — show ticker used, fix button on failure */}
               <div style={{ textAlign: "right" }}>
                 {loading
                   ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
-                  : h.fetchFailed
-                    ? <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                        <span style={{ fontSize: 10, color: "#f0a020" }} title="Price fetch failed — symbol may not be listed on Yahoo Finance">⚠ N/A</span>
-                        <button onClick={() => fetchPrices([h])} style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", cursor: "pointer", color: "#92400e" }}>↻ retry</button>
+                  : h.cur != null
+                    ? <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                    : <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                        {h.fetchFailed
+                          ? <span style={{ fontSize: 10, color: "#f0a020" }}>⚠ N/A</span>
+                          : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>—</span>
+                        }
+                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "monospace" }}>{h.ticker}</span>
+                        <button onClick={() => openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h)}
+                          style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 6px", cursor: "pointer", color: "#92400e", whiteSpace: "nowrap" }}>
+                          ✏️ Fix ticker
+                        </button>
                       </div>
-                    : h.cur != null
-                      ? <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
-                      : <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                          <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>—</span>
-                          <button onClick={() => fetchPrices([h])} style={{ fontSize: 9, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 5px", cursor: "pointer", color: "var(--color-text-secondary)" }}>↻ fetch</button>
-                        </div>
                 }
               </div>
 
