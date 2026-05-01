@@ -2098,6 +2098,7 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
   const [folders,      setFoldersState] = useState(data.documentFolders || []);
   const [newName,      setNewName]      = useState("");
   const [openId,       setOpenId]       = useState(null);
+  const [openSubId,    setOpenSubId]    = useState(null); // sub-folder drill-down at top level
   const [preview,      setPreview]      = useState(null);
   const [uploading,    setUploading]    = useState({});
   const [clientInput,  setClientInput]  = useState(data.driveClientId || "");
@@ -2194,24 +2195,26 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
     );
   }
 
-  function FolderBody({ folder, parentId=null }) {
+  function FolderBody({ folder, parentId=null, onOpenSub }) {
     const isUp = uploading[folder.id];
     const files = folder.files || [];
     const subs  = folder.subFolders || [];
-    const [openSubId, setOpenSubId] = useState(null); // independent from parent openId
     return (
       <div style={{ padding:"12px 14px" }}>
         {/* Drive folder ID */}
         {drive?.connected && (
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
             <span style={{ fontSize:11, color:"var(--color-text-secondary)", whiteSpace:"nowrap", flexShrink:0 }}>Drive Folder ID:</span>
-            <input 
+            <input
               defaultValue={folder.driveFolderId||""}
               onBlur={e => setDriveFId(folder.id, e.target.value.trim(), parentId)}
               onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } }}
               placeholder="Paste folder ID here (press Enter or click away to save)"
               style={{ flex:1, minWidth:160, border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"4px 9px", fontSize:11, outline:"none", fontFamily:"inherit", color:"var(--color-text-primary)" }} />
-            <a href="https://drive.google.com" target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", whiteSpace:"nowrap" }}>Open Drive ↗</a>
+            {folder.driveFolderId
+              ? <a href={`https://drive.google.com/drive/folders/${folder.driveFolderId}`} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", whiteSpace:"nowrap" }}>Open Drive ↗</a>
+              : <a href="https://drive.google.com" target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", whiteSpace:"nowrap" }}>Open Drive ↗</a>
+            }
           </div>
         )}
         {/* Toolbar: upload + add sub-folder */}
@@ -2221,7 +2224,7 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
             <input type="file" multiple style={{ display:"none" }} disabled={isUp} onChange={e=>Array.from(e.target.files).forEach(f=>uploadFile(folder.id,f,folder.driveFolderId,parentId))} />
           </label>
           {/* Add sub-folder (only top-level folders can have sub-folders) */}
-          {!parentId && (
+          {!parentId && onOpenSub && (
             <div style={{ display:"flex", gap:5, alignItems:"center" }}>
               <input value={newSubName[folder.id]||""} onChange={e=>setNewSubName(p=>({...p,[folder.id]:e.target.value}))}
                 onKeyDown={e=>e.key==="Enter"&&addFolder(folder.id)}
@@ -2231,21 +2234,30 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
             </div>
           )}
         </div>
-        {/* Sub-folders — styled like main folders */}
-        {subs.length > 0 && subs.map(sub => (
-          <div key={sub.id} style={{ marginBottom:10, borderRadius:10, border:"0.5px solid var(--color-border-secondary)", overflow:"hidden", background:"var(--color-background-primary)" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"var(--color-background-secondary)", cursor:"pointer", userSelect:"none" }}
-              onClick={()=>setOpenSubId(openSubId===sub.id?null:sub.id)}>
-              <span style={{ fontSize:18 }}>{openSubId===sub.id?"📂":"📁"}</span>
-              <span style={{ fontWeight:600, fontSize:14, flex:1, color:"var(--color-text-primary)" }}>{sub.name}</span>
-              <span style={{ fontSize:11, color:"var(--color-text-secondary)", background:"var(--color-background-tertiary)", borderRadius:10, padding:"1px 8px" }}>{(sub.files||[]).length} file{(sub.files||[]).length!==1?"s":""}</span>
-              <span style={{ fontSize:11, color:"var(--color-text-secondary)", marginLeft:4 }}>{openSubId===sub.id?"▲":"▼"}</span>
-              <button onClick={e=>{e.stopPropagation();deleteFolder(sub.id,folder.id);}} style={{ background:"#fee2e2", border:"none", borderRadius:5, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#dc2626", marginLeft:4 }}>🗑</button>
-            </div>
-            {openSubId===sub.id && <FolderBody folder={sub} parentId={folder.id} />}
+        {/* Sub-folders — card grid like main folders */}
+        {subs.length > 0 && (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:10, marginBottom:14 }}>
+            {subs.map(sub => {
+              const fc = (sub.files||[]).length;
+              return (
+                <div key={sub.id}
+                  onClick={() => onOpenSub && onOpenSub(sub.id)}
+                  onMouseEnter={e => e.currentTarget.style.boxShadow="0 4px 14px rgba(0,0,0,0.10)"}
+                  onMouseLeave={e => e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.05)"}
+                  style={{ background:"var(--color-background-primary)", borderRadius:12, border:"0.5px solid var(--color-border-secondary)", borderTop:"3px solid #4da6ff", padding:"0.9rem 1rem 0.75rem", cursor:"pointer", position:"relative", boxShadow:"0 1px 4px rgba(0,0,0,0.05)", transition:"box-shadow 0.15s" }}>
+                  <button onClick={e=>{e.stopPropagation(); deleteFolder(sub.id, folder.id);}}
+                    style={{ position:"absolute", top:6, right:6, background:"none", border:"none", cursor:"pointer", fontSize:12, color:"#d44", opacity:0.5, padding:"2px 4px" }}
+                    title="Delete sub-folder">🗑</button>
+                  <div style={{ fontSize:28, marginBottom:4 }}>📁</div>
+                  <div style={{ fontWeight:700, fontSize:15, marginBottom:3, paddingRight:18, wordBreak:"break-word" }}>{sub.name}</div>
+                  <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{fc} file{fc!==1?"s":""}</div>
+                  {fc===0 && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:4, padding:"1px 6px", display:"inline-block", marginTop:4 }}>Empty</span>}
+                </div>
+              );
+            })}
           </div>
-        ))}
-        {/* Files */}
+        )}
+        {/* Files in this folder */}
         {files.length===0 && subs.length===0 && <div style={{ fontSize:12, color:"var(--color-text-secondary)", padding:"4px 0" }}>Empty folder.</div>}
         {files.length>0 && (
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -2352,18 +2364,38 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
           {openId && (() => {
             const folder = folders.find(f => f.id === openId);
             if (!folder) { setOpenId(null); return null; }
+            // Sub-folder drill-down
+            const subFolder = openSubId ? (folder.subFolders||[]).find(s => s.id === openSubId) : null;
+            if (openSubId && !subFolder) { setOpenSubId(null); }
             return (
               <div style={{ marginTop:4 }}>
-                {/* Back + header */}
+                {/* Breadcrumb / Back header */}
                 <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-                  <button onClick={()=>setOpenId(null)} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)", display:"flex", alignItems:"center", gap:5 }}>
-                    ← Back
-                  </button>
-                  <span style={{ fontSize:22 }}>📂</span>
-                  <span style={{ fontWeight:700, fontSize:18 }}>{folder.name}</span>
-                  {folder.driveFolderId && <span style={{ fontSize:11, background:"#dbeafe", color:"#1d4ed8", borderRadius:5, padding:"2px 8px" }}>☁ Drive</span>}
+                  {subFolder ? (
+                    <>
+                      <button onClick={()=>setOpenSubId(null)} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)" }}>
+                        ← Back
+                      </button>
+                      <span style={{ fontSize:13, color:"var(--color-text-secondary)", cursor:"pointer" }} onClick={()=>setOpenSubId(null)}>{folder.name}</span>
+                      <span style={{ fontSize:13, color:"var(--color-text-secondary)" }}>›</span>
+                      <span style={{ fontSize:22 }}>📂</span>
+                      <span style={{ fontWeight:700, fontSize:18 }}>{subFolder.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={()=>{ setOpenId(null); setOpenSubId(null); }} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)" }}>
+                        ← Back
+                      </button>
+                      <span style={{ fontSize:22 }}>📂</span>
+                      <span style={{ fontWeight:700, fontSize:18 }}>{folder.name}</span>
+                      {folder.driveFolderId && <span style={{ fontSize:11, background:"#dbeafe", color:"#1d4ed8", borderRadius:5, padding:"2px 8px" }}>☁ Drive</span>}
+                    </>
+                  )}
                 </div>
-                <FolderBody folder={folder} />
+                {subFolder
+                  ? <FolderBody folder={subFolder} parentId={folder.id} />
+                  : <FolderBody folder={folder} onOpenSub={(subId) => setOpenSubId(subId)} />
+                }
               </div>
             );
           })()}
@@ -5242,6 +5274,14 @@ function ProjectsPage({ data, update }) {
 
             {/* ── FILES TAB ── */}
             {leftTab === "files" && (() => {
+              function canPreview(f) { return !!(f.dataUrl || f.previewUrl || f.webViewLink); }
+              function getPreviewSrc(f) {
+                if (f.previewUrl) return { type:"iframe", src: f.previewUrl };
+                if (f.dataUrl?.startsWith("data:image")) return { type:"img", src: f.dataUrl };
+                if (f.dataUrl) return { type:"iframe", src: f.dataUrl };
+                if (f.webViewLink) return { type:"external", src: f.webViewLink };
+                return null;
+              }
               return (
               <div>
                 {filePreview && (
@@ -5250,19 +5290,20 @@ function ProjectsPage({ data, update }) {
                       <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
                         <span style={{ fontWeight:600, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{filePreview.name}</span>
                         <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
+                          {filePreview.webViewLink && <a href={filePreview.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
+                          {filePreview.downloadUrl && <a href={filePreview.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
                           {filePreview.dataUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
                           <button onClick={() => setFilePreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
                         </div>
                       </div>
                       <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
-                        {filePreview.dataUrl?.startsWith("data:image")
-                          ? <img src={filePreview.dataUrl} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
-                          : filePreview.dataUrl?.startsWith("data:application/pdf") || filePreview.type === "application/pdf"
-                            ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                            : filePreview.dataUrl
-                              ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                              : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
-                        }
+                        {(() => {
+                          const p = getPreviewSrc(filePreview);
+                          if (!p) return <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>;
+                          if (p.type === "img") return <img src={p.src} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />;
+                          if (p.type === "external") return <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>☁</div><a href={p.src} target="_blank" rel="noreferrer" style={{ color:"#1a6b3c", fontSize:14, fontWeight:500 }}>Open in Google Drive ↗</a></div>;
+                          return <iframe src={p.src} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />;
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -5285,20 +5326,29 @@ function ProjectsPage({ data, update }) {
                   <div style={{ padding: "0.5rem 0" }}>
                     {files.map(f => (
                       <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                        <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: f.dataUrl ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
-                          {f.type?.startsWith("image/") && f.dataUrl
-                            ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : <span>{fileIcon(f.type)}</span>
+                        <div onClick={() => canPreview(f) && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: canPreview(f) ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
+                          {f.source === "gdrive" ? <span style={{ fontSize:18 }}>☁</span>
+                            : f.type?.startsWith("image/") && f.dataUrl
+                              ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              : <span>{fileIcon(f.type || "")}</span>
                           }
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: f.dataUrl ? "pointer" : "default" }}>{f.name}</div>
-                          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
+                          <div onClick={() => canPreview(f) && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: canPreview(f) ? "pointer" : "default" }}>{f.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", display:"flex", gap:6, alignItems:"center" }}>
+                            {formatFileSize(f.size)}
+                            <span style={{ background: f.source==="gdrive"?"#dbeafe":"#f1f5f9", color: f.source==="gdrive"?"#1d4ed8":"#64748b", borderRadius:3, padding:"0 4px", fontSize:9 }}>
+                              {f.source==="gdrive"?"☁ Drive":"💾 Local"}
+                            </span>
+                          </div>
                         </div>
-                        {f.dataUrl && (
+                        {canPreview(f) && (
                           <button onClick={() => setFilePreview(f)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)", flexShrink: 0 }}>👁 Preview</button>
                         )}
-                        <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
+                        {f.webViewLink
+                          ? <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>☁ Open</a>
+                          : f.dataUrl && <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
+                        }
                         <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
                       </div>
                     ))}
