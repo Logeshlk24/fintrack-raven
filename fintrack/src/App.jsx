@@ -342,12 +342,12 @@ export default function App() {
 
   if (onboarding) return <Onboarding step={onboardStep} setStep={setOnboardStep} data={data} update={update} done={() => setOnboarding(false)} />;
 
-  const toggles = data.featureToggles || { fo: true };
+  const toggles = data.featureToggles || { fo: true, portfolio: true };
   const navItems = [
     { id: "overview", label: "Overview", icon: "⊞" },
     { id: "money", label: "Money", icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
-    { id: "portfolio", label: "Portfolio", icon: "📈" },
+    ...(toggles.portfolio !== false ? [{ id: "portfolio", label: "Portfolio", icon: "📈" }] : []),
     { id: "goals", label: "Goals", icon: "◎" },
     { id: "business", label: "Business", icon: "🏢" },
     { id: "projects", label: "Projects", icon: "📋" },
@@ -2066,11 +2066,12 @@ function SettingsPage({ data, update, tab, setTab }) {
 }
 
 function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
-  const toggles = data.featureToggles || { fo: true };
+  const toggles = data.featureToggles || { fo: true, portfolio: true };
   const defaultPeriod = data.overviewDefaultPeriod || "all";
 
   function toggle(key) {
-    update(p => ({ featureToggles: { ...(p.featureToggles || { fo: true }), [key]: !(p.featureToggles || { fo: true })[key] } }));
+    const defaults = { fo: true, portfolio: true };
+    update(p => ({ featureToggles: { ...defaults, ...(p.featureToggles || defaults), [key]: !((p.featureToggles || defaults)[key] !== false) } }));
   }
 
   function setDefaultPeriod(val) {
@@ -2083,6 +2084,12 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
       icon: "◉",
       label: "F&O Tracker",
       sub: "Futures & Options trade journal, P&L calculator, broker charge breakdown and charge profiles.",
+    },
+    {
+      key: "portfolio",
+      icon: "📈",
+      label: "Portfolio",
+      sub: "Track your stock, MF, and other investment holdings. View allocation, current value and returns.",
     },
   ];
 
