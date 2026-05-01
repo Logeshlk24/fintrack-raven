@@ -451,7 +451,7 @@ export default function App() {
 
       {/* Main */}
       <main style={{ flex: 1, padding: "1.5rem", overflowY: "auto" }}>
-        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} />}
+        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
@@ -669,10 +669,26 @@ function AddAssetMini({ update }) {
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
-function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
+function Overview({ data, netWorth, foNetPnl, setPage, toggles, update }) {
   const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const [period, setPeriod] = useState(data.overviewDefaultPeriod || "all");
+
+  // ── Quick To-Do ───────────────────────────────────────────────────────────
+  const todos = data.overviewTodos || [];
+  const [newTodo, setNewTodo] = useState("");
+  function addTodo() {
+    const text = newTodo.trim();
+    if (!text) return;
+    update(p => ({ overviewTodos: [...(p.overviewTodos || []), { id: Date.now(), text, done: false }] }));
+    setNewTodo("");
+  }
+  function toggleTodo(id) {
+    update(p => ({ overviewTodos: (p.overviewTodos || []).map(t => t.id === id ? { ...t, done: !t.done } : t) }));
+  }
+  function deleteTodo(id) {
+    update(p => ({ overviewTodos: (p.overviewTodos || []).filter(t => t.id !== id) }));
+  }
 
   const thisYear  = new Date().getFullYear();
   const thisMonth = new Date().getMonth();
@@ -686,9 +702,6 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
   }
 
   const txs = data.transactions;
-  const monthIncome  = txs.filter(t => t.type === "income"   && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
-  const monthExpense = txs.filter(t => t.type === "expense"  && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
-
   const filteredIncome  = txs.filter(t => t.type === "income"  && matchesPeriod(t.date)).reduce((s, t) => s + Number(t.amount), 0);
   const filteredExpense = txs.filter(t => t.type === "expense" && matchesPeriod(t.date)).reduce((s, t) => s + Number(t.amount), 0);
 
@@ -753,24 +766,64 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
         {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
       </div>
 
-      {/* This month cashflow + F&O summary (F&O card hidden when toggle off) */}
+      {/* To-Do list + F&O summary */}
       <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
-        <Card title="This Month" action={<button onClick={() => setPage("money")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}>
-          <div style={{ padding: "0.5rem 0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13 }}>
-              <span style={{ color: "var(--color-text-secondary)" }}>Income</span>
-              <span style={{ color: "#1a6b3c", fontWeight: 500 }}>{fmtCur(monthIncome)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 13 }}>
-              <span style={{ color: "var(--color-text-secondary)" }}>Expenses</span>
-              <span style={{ color: "#d44", fontWeight: 500 }}>{fmtCur(monthExpense)}</span>
-            </div>
-            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 10, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-              <span style={{ fontWeight: 500 }}>Net</span>
-              <span style={{ fontWeight: 600, color: (monthIncome - monthExpense) >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(monthIncome - monthExpense)}</span>
-            </div>
+
+        {/* ── Quick To-Do ── */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+            <span style={{ fontWeight: 500, fontSize: 15 }}>✅ To-Do</span>
+            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+              {todos.filter(t => t.done).length}/{todos.length} done
+            </span>
           </div>
-        </Card>
+
+          {/* Input */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            <input
+              value={newTodo}
+              onChange={e => setNewTodo(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addTodo()}
+              placeholder="Add a task…"
+              style={{ flex: 1, fontSize: 13, padding: "6px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" }}
+            />
+            <button onClick={addTodo}
+              style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+              +
+            </button>
+          </div>
+
+          {/* List */}
+          {todos.length === 0 ? (
+            <div style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12, padding: "1rem 0", fontStyle: "italic" }}>
+              No tasks yet — add one above
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
+              {/* Pending first */}
+              {todos.filter(t => !t.done).map(t => (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                  <button onClick={() => toggleTodo(t.id)}
+                    style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }} />
+                  <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-primary)", wordBreak: "break-word" }}>{t.text}</span>
+                  <button onClick={() => deleteTodo(t.id)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.45, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
+                </div>
+              ))}
+              {/* Completed */}
+              {todos.filter(t => t.done).map(t => (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: "transparent", border: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
+                  <button onClick={() => toggleTodo(t.id)}
+                    style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 11 }}>✓</button>
+                  <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-secondary)", textDecoration: "line-through", wordBreak: "break-word" }}>{t.text}</span>
+                  <button onClick={() => deleteTodo(t.id)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.45, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {foOn && (
           <Card title="F&O Summary" action={<button onClick={() => setPage("fo")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}>
             <FOSummaryMini trades={data.foTrades} netPnl={foNetPnl} />
