@@ -7145,12 +7145,13 @@ function PortfolioPage({ data, update }) {
     setLoading(false);
   }, []); // eslint-disable-line
 
-  // Fetch prices on mount and when holdings count changes
+  // Fetch prices on mount, when holdings count changes, OR when any override changes
   const holdingsLen = holdings.length;
+  const overrideKey = holdings.map(h => `${h.id}:${h.yahooOverride || ""}`).join("|");
   useEffect(() => {
     const merged = computeMerged(data.portfolioHoldings || []);
     if (merged.length > 0) fetchPrices(merged);
-  }, [holdingsLen]); // eslint-disable-line
+  }, [holdingsLen, overrideKey]); // eslint-disable-line
 
   // ── autocomplete logic ──────────────────────────────────────────────────────
   function handleSymbolInput(raw) {
@@ -7184,28 +7185,39 @@ function PortfolioPage({ data, update }) {
   function saveHolding() {
     const sym = form.symbol.trim().toUpperCase();
     if (!sym || !form.buyPrice || !form.qty) return;
-    // Auto-fill name from NSE db if blank
     const resolvedName = form.name.trim() || NSE_BY_SYMBOL[sym] || sym;
-    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, yahooOverride: form.yahooOverride.trim() || "", addedAt: editId ? undefined : today() };
+    const override = form.yahooOverride.trim().toUpperCase() || "";
+    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, addedAt: editId ? undefined : today() };
     if (editId) {
       update(p => ({ portfolioHoldings: (p.portfolioHoldings || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
     } else {
       update(p => ({ portfolioHoldings: [...(p.portfolioHoldings || []), newH] }));
     }
     closeForm();
+    // Clear stale price for this ticker so it re-fetches fresh
+    const oldTicker = toYahooTicker(sym, form.exchange, override);
+    setPrices(prev => { const next = { ...prev }; delete next[oldTicker]; return next; });
+
     setTimeout(() => {
       const updated = editId
         ? holdings.map(h => h.id === editId ? { ...h, ...newH } : h)
         : [...holdings, newH];
-      // Re-compute merged before fetching
+      // Re-compute merged — MUST carry yahooOverride through
       const map = new Map();
       updated.forEach(h => {
-        const key = `${h.symbol.trim().toUpperCase()}|${h.exchange || "NSE"}`;
-        if (!map.has(key)) map.set(key, h);
-        else {
+        const key = `${(h.symbol||"").trim().toUpperCase()}|${h.exchange || "NSE"}`;
+        if (!map.has(key)) {
+          map.set(key, { ...h });
+        } else {
           const e = map.get(key);
           const tq = e.qty + h.qty;
-          map.set(key, { ...e, qty: tq, buyPrice: ((e.buyPrice*e.qty)+(h.buyPrice*h.qty))/tq });
+          map.set(key, {
+            ...e,
+            qty: tq,
+            buyPrice: ((e.buyPrice * e.qty) + (h.buyPrice * h.qty)) / tq,
+            // Prefer override from either entry
+            yahooOverride: e.yahooOverride || h.yahooOverride || "",
+          });
         }
       });
       fetchPrices(Array.from(map.values()));
@@ -7216,9 +7228,16 @@ function PortfolioPage({ data, update }) {
 
   // ── enriched rows using mergedHoldings ──────────────────────────────────────
   const rows = mergedHoldings.map(h => {
-    const ticker   = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
-    const pd       = prices[ticker] || {};
-    const cur      = pd.price ?? null;
+    const ticker = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
+    // Check direct match first, then check if price was stored under auto-retry ticker
+    let pd = prices[ticker] || {};
+    if (!pd.price) {
+      // Also check .BO alternative if ticker is .NS (and vice versa)
+      const alt = ticker.endsWith(".NS") ? ticker.replace(".NS", ".BO")
+                : ticker.endsWith(".BO") ? ticker.replace(".BO", ".NS") : null;
+      if (alt && prices[alt]?.ok) pd = prices[alt];
+    }
+    const cur    = pd.price ?? null;
     const invested = h.buyPrice * h.qty;
     const curVal   = cur != null ? cur * h.qty : null;
     const pnl      = curVal != null ? curVal - invested : null;
