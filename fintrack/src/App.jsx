@@ -7097,76 +7097,47 @@ function PortfolioPage({ data, update }) {
   }
   const mergedHoldings = computeMerged(holdings);
 
-  // ── Fetch a single ticker via CORS proxy → Yahoo Finance v8 chart API ────────
-  async function fetchYahooDirect(ticker) {
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
-    // Try multiple CORS proxies in order
-    const proxies = [
-      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-      `https://thingproxy.freeboard.io/fetch/${yahooUrl}`,
-    ];
-    for (const proxyUrl of proxies) {
-      try {
-        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(6000) });
-        if (!res.ok) continue;
-        const json = await res.json();
-        const q = json?.chart?.result?.[0];
-        if (!q) continue;
-        const meta = q.meta;
-        const price = meta.regularMarketPrice ?? meta.previousClose ?? null;
-        if (price == null) continue;
-        const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
-        const change = price - prevClose;
-        const changePct = prevClose ? (change / prevClose) * 100 : 0;
-        return { ok: true, price, change, changePct };
-      } catch (_) { continue; }
-    }
-    return null;
-  }
-
-  // ── CORS-safe price fetch ────────────────────────────────────────────────────
+  // ── CORS-safe price fetch via Vercel serverless /api/stock-price ─────────────
   const fetchPrices = useCallback(async (holdingsList) => {
     if (!holdingsList || holdingsList.length === 0) return;
     setLoading(true);
     setPriceError("");
     const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
 
-    let priceData = {};
-
-    // Step 1: Try the backend proxy first (batch)
     try {
       const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
-      if (res.ok) priceData = await res.json();
-    } catch (_) { /* backend unavailable — will fallback below */ }
+      if (!res.ok) throw new Error("API error " + res.status);
+      const priceData = await res.json();
 
-    // Step 2: For any ticker that failed (or backend unreachable), fetch directly from Yahoo
-    const failedTickers = tickers.filter(t => !priceData[t]?.ok);
-    if (failedTickers.length > 0) {
-      const directResults = await Promise.all(
-        failedTickers.map(async t => {
-          // Try original ticker first
-          let result = await fetchYahooDirect(t);
-          if (result) return [t, result];
-
-          // Try alternative suffix: .NS ↔ .BO
+      // For any still-failed tickers, also try .BO alternative automatically
+      const retryMap = {};
+      Object.entries(priceData).forEach(([t, v]) => {
+        if (!v.ok) {
           const alt = t.endsWith(".NS") ? t.replace(".NS", ".BO")
                     : t.endsWith(".BO") ? t.replace(".BO", ".NS") : null;
-          if (alt) {
-            result = await fetchYahooDirect(alt);
-            if (result) return [t, { ...result, _autoFixedTo: alt }];
+          if (alt) retryMap[alt] = t;
+        }
+      });
+
+      if (Object.keys(retryMap).length > 0) {
+        try {
+          const res2 = await fetch(`/api/stock-price?ticker=${Object.keys(retryMap).map(encodeURIComponent).join(",")}`);
+          if (res2.ok) {
+            const d2 = await res2.json();
+            Object.entries(d2).forEach(([altT, val]) => {
+              if (val.ok) priceData[retryMap[altT]] = { ...val, _autoFixedTo: altT };
+            });
           }
+        } catch (_) {}
+      }
 
-          return [t, { ok: false }];
-        })
-      );
-      directResults.forEach(([ticker, data]) => { priceData[ticker] = data; });
+      setPrices(priceData);
+      const failed = Object.values(priceData).filter(r => !r.ok).length;
+      if (failed > 0) setPriceError(`${failed} ticker(s) not found on Yahoo Finance — use "Fix ticker" to correct the symbol.`);
+      else setPriceError("");
+    } catch (e) {
+      setPriceError("Price API unreachable — check your /api/stock-price serverless function.");
     }
-
-    setPrices(priceData);
-    const stillFailed = Object.values(priceData).filter(r => !r.ok).length;
-    if (stillFailed > 0) setPriceError(`${stillFailed} ticker(s) not found — use "Fix ticker" to set the correct Yahoo Finance symbol.`);
-    else setPriceError("");
 
     setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
     setLoading(false);
