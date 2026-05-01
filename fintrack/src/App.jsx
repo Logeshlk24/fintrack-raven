@@ -672,10 +672,32 @@ function AddAssetMini({ update }) {
 function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
   const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const monthIncome = data.transactions.filter(t => t.type === "income" && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
-  const monthExpense = data.transactions.filter(t => t.type === "expense" && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
-  const totalIncome = data.transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-  const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const [period, setPeriod] = useState("all"); // "all" | "year" | "month"
+
+  const thisYear  = new Date().getFullYear();
+  const thisMonth = new Date().getMonth();
+
+  function matchesPeriod(date) {
+    if (period === "all") return true;
+    const d = new Date(date);
+    if (period === "year")  return d.getFullYear() === thisYear;
+    if (period === "month") return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
+    return true;
+  }
+
+  const txs = data.transactions;
+  const monthIncome  = txs.filter(t => t.type === "income"   && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
+  const monthExpense = txs.filter(t => t.type === "expense"  && isThisMonth(t.date)).reduce((s, t) => s + Number(t.amount), 0);
+
+  const filteredIncome  = txs.filter(t => t.type === "income"  && matchesPeriod(t.date)).reduce((s, t) => s + Number(t.amount), 0);
+  const filteredExpense = txs.filter(t => t.type === "expense" && matchesPeriod(t.date)).reduce((s, t) => s + Number(t.amount), 0);
+
+  const PERIODS = [
+    { key: "all",   label: "All Time" },
+    { key: "year",  label: "This Year" },
+    { key: "month", label: "This Month" },
+  ];
+  const periodLabel = PERIODS.find(p => p.key === period)?.label || "All Time";
 
   // Bank balances: sum income - expense per bank (exclude credit cards)
   const banks = data.banks || [];
@@ -693,8 +715,41 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
       {/* Top stat row — F&O card hidden when toggle is off */}
       <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
         <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
-        <StatCard label="Total Income" value={fmtCur(totalIncome)} sub="all time" icon="⊕" />
-        <StatCard label="Total Expenses" value={fmtCur(totalExpense)} sub="all time" icon="⊟" danger />
+
+        {/* Income card with period toggle */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+              {PERIODS.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)}
+                  style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(filteredIncome)}</div>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+        </div>
+
+        {/* Expenses card with same period toggle (synced) */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊟ Total Expenses</span>
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+              {PERIODS.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)}
+                  style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#d44" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#d44" }}>{fmtCur(filteredExpense)}</div>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+        </div>
+
         {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
       </div>
 
@@ -4525,91 +4580,89 @@ function GoalsPage({ data, update }) {
 
 // ─── Business Page ────────────────────────────────────────────────────────────
 function BusinessPage({ data, update }) {
-  const businessData = data.businessData || [];
-  // Get unique years from data
-  const years = [...new Set(businessData.map(e => e.year))].sort((a, b) => b - a);
-  const [selectedYear, setSelectedYear] = useState(null);
-  const [showAddYear, setShowAddYear] = useState(false);
-  const [newYear, setNewYear] = useState("");
-  const [showAddMonth, setShowAddMonth] = useState(false);
-  const [monthForm, setMonthForm] = useState({ month: "", grossIncome: "", netIncome: "" });
-  const [editEntry, setEditEntry] = useState(null);
-  const [billModal, setBillModal] = useState(null); // {url, link, driveId} or null // base64 image/pdf to show in modal
+  // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
+  // Migrate legacy flat businessData into first business if needed
+  const businesses = data.businesses || [];
+  const legacyData = data.businessData || [];
 
-  function updateEntry(id, changes) {
-    update(p => ({ businessData: (p.businessData || []).map(e => e.id === id ? { ...e, ...changes } : e) }));
-  }
+  // State: which business is open, which year is open
+  const [selectedBiz,  setSelectedBiz]  = useState(null); // business id
+  const [selectedYear, setSelectedYear] = useState(null);
+  const [showAddBiz,   setShowAddBiz]   = useState(false);
+  const [newBizName,   setNewBizName]   = useState("");
+  const [showAddYear,  setShowAddYear]  = useState(false);
+  const [newYear,      setNewYear]      = useState("");
+  const [showAddMonth, setShowAddMonth] = useState(false);
+  const [monthForm,    setMonthForm]    = useState({ month: "", grossIncome: "", netIncome: "" });
+  const [editEntry,    setEditEntry]    = useState(null);
+  const [billModal,    setBillModal]    = useState(null);
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-  // Entries for selected year
+  const activeBiz = businesses.find(b => b.id === selectedBiz) || null;
+  // Use active business data or legacy flat data for backward compat
+  const bizData = activeBiz ? (activeBiz.data || []) : (selectedBiz === "__legacy__" ? legacyData : []);
+  const years = [...new Set(bizData.map(e => e.year))].sort((a, b) => b - a);
   const yearEntries = selectedYear
-    ? businessData.filter(e => e.year === selectedYear).sort((a, b) => a.monthIndex - b.monthIndex)
+    ? bizData.filter(e => e.year === selectedYear).sort((a, b) => a.monthIndex - b.monthIndex)
     : [];
-
-  // All-year summary (for overview)
   const yearSummary = years.map(yr => {
-    const entries = businessData.filter(e => e.year === yr);
-    return {
-      year: yr,
-      totalGross: entries.reduce((s, e) => s + (e.grossIncome || 0), 0),
-      totalNet: entries.reduce((s, e) => s + (e.netIncome || 0), 0),
-      months: entries.length,
-    };
+    const entries = bizData.filter(e => e.year === yr);
+    return { year: yr, totalGross: entries.reduce((s, e) => s + (e.grossIncome || 0), 0), totalNet: entries.reduce((s, e) => s + (e.netIncome || 0), 0), months: entries.length };
   });
+
+  function updateBizData(fn) {
+    if (!activeBiz) return;
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fn(b.data || []) } : b) }));
+  }
+  function updateEntry(id, changes) {
+    updateBizData(d => d.map(e => e.id === id ? { ...e, ...changes } : e));
+  }
+  function deleteEntry(id) {
+    updateBizData(d => d.filter(e => e.id !== id));
+  }
+  function deleteYear(yr) {
+    if (!confirm(`Delete all data for ${yr}?`)) return;
+    updateBizData(d => d.filter(e => e.year !== yr));
+    if (selectedYear === yr) setSelectedYear(null);
+  }
+
+  function addBusiness() {
+    if (!newBizName.trim()) return;
+    const biz = { id: "biz_" + Date.now(), name: newBizName.trim(), data: [], createdAt: new Date().toISOString() };
+    update(p => ({ businesses: [...(p.businesses || []), biz] }));
+    setNewBizName(""); setShowAddBiz(false);
+    setSelectedBiz(biz.id);
+  }
+  function deleteBusiness(id) {
+    if (!confirm("Delete this business and all its data?")) return;
+    update(p => ({ businesses: (p.businesses || []).filter(b => b.id !== id) }));
+    if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); }
+  }
 
   function addYear() {
     const y = parseInt(newYear);
     if (!y || years.includes(y)) return;
-    // Just set selected year — no entries needed yet
-    setSelectedYear(y);
-    setShowAddYear(false);
-    setNewYear("");
+    setSelectedYear(y); setShowAddYear(false); setNewYear("");
   }
 
   function addMonthEntry() {
     const monthIdx = MONTHS.indexOf(monthForm.month);
     if (monthIdx === -1 || !monthForm.grossIncome || !monthForm.netIncome) return;
-    const existing = businessData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
+    const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
     if (existing) {
-      // Update existing
-      update(p => ({ businessData: (p.businessData || []).map(e =>
-        e.year === selectedYear && e.monthIndex === monthIdx
-          ? { ...e, grossIncome: parseFloat(monthForm.grossIncome), netIncome: parseFloat(monthForm.netIncome) }
-          : e
-      )}));
+      updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx
+        ? { ...e, grossIncome: parseFloat(monthForm.grossIncome), netIncome: parseFloat(monthForm.netIncome) } : e));
     } else {
-      update(p => ({ businessData: [...(p.businessData || []), {
-        id: Date.now(),
-        year: selectedYear,
-        month: monthForm.month,
-        monthIndex: monthIdx,
-        grossIncome: parseFloat(monthForm.grossIncome),
-        netIncome: parseFloat(monthForm.netIncome),
-      }]}));
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: parseFloat(monthForm.grossIncome), netIncome: parseFloat(monthForm.netIncome) }]);
     }
-    setMonthForm({ month: "", grossIncome: "", netIncome: "" });
-    setShowAddMonth(false);
+    setMonthForm({ month: "", grossIncome: "", netIncome: "" }); setShowAddMonth(false);
   }
 
   function saveEdit() {
     if (!editEntry) return;
-    update(p => ({ businessData: (p.businessData || []).map(e =>
-      e.id === editEntry.id
-        ? { ...e, grossIncome: parseFloat(editEntry.grossIncome), netIncome: parseFloat(editEntry.netIncome) }
-        : e
-    )}));
+    updateBizData(d => d.map(e => e.id === editEntry.id ? { ...e, grossIncome: parseFloat(editEntry.grossIncome), netIncome: parseFloat(editEntry.netIncome) } : e));
     setEditEntry(null);
-  }
-
-  function deleteEntry(id) {
-    update(p => ({ businessData: (p.businessData || []).filter(e => e.id !== id) }));
-  }
-
-  function deleteYear(yr) {
-    if (!confirm(`Delete all data for ${yr}?`)) return;
-    update(p => ({ businessData: (p.businessData || []).filter(e => e.year !== yr) }));
-    if (selectedYear === yr) setSelectedYear(null);
   }
 
   // Minimal SVG line chart (replaces bar chart)
@@ -4846,63 +4899,114 @@ function BusinessPage({ data, update }) {
         </div>
       )}
 
+      {/* ── HEADER / BREADCRUMB ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {selectedBiz && (
+            <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
+          )}
           {selectedYear && (
-            <button onClick={() => setSelectedYear(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
-              ← Back
-            </button>
+            <button onClick={() => setSelectedYear(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
           )}
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>
-            {selectedYear ? `Business · ${selectedYear}` : "Business"}
+            {!selectedBiz ? "Business"
+              : !selectedYear ? `${activeBiz?.name}`
+              : `${activeBiz?.name} · ${selectedYear}`}
           </h1>
         </div>
-        {!selectedYear && (
-          <button onClick={() => setShowAddYear(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-            {showAddYear ? "✕ Cancel" : "+ Add Year"}
-          </button>
-        )}
-        {selectedYear && (
-          <button onClick={() => setShowAddMonth(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-            {showAddMonth ? "✕ Cancel" : "+ Add Month"}
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          {!selectedBiz && (
+            <button onClick={() => setShowAddBiz(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {showAddBiz ? "✕ Cancel" : "+ New Business"}
+            </button>
+          )}
+          {selectedBiz && !selectedYear && (
+            <button onClick={() => setShowAddYear(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {showAddYear ? "✕ Cancel" : "+ Add Year"}
+            </button>
+          )}
+          {selectedYear && (
+            <button onClick={() => setShowAddMonth(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {showAddMonth ? "✕ Cancel" : "+ Add Month"}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Add Year inline form */}
-      {showAddYear && !selectedYear && (
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Year</label>
-            <input type="text" inputMode="numeric" placeholder="e.g. 2025" value={newYear}
-              onChange={e => setNewYear(e.target.value)}
-              style={{ width: "100%", boxSizing: "border-box" }} />
-          </div>
-          <button onClick={addYear} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create Year</button>
-        </div>
+      {/* ── LEVEL 1: Businesses grid ── */}
+      {!selectedBiz && (
+        <>
+          {showAddBiz && (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Business Name</label>
+                <input placeholder="e.g. Coconut, Freelance, Agency" value={newBizName} onChange={e => setNewBizName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addBusiness()}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <button onClick={addBusiness} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create</button>
+            </div>
+          )}
+          {businesses.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No businesses yet. Click "+ New Business" to create your first one.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+              {businesses.map(biz => {
+                const bizYears = [...new Set((biz.data || []).map(e => e.year))];
+                const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
+                const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
+                return (
+                  <div key={biz.id} onClick={() => setSelectedBiz(biz.id)}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                    <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
+                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                    <div style={{ fontSize: 32, marginBottom: 6 }}>🏢</div>
+                    <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
+                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(totalNet)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
-      {/* ── OVERVIEW: Year folders ── */}
-      {!selectedYear && (
+      {/* ── LEVEL 2: Year folders inside a business ── */}
+      {selectedBiz && !selectedYear && (
         <>
+          {showAddYear && (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Year</label>
+                <input type="text" inputMode="numeric" placeholder="e.g. 2025" value={newYear}
+                  onChange={e => setNewYear(e.target.value)} onKeyDown={e => e.key === "Enter" && addYear()}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <button onClick={addYear} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create Year</button>
+            </div>
+          )}
           {yearSummary.length === 0 ? (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-              No business data yet. Click "+ Add Year" to create your first year folder.
+              No years yet. Click "+ Add Year" to create your first year folder.
             </div>
           ) : (
             <>
-              {/* Year folder grid — sorted oldest first */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
                 {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
-                  <div key={s.year}
-                    onClick={() => setSelectedYear(s.year)}
-                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", transition: "box-shadow 0.15s", borderTop: "3px solid #1a6b3c", position: "relative" }}
+                  <div key={s.year} onClick={() => setSelectedYear(s.year)}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
-                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
-                  >
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteYear(s.year); }}
-                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}
-                      title="Delete year">🗑</button>
+                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
                     <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
                     <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
@@ -4913,8 +5017,6 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
-
-              {/* Summary stats */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
                 {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
                   <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
@@ -4925,8 +5027,6 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
-
-              {/* Year-on-year chart at bottom */}
               {yearSummary.length > 1 && (
                 <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
                   <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Year-on-Year Performance</div>
