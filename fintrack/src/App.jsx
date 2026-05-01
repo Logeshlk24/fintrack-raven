@@ -4553,7 +4553,7 @@ function GoalsPage({ data, update }) {
         borderRadius: 14, border: `0.5px solid ${item.completed ? "var(--color-border-tertiary)" : "var(--color-border-secondary)"}`,
         padding: "1rem 1.1rem", opacity: item.completed ? 0.7 : 1,
         borderTop: item.completed ? undefined : `3px solid ${cardAccent}`,
-        display: "flex", flexDirection: "column",
+        display: "flex", flexDirection: "column", height: "100%",
       }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
@@ -4603,7 +4603,7 @@ function GoalsPage({ data, update }) {
 
         {/* Task goal completion indicator */}
         {isTask && !item.completed && (
-          <div style={{ marginBottom: 10 }}>
+          <div style={{ marginTop: "auto", paddingTop: 8 }}>
             <button onClick={() => toggleComplete(item.id)} style={{ width: "100%", background: "#e8f5ee", border: "1px solid #1a6b3c", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 }}>
               ✓ Mark as Done
             </button>
@@ -4611,7 +4611,9 @@ function GoalsPage({ data, update }) {
         )}
 
         {/* Add savings — only for money goals */}
-        {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
+        <div style={{ marginTop: "auto", paddingTop: 8 }}>
+          {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
+        </div>
       </div>
     );
   }
@@ -4696,7 +4698,7 @@ function GoalsPage({ data, update }) {
                 const pOrder = { high: 0, medium: 1, low: 2 };
                 if (a.completed !== b.completed) return a.completed ? 1 : -1;
                 return pOrder[a.priority] - pOrder[b.priority];
-              }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column" }}>{renderItemCard(item)}</div>)}
+              }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
             </div>
           )}
         </div>
