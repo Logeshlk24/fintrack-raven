@@ -4389,7 +4389,7 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
-  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "" });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", url: "" });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -4413,11 +4413,12 @@ function GoalsPage({ data, update }) {
         notes: form.notes,
         priority: form.priority,
         dueDate: form.dueDate || "",
+        url: form.url || "",
         createdAt: today(),
         completed: false,
       }]
     }));
-    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "" });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", url: "" });
     setShowAdd(false);
   }
 
@@ -4431,6 +4432,7 @@ function GoalsPage({ data, update }) {
         savedAmount: parseFloat(editItem.savedAmount) || 0,
         notes: editItem.notes,
         priority: editItem.priority,
+        url: editItem.url || "",
       } : x)
     }));
     setEditItem(null);
@@ -4523,6 +4525,10 @@ function GoalsPage({ data, update }) {
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
           <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
+        <div style={{ marginTop: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>🔗 Link / URL (optional)</label>
+          <input type="url" placeholder="https://…" value={values.url || ""} onChange={e => onChange({ ...values, url: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
       </div>
     );
   }
@@ -4547,6 +4553,7 @@ function GoalsPage({ data, update }) {
         borderRadius: 14, border: `0.5px solid ${item.completed ? "var(--color-border-tertiary)" : "var(--color-border-secondary)"}`,
         padding: "1rem 1.1rem", opacity: item.completed ? 0.7 : 1,
         borderTop: item.completed ? undefined : `3px solid ${cardAccent}`,
+        display: "flex", flexDirection: "column",
       }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
@@ -4562,6 +4569,11 @@ function GoalsPage({ data, update }) {
               </span>
             </div>
             {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
+            {item.url && (
+              <a href={item.url} target="_blank" rel="noreferrer"
+                style={{ fontSize: 11, color: "#4da6ff", marginTop: 3, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}
+                title={item.url}>🔗 {item.url}</a>
+            )}
             {dueDateEl && <div style={{ marginTop: 4 }}>{dueDateEl}</div>}
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
@@ -4679,12 +4691,12 @@ function GoalsPage({ data, update }) {
               No {activeTab} goals yet. Click "+ Add Goal" to create one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
               {displayed.sort((a, b) => {
                 const pOrder = { high: 0, medium: 1, low: 2 };
                 if (a.completed !== b.completed) return a.completed ? 1 : -1;
                 return pOrder[a.priority] - pOrder[b.priority];
-              }).map(item => <div key={item.id}>{renderItemCard(item)}</div>)}
+              }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column" }}>{renderItemCard(item)}</div>)}
             </div>
           )}
         </div>
