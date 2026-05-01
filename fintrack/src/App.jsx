@@ -2321,20 +2321,49 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
             </div>
           )}
         </div>
-        {/* Sub-folders — styled like main folders */}
-        {subs.length > 0 && subs.map(sub => (
-          <div key={sub.id} style={{ marginBottom:10, borderRadius:10, border:"0.5px solid var(--color-border-secondary)", overflow:"hidden", background:"var(--color-background-primary)" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"var(--color-background-secondary)", cursor:"pointer", userSelect:"none" }}
-              onClick={()=>setOpenSubId(openSubId===sub.id?null:sub.id)}>
-              <span style={{ fontSize:18 }}>{openSubId===sub.id?"📂":"📁"}</span>
-              <span style={{ fontWeight:600, fontSize:14, flex:1, color:"var(--color-text-primary)" }}>{sub.name}</span>
-              <span style={{ fontSize:11, color:"var(--color-text-secondary)", background:"var(--color-background-tertiary)", borderRadius:10, padding:"1px 8px" }}>{(sub.files||[]).length} file{(sub.files||[]).length!==1?"s":""}</span>
-              <span style={{ fontSize:11, color:"var(--color-text-secondary)", marginLeft:4 }}>{openSubId===sub.id?"▲":"▼"}</span>
-              <button onClick={e=>{e.stopPropagation();deleteFolder(sub.id,folder.id);}} style={{ background:"#fee2e2", border:"none", borderRadius:5, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#dc2626", marginLeft:4 }}>🗑</button>
+        {/* Sub-folders — card grid like main folders */}
+        {subs.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Sub-folders</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginBottom: openSubId ? 12 : 0 }}>
+              {subs.map(sub => {
+                const fcount = (sub.files || []).length;
+                const isOpen = openSubId === sub.id;
+                return (
+                  <div key={sub.id}
+                    onClick={() => setOpenSubId(isOpen ? null : sub.id)}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 12, border: isOpen ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "0.9rem 1rem 0.75rem", cursor: "pointer", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", transition: "box-shadow 0.15s" }}>
+                    <button onClick={e => { e.stopPropagation(); deleteFolder(sub.id, folder.id); }}
+                      style={{ position: "absolute", top: 7, right: 7, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#d44", opacity: 0.5, padding: "2px 4px" }}>🗑</button>
+                    <div style={{ fontSize: 26, marginBottom: 5 }}>{isOpen ? "📂" : "📁"}</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 16, wordBreak: "break-word" }}>{sub.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      {fcount} file{fcount !== 1 ? "s" : ""}
+                      {fcount === 0 && <span style={{ marginLeft: 4, fontSize: 10, background: "#f1f5f9", color: "#94a3b8", borderRadius: 4, padding: "1px 5px" }}>Empty</span>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {openSubId===sub.id && <FolderBody folder={sub} parentId={folder.id} />}
+            {/* Expanded sub-folder content inline */}
+            {openSubId && (() => {
+              const sub = subs.find(s => s.id === openSubId);
+              if (!sub) return null;
+              return (
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, border: "0.5px solid var(--color-border-secondary)", overflow: "hidden" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)" }}>
+                    <span style={{ fontSize: 18 }}>📂</span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{sub.name}</span>
+                    <button onClick={() => setOpenSubId(null)} style={{ marginLeft: "auto", background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 10px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✕ Close</button>
+                  </div>
+                  <FolderBody folder={sub} parentId={folder.id} uploading={uploading} drive={drive} setDriveFId={setDriveFId} addFolder={addFolder} deleteFolder={deleteFolder} deleteFile={deleteFile} uploadFile={uploadFile} setPreview={setPreview} newSubName={newSubName} setNewSubName={setNewSubName} />
+                </div>
+              );
+            })()}
           </div>
-        ))}
+        )}
         {/* Files */}
         {files.length===0 && subs.length===0 && <div style={{ fontSize:12, color:"var(--color-text-secondary)", padding:"4px 0" }}>Empty folder.</div>}
         {files.length>0 && (
