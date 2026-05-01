@@ -2089,8 +2089,52 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
     { key: "month", label: "This Month", icon: "🗓" },
   ];
 
+  const drive = useDrive();
+  const [clientInput, setClientInput] = React.useState(data.driveClientId || "");
+
   return (
     <div style={{ marginTop: 16 }}>
+
+      {/* Google Drive Connect */}
+      <div style={{ ...cardStyle, marginBottom: 16, background: drive?.connected?"#f0fdf4":"var(--color-background-primary)", border: drive?.connected?"1px solid #bbf7d0":"0.5px solid var(--color-border-tertiary)" }}>
+        {sectionTitle("☁", "Google Drive", "Connect once — all file uploads (Documents, Bills, Project files) go straight to your Drive.")}
+        <div style={{ display:"flex", alignItems:"flex-start", gap:14, flexWrap:"wrap", marginTop: 4 }}>
+          <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt="" style={{ width:36, height:36, marginTop:2, flexShrink:0 }} onError={e=>e.target.style.display="none"} />
+          <div style={{ flex:1, minWidth:200 }}>
+            <div style={{ fontWeight:600, fontSize:14, marginBottom:4 }}>
+              {drive?.connected ? `✅ Connected — ${drive.email||"Google Drive"}` : "Connect Google Drive"}
+            </div>
+            <div style={{ fontSize:12, color:"var(--color-text-secondary)", marginBottom: drive?.connected?0:10 }}>
+              {drive?.connected
+                ? "All uploads go directly to your Google Drive. Token saved — no re-login needed."
+                : "One-time sign-in. Token is saved so you won't be asked again."}
+            </div>
+            {!drive?.connected && (
+              <>
+                <div style={{ display:"flex", gap:8, marginBottom:6, flexWrap:"wrap" }}>
+                  <input value={clientInput} onChange={e=>setClientInput(e.target.value)}
+                    placeholder="Google OAuth Client ID  (xxxx.apps.googleusercontent.com)"
+                    style={{ flex:1, minWidth:240, border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"7px 11px", fontSize:12, outline:"none", fontFamily:"inherit", background:"var(--color-background-primary)", color:"var(--color-text-primary)" }} />
+                </div>
+                <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>
+                  📌 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color:"#1a6b3c" }}>Google Cloud Console</a> → Credentials → Create OAuth 2.0 Client ID → add your app URL to Authorized JS origins.
+                </div>
+                {drive?.error && <div style={{ fontSize:12, color:"#dc2626", marginTop:6 }}>⚠ {drive.error}</div>}
+              </>
+            )}
+          </div>
+          <div style={{ flexShrink:0 }}>
+            {drive?.connected
+              ? <button onClick={drive.clearDrive} style={{ background:"none", border:"0.5px solid #ccc", borderRadius:8, padding:"7px 14px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)" }}>Disconnect</button>
+              : <button onClick={()=>drive?.signIn(clientInput)} disabled={drive?.loading}
+                  style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:drive?.loading?"not-allowed":"pointer", fontSize:13, fontWeight:500, opacity:drive?.loading?0.7:1, whiteSpace:"nowrap" }}>
+                  {drive?.loading?"Signing in…":"Sign in with Google"}
+                </button>
+            }
+          </div>
+        </div>
+      </div>
+
       {/* Default Period preference */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         {sectionTitle("📊", "Overview Default Period", "Choose which period Income & Expenses show by default on the Overview page.")}
@@ -2431,45 +2475,6 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
   return (
     <div>
       {sectionTitle("🗂", "Documents", "Organise files into folders. Connect Google Drive to store all uploads directly in your Drive.")}
-
-      {/* Drive connect card */}
-      <div style={{ ...cardStyle, background: drive?.connected?"#f0fdf4":"#fafafa", border: drive?.connected?"1px solid #bbf7d0":"0.5px solid var(--color-border-tertiary)" }}>
-        <div style={{ display:"flex", alignItems:"flex-start", gap:14, flexWrap:"wrap" }}>
-          <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt="" style={{ width:32, height:32, marginTop:2, flexShrink:0 }} onError={e=>e.target.style.display="none"} />
-          <div style={{ flex:1, minWidth:200 }}>
-            <div style={{ fontWeight:600, fontSize:14, marginBottom:3 }}>
-              {drive?.connected ? `✅ Connected — ${drive.email||"Google Drive"}` : "Connect Google Drive"}
-            </div>
-            <div style={{ fontSize:12, color:"var(--color-text-secondary)", marginBottom: drive?.connected?0:10 }}>
-              {drive?.connected
-                ? "All uploads (Documents, Bills, Project files) go directly to your Google Drive. Token saved — no re-login needed."
-                : "One-time sign-in. Token is saved locally so you won't be asked again."}
-            </div>
-            {!drive?.connected && (
-              <>
-                <div style={{ display:"flex", gap:8, marginBottom:6, flexWrap:"wrap" }}>
-                  <input value={clientInput} onChange={e=>setClientInput(e.target.value)}
-                    placeholder="Google OAuth Client ID  (xxxx.apps.googleusercontent.com)"
-                    style={{ flex:1, minWidth:240, border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"7px 11px", fontSize:12, outline:"none", fontFamily:"inherit" }} />
-                </div>
-                <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>
-                  📌 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color:"#1a6b3c" }}>Google Cloud Console</a> → Credentials → Create OAuth 2.0 Client ID → add your app URL to Authorized JS origins.
-                </div>
-                {drive?.error && <div style={{ fontSize:12, color:"#dc2626", marginTop:6 }}>⚠ {drive.error}</div>}
-              </>
-            )}
-          </div>
-          <div style={{ flexShrink:0 }}>
-            {drive?.connected
-              ? <button onClick={drive.clearDrive} style={{ background:"none", border:"0.5px solid #ccc", borderRadius:8, padding:"7px 14px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)" }}>Disconnect</button>
-              : <button onClick={()=>drive?.signIn(clientInput)} disabled={drive?.loading}
-                  style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:drive?.loading?"not-allowed":"pointer", fontSize:13, fontWeight:500, opacity:drive?.loading?0.7:1, whiteSpace:"nowrap" }}>
-                  {drive?.loading?"Signing in…":"Sign in with Google"}
-                </button>
-            }
-          </div>
-        </div>
-      </div>
 
       {/* Add root folder */}
       <div style={cardStyle}>
@@ -4389,7 +4394,7 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
-  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", url: "" });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -4413,12 +4418,12 @@ function GoalsPage({ data, update }) {
         notes: form.notes,
         priority: form.priority,
         dueDate: form.dueDate || "",
-        url: form.url || "",
+        urls: (form.urls || []).filter(u => u.trim()),
         createdAt: today(),
         completed: false,
       }]
     }));
-    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", url: "" });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
     setShowAdd(false);
   }
 
@@ -4432,7 +4437,7 @@ function GoalsPage({ data, update }) {
         savedAmount: parseFloat(editItem.savedAmount) || 0,
         notes: editItem.notes,
         priority: editItem.priority,
-        url: editItem.url || "",
+        urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
       } : x)
     }));
     setEditItem(null);
@@ -4526,8 +4531,32 @@ function GoalsPage({ data, update }) {
           <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
         <div style={{ marginTop: 10 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>🔗 Link / URL (optional)</label>
-          <input type="url" placeholder="https://…" value={values.url || ""} onChange={e => onChange({ ...values, url: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>🔗 Links (optional)</label>
+          {(values.urls || [""]).map((url, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+              <input
+                type="url"
+                placeholder={`https://… (link ${i + 1})`}
+                value={url}
+                onChange={e => {
+                  const updated = [...(values.urls || [""])];
+                  updated[i] = e.target.value;
+                  onChange({ ...values, urls: updated });
+                }}
+                style={{ flex: 1, boxSizing: "border-box", fontSize: 12 }}
+              />
+              {(values.urls || [""]).length > 1 && (
+                <button type="button" onClick={() => {
+                  const updated = (values.urls || [""]).filter((_, j) => j !== i);
+                  onChange({ ...values, urls: updated });
+                }} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#d44", fontSize: 12, flexShrink: 0 }}>✕</button>
+              )}
+            </div>
+          ))}
+          <button type="button" onClick={() => onChange({ ...values, urls: [...(values.urls || [""]), ""] })}
+            style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", border: "0.5px solid #1a6b3c44", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 }}>
+            + Add another link
+          </button>
         </div>
       </div>
     );
@@ -4569,18 +4598,21 @@ function GoalsPage({ data, update }) {
               </span>
             </div>
             {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
-            {item.url && (
-              <a href={item.url} target="_blank" rel="noreferrer"
-                style={{ fontSize: 11, color: "#4da6ff", marginTop: 3, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}
-                title={item.url}>🔗 {item.url}</a>
-            )}
+            {(item.urls && item.urls.length > 0 ? item.urls : item.url ? [item.url] : []).map((u, i) => u ? (
+              <a key={i} href={u} target="_blank" rel="noreferrer"
+                style={{ fontSize: 11, color: "#4da6ff", marginTop: 2, display: "flex", alignItems: "center", gap: 3, overflow: "hidden", maxWidth: "100%" }}
+                title={u}>
+                <span style={{ flexShrink: 0 }}>🔗</span>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u}</span>
+              </a>
+            ) : null)}
             {dueDateEl && <div style={{ marginTop: 4 }}>{dueDateEl}</div>}
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
             <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {item.completed ? "↩" : "✓"}
             </button>
-            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money" })} onDelete={() => deleteItem(item.id)} />
+            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money", urls: item.urls || (item.url ? [item.url] : [""]) })} onDelete={() => deleteItem(item.id)} />
           </div>
         </div>
 
