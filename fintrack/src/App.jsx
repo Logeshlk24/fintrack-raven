@@ -7044,16 +7044,25 @@ function PortfolioPage({ data, update }) {
   // ── Known NSE→Yahoo symbol corrections ──────────────────────────────────────
   // Some NSE symbols differ from Yahoo Finance's naming convention
   const YAHOO_CORRECTIONS = {
-    "ABCCAPITAL":   "ABCAPITAL",    // Aditya Birla Capital
-    "ADANIENSOL":   "ADANIENSOL",   // newly listed — try as-is
-    "M&M":          "M-M",          // Mahindra & Mahindra — & not valid
-    "ARM&M":        "ARM-M",
+    // Aditya Birla Capital — common mis-spelling
+    "ABCCAPITAL":   "ABCAPITAL",
+    // Adani Energy Solutions — newly listed, try as-is first
+    "ADANIENSOL":   "ADANIENSOL",
+    // Amara Raja — user stored as ARM&M (wrong), real Yahoo ticker
+    "ARM&M":        "AMARAJAEL",
+    "ARM-M":        "AMARAJAEL",
+    "AMARAJA":      "AMARAJAEL",
+    // Mahindra & Mahindra
+    "M&M":          "M-M",
     "L&TFH":        "L-TFH",
     "AT&T":         "T",
+    // Common NSE stocks with known Yahoo ticker differences
     "MUTHOOTFIN":   "MUTHOOTFIN",
     "BANDHANBNK":   "BANDHANBNK",
     "FEDERALBNK":   "FEDERALBNK",
     "HCLTECH":      "HCLTECH",
+    "ASHOKLEY":     "ASHOKLEY",
+    "ABCAPITAL":    "ABCAPITAL",
   };
 
   function toYahooTicker(symbol, exchange, override) {
@@ -7091,14 +7100,43 @@ function PortfolioPage({ data, update }) {
     if (!holdingsList || holdingsList.length === 0) return;
     setLoading(true);
     setPriceError("");
-    const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange)))];
+    const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
     try {
       const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
       if (!res.ok) throw new Error("API error " + res.status);
       const data = await res.json();
-      setPrices(data);
-      const failed = Object.values(data).filter(r => !r.ok).length;
-      if (failed > 0) setPriceError(`${failed} ticker(s) could not be fetched — check symbol spelling.`);
+
+      // ── Auto-retry failed tickers with alternative suffix ───────────────
+      const failedTickers = Object.entries(data).filter(([, v]) => !v.ok).map(([k]) => k);
+      let retryData = {};
+      if (failedTickers.length > 0) {
+        // Build retry list: .NS → try .BO, .BO → try .NS, no suffix → try .NS
+        const retryMap = {}; // retryTicker → originalTicker
+        failedTickers.forEach(t => {
+          if (t.endsWith(".NS")) retryMap[t.replace(".NS", ".BO")] = t;
+          else if (t.endsWith(".BO")) retryMap[t.replace(".BO", ".NS")] = t;
+          else retryMap[t + ".NS"] = t;
+        });
+        const retryTickers = Object.keys(retryMap);
+        try {
+          const res2 = await fetch(`/api/stock-price?ticker=${retryTickers.map(encodeURIComponent).join(",")}`);
+          if (res2.ok) {
+            const d2 = await res2.json();
+            // If retry succeeded, replace the failed entry with the working ticker's data
+            Object.entries(d2).forEach(([retryT, val]) => {
+              if (val.ok) {
+                const origT = retryMap[retryT];
+                retryData[origT] = { ...val, _autoFixedTo: retryT };
+              }
+            });
+          }
+        } catch (_) { /* ignore retry errors */ }
+      }
+
+      const merged = { ...data, ...retryData };
+      setPrices(merged);
+      const stillFailed = Object.values(merged).filter(r => !r.ok).length;
+      if (stillFailed > 0) setPriceError(`${stillFailed} ticker(s) could not be fetched — click "Fix ticker" to correct them.`);
       else setPriceError("");
     } catch (e) {
       setPriceError("Could not reach price API — try refreshing.");
@@ -7312,23 +7350,47 @@ function PortfolioPage({ data, update }) {
 
           {/* Yahoo override — shown when symbol is filled */}
           {form.symbol.trim() && (
-            <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: "#0369a1", marginBottom: 5, fontWeight: 600 }}>
-                📡 Yahoo Finance ticker: <code style={{ background: "#e0f2fe", borderRadius: 4, padding: "1px 6px" }}>{toYahooTicker(form.symbol, form.exchange, form.yahooOverride)}</code>
-                <span style={{ fontWeight: 400, marginLeft: 6, color: "#64748b" }}>— used to fetch live prices</span>
+            <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: "#0369a1", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                📡 Yahoo Finance ticker:
+                <code style={{ background: "#e0f2fe", borderRadius: 4, padding: "1px 6px", fontSize: 12 }}>{toYahooTicker(form.symbol, form.exchange, form.yahooOverride)}</code>
+                <span style={{ fontWeight: 400, color: "#64748b" }}>— used to fetch live prices</span>
               </div>
+
+              {/* Quick-try buttons for common alternatives */}
+              {form.symbol.trim() && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 7 }}>
+                  <span style={{ fontSize: 10, color: "#64748b", alignSelf: "center" }}>Try:</span>
+                  {[
+                    form.symbol.trim().toUpperCase() + ".NS",
+                    form.symbol.trim().toUpperCase() + ".BO",
+                    form.symbol.trim().toUpperCase().replace(/&/g, "-") + ".NS",
+                  ].filter((t, i, a) => a.indexOf(t) === i && t !== toYahooTicker(form.symbol, form.exchange, form.yahooOverride)).map(t => (
+                    <button key={t} onClick={() => setForm(f => ({ ...f, yahooOverride: t }))}
+                      style={{ fontSize: 10, background: "#e0f2fe", border: "0.5px solid #7dd3fc", borderRadius: 4, padding: "2px 8px", cursor: "pointer", color: "#0369a1", fontFamily: "monospace" }}>
+                      {t}
+                    </button>
+                  ))}
+                  <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(form.symbol)}`}
+                    target="_blank" rel="noreferrer"
+                    style={{ fontSize: 10, background: "#fffbeb", border: "0.5px solid #fcd34d", borderRadius: 4, padding: "2px 8px", color: "#92400e", textDecoration: "none" }}>
+                    🔍 Search on Yahoo →
+                  </a>
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input
                   type="text"
-                  placeholder="Override ticker if wrong (e.g. ABCAPITAL.NS)"
+                  placeholder="Paste correct ticker here e.g. ABCAPITAL.NS or AMARAJAEL.NS"
                   value={form.yahooOverride}
-                  onChange={e => setForm(f => ({ ...f, yahooOverride: e.target.value }))}
-                  style={{ flex: 1, fontSize: 11, padding: "4px 8px", border: "0.5px solid #bae6fd", borderRadius: 6, outline: "none", fontFamily: "monospace" }}
+                  onChange={e => setForm(f => ({ ...f, yahooOverride: e.target.value.trim().toUpperCase() }))}
+                  style={{ flex: 1, fontSize: 11, padding: "5px 8px", border: "0.5px solid #bae6fd", borderRadius: 6, outline: "none", fontFamily: "monospace" }}
                 />
-                {form.yahooOverride && <button onClick={() => setForm(f => ({ ...f, yahooOverride: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>✕ Clear</button>}
+                {form.yahooOverride && <button onClick={() => setForm(f => ({ ...f, yahooOverride: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>✕</button>}
               </div>
-              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
-                Leave blank to use auto-detected ticker. If LTP shows N/A, check the ticker on <a href="https://finance.yahoo.com" target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>Yahoo Finance</a> and paste it here.
+              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4, lineHeight: 1.5 }}>
+                If LTP shows "No price", search the stock on <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(form.symbol || "")}`} target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>Yahoo Finance</a>, copy the ticker exactly (e.g. <code>ABCAPITAL.NS</code>) and paste above.
               </div>
             </div>
           )}
@@ -7399,17 +7461,29 @@ function PortfolioPage({ data, update }) {
                 {loading
                   ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
                   : h.cur != null
-                    ? <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
-                    : <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                        {h.fetchFailed
-                          ? <span style={{ fontSize: 10, color: "#f0a020" }}>⚠ N/A</span>
-                          : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>—</span>
-                        }
+                    ? <div>
+                        <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                        {/* Show auto-fixed ticker badge */}
+                        {prices[h.ticker]?._autoFixedTo && (
+                          <div style={{ fontSize: 9, color: "#1d4ed8", background: "#dbeafe", borderRadius: 3, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>
+                            ⚡ via {prices[h.ticker]._autoFixedTo}
+                          </div>
+                        )}
+                      </div>
+                    : <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                        <span style={{ fontSize: 10, color: "#d44", fontWeight: 500 }}>⚠ No price</span>
                         <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "monospace" }}>{h.ticker}</span>
-                        <button onClick={() => openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h)}
-                          style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 6px", cursor: "pointer", color: "#92400e", whiteSpace: "nowrap" }}>
-                          ✏️ Fix ticker
-                        </button>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          <button onClick={() => openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h)}
+                            style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "2px 7px", cursor: "pointer", color: "#92400e", whiteSpace: "nowrap" }}>
+                            ✏️ Fix ticker
+                          </button>
+                          <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(h.symbol)}`}
+                            target="_blank" rel="noreferrer"
+                            style={{ fontSize: 9, background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 4, padding: "2px 7px", color: "#1d4ed8", textDecoration: "none", whiteSpace: "nowrap" }}>
+                            🔍 Search
+                          </a>
+                        </div>
                       </div>
                 }
               </div>
