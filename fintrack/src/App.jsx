@@ -727,7 +727,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles }) {
       {bankBalances.length > 0 && (
         <Card title="Bank Balances" action={<button onClick={() => setPage("money")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>Manage →</button>}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 }}>
-            {[...bankBalances].sort((a, b) => b.balance - a.balance).map(b => (
+            {bankBalances.map(b => (
               <div key={b.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>{b.name}</div>
                 <div style={{ fontWeight: 600, fontSize: 16, color: b.balance >= 0 ? "var(--color-text-primary)" : "#d44" }}>{fmtCur(b.balance)}</div>
@@ -2554,16 +2554,14 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
 
   function deleteAccount(id) { update(p => ({ banks: (p.banks || []).filter(b => b.id !== id) })); }
 
+  function reorderAccounts(newList) { update(p => ({ banks: newList })); }
+
   function applyAdjustment(direction) {
     if (!adjustAmt || !adjusting) return;
     const amt = parseFloat(adjustAmt); if (isNaN(amt) || amt <= 0) return;
     update(p => ({ transactions: [...p.transactions, { id: Date.now(), type: direction === "add" ? "income" : "expense", amount: amt, category: adjustNote || (direction === "add" ? "Balance Top-up" : "Balance Adjustment"), note: `${adjusting.name} manual adjustment`, date: new Date().toISOString().split("T")[0], bankId: adjusting.id }] }));
     setAdjusting(null); setAdjustAmt(""); setAdjustNote("");
   }
-
-  const banks = accounts.filter(a => a.type === "Bank");
-  const cards = accounts.filter(a => a.type === "Credit Card");
-  const cashAccounts = accounts.filter(a => a.type === "Cash");
 
   return (
     <div style={{ marginTop: 16 }}>
@@ -2656,116 +2654,54 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
         )}
       </div>
 
-      {/* Bank Accounts */}
-      {banks.length > 0 && (
+      {/* All Accounts — draggable list */}
+      {accounts.length > 0 && (
         <div style={cardStyle}>
-          {sectionTitle("🏦", "Bank Accounts")}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-            {banks.map(acct => {
+          {sectionTitle("🏦", "Accounts", "Drag ⠿ to reorder")}
+          <DraggableList
+            items={accounts}
+            keyFn={a => a.id}
+            onReorder={reorderAccounts}
+            renderItem={acct => {
               const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
               const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
-              const bal = (acct.openingBalance || 0) + txInc - txExp;
+              let bal;
+              if (acct.type === "Credit Card") bal = (acct.openingBalance || 0) + txExp - txInc;
+              else bal = (acct.openingBalance || 0) + txInc - txExp;
+              const typeBadge = acct.type === "Credit Card"
+                ? <span style={{ fontSize: 10, background: "#fff3e0", color: "#e65100", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CC</span>
+                : acct.type === "Cash"
+                ? <span style={{ fontSize: 10, background: "#f0fdf4", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CASH</span>
+                : <span style={{ fontSize: 10, background: "#f1f5f9", color: "#64748b", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>BANK</span>;
               return (
-                <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
-                    <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: bal >= 0 ? "var(--color-text-primary)" : "#d44", marginBottom: 8 }}>{fmtCur(bal)}</div>
-                  <div style={{ display: "flex", gap: 8, fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 8 }}>
-                    <span style={{ color: "#1a6b3c" }}>↑ {fmtCur(txInc)}</span>
-                    <span style={{ color: "#d44" }}>↓ {fmtCur(txExp)}</span>
-                  </div>
-                  <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>± Adjust Balance</button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Credit Cards */}
-      {cards.length > 0 && (
-        <div style={cardStyle}>
-          {sectionTitle("💳", "Credit Cards")}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-            {cards.map(acct => {
-              const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
-              const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
-              const bal = (acct.openingBalance || 0) + txExp - txInc;
-              const limit = acct.creditLimit || 0;
-              const usedPct = limit > 0 ? Math.min((bal / limit) * 100, 100) : 0;
-              const available = limit > 0 ? limit - bal : null;
-              const dueDay = acct.dueDate ? parseInt(acct.dueDate) : null;
-              let dueLabel = null;
-              if (dueDay) {
-                const now = new Date();
-                let dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay);
-                if (dueDate <= now) dueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDay);
-                const daysLeft = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
-                dueLabel = { date: dueDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }), days: daysLeft };
-              }
-              return (
-                <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 12px 9px 0" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
                       <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
-                      <span style={{ marginLeft: 6, fontSize: 10, background: "#fff3e0", color: "#e65100", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CC</span>
+                      {typeBadge}
                     </div>
+                    <div style={{ display: "flex", gap: 10, fontSize: 12, alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, color: bal >= 0 ? "var(--color-text-primary)" : "#d44" }}>{fmtCur(bal)}</span>
+                      {acct.type !== "Credit Card" && (
+                        <>
+                          <span style={{ color: "#1a6b3c", fontSize: 11 }}>↑{fmtCur(txInc)}</span>
+                          <span style={{ color: "#d44", fontSize: 11 }}>↓{fmtCur(txExp)}</span>
+                        </>
+                      )}
+                      {acct.type === "Credit Card" && acct.creditLimit > 0 && (
+                        <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>Limit: {fmtCur(acct.creditLimit)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }}
+                      style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>± Adjust</button>
                     <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Outstanding</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: bal > 0 ? "#d44" : "var(--color-text-primary)", marginBottom: 6 }}>{fmtCur(bal)}</div>
-                  {limit > 0 && (
-                    <div style={{ marginBottom: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-                        <span>Used {usedPct.toFixed(0)}%</span>
-                        <span style={{ color: "#1a6b3c" }}>Avail: {fmtCur(available)}</span>
-                      </div>
-                      <div style={{ background: "#f0f0f0", borderRadius: 4, height: 5, overflow: "hidden" }}>
-                        <div style={{ width: usedPct + "%", height: "100%", background: usedPct > 80 ? "#d44" : usedPct > 50 ? "#f0a020" : "#1a6b3c", borderRadius: 4, transition: "width 0.4s" }} />
-                      </div>
-                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Limit: {fmtCur(limit)}</div>
-                    </div>
-                  )}
-                  {dueLabel && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, background: dueLabel.days <= 5 ? "#fff3e0" : "#f0fdf4", borderRadius: 8, padding: "5px 8px", marginBottom: 8, fontSize: 11 }}>
-                      <span>📅</span>
-                      <span style={{ color: dueLabel.days <= 5 ? "#e65100" : "#1a6b3c", fontWeight: 500 }}>Due {dueLabel.date} · {dueLabel.days === 0 ? "Today!" : `${dueLabel.days}d left`}</span>
-                    </div>
-                  )}
-                  <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>± Adjust Balance</button>
                 </div>
               );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Cash */}
-      {cashAccounts.length > 0 && (
-        <div style={cardStyle}>
-          {sectionTitle("💵", "Cash Accounts")}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-            {cashAccounts.map(acct => {
-              const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
-              const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(acct.id)).reduce((s, t) => s + Number(t.amount), 0);
-              const bal = (acct.openingBalance || 0) + txInc - txExp;
-              return (
-                <div key={acct.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
-                      <span style={{ fontSize: 10, background: "#f0fdf4", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CASH</span>
-                    </div>
-                    <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: bal >= 0 ? "var(--color-text-primary)" : "#d44", marginBottom: 10 }}>{fmtCur(bal)}</div>
-                  <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }} style={{ width: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>± Adjust Balance</button>
-                </div>
-              );
-            })}
-          </div>
+            }}
+          />
         </div>
       )}
       {accounts.length === 0 && <EmptyState msg="No accounts yet. Add your first account above." />}
@@ -2801,6 +2737,11 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
     update(() => ({ categories: { ...cats, [type]: (cats[type] || []).filter(c => c !== name) } }));
   }
 
+  function reorderCategories(type, newList) {
+    const cats = data.categories || { expense: [], income: [] };
+    update(() => ({ categories: { ...cats, [type]: newList } }));
+  }
+
   return (
     <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
       {editCat && (
@@ -2817,14 +2758,21 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
       )}
       {["expense", "income"].map(type => (
         <Card key={type} title={type === "expense" ? "🔴 Expense Categories" : "🟢 Income Categories"}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-            {(categories[type] || []).map(cat => (
-              <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "7px 12px" }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{cat}</span>
-                <ThreeDotMenu onEdit={() => { setEditCat({ type, oldName: cat }); setEditCatName(cat); }} onDelete={() => deleteCategory(type, cat)} />
-              </div>
-            ))}
-            {(categories[type] || []).length === 0 && <EmptyState msg="No categories yet." />}
+          <div style={{ marginBottom: 12 }}>
+            {(categories[type] || []).length === 0
+              ? <EmptyState msg="No categories yet." />
+              : <DraggableList
+                  items={categories[type] || []}
+                  keyFn={cat => cat}
+                  onReorder={newList => reorderCategories(type, newList)}
+                  renderItem={cat => (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px 7px 0" }}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{cat}</span>
+                      <ThreeDotMenu onEdit={() => { setEditCat({ type, oldName: cat }); setEditCatName(cat); }} onDelete={() => deleteCategory(type, cat)} />
+                    </div>
+                  )}
+                />
+            }
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <input placeholder={`New ${type} category`} value={newCat.type === type ? newCat.name : ""} onFocus={() => setNewCat(p => ({ ...p, type }))} onChange={e => setNewCat({ type, name: e.target.value })} onKeyDown={e => e.key === "Enter" && addCategory()} style={{ flex: 1, boxSizing: "border-box" }} />
@@ -4540,6 +4488,17 @@ function BusinessPage({ data, update }) {
                 ))}
               </div>
 
+              {/* Summary stats */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+                {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
+                  <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{s.year} — Gross</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 2 }}>Net</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#4da6ff" }}>{fmtCur(s.totalNet)}</div>
+                  </div>
+                ))}
+              </div>
 
               {/* Year-on-year chart at bottom */}
               {yearSummary.length > 1 && (
@@ -4634,19 +4593,14 @@ function BusinessPage({ data, update }) {
                           <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
                           {/* Bill column */}
                           <td style={{ padding: "6px 14px" }}>
-                            {e.billImage || e.billDriveId ? (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <div
-                                  onClick={() => setBillModal({ url: e.billImage, link: e.billLink, driveId: e.billDriveId })}
-                                  title="Click to view bill"
-                                  style={{ width: 36, height: 36, borderRadius: 6, border: "1px dashed #1a6b3c", background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, flexShrink: 0 }}
-                                >☁</div>
-                                <button
-                                  onClick={() => updateEntry(e.id, { billImage: null, billDriveId: null, billLink: null })}
-                                  title="Remove bill"
-                                  style={{ background: "none", border: "0.5px solid #d44", borderRadius: 5, padding: "2px 6px", cursor: "pointer", fontSize: 11, color: "#d44", flexShrink: 0 }}
-                                >🗑</button>
-                              </div>
+                            {e.billImage ? (
+                              <img
+                                src={e.billImage}
+                                alt="bill"
+                                onClick={() => setBillModal({ url: e.billImage, link: e.billLink, driveId: e.billDriveId })}
+                                style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer", display: "block" }}
+                                title="Click to view full bill"
+                              />
                             ) : (
                               <BillUploadBtn onUploaded={result => updateEntry(e.id, { billImage: result.previewUrl || result.webViewLink, billDriveId: result.id, billLink: result.webViewLink })} />
                             )}
@@ -6090,6 +6044,57 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Note title…"
           style={{ display:"block", width:"100%", boxSizing:"border-box", border:"none", outline:"none", background:"transparent", fontSize:14, fontWeight:600, fontFamily:"inherit", color:"var(--color-text-primary)" }} />
       </div>
+    </div>
+  );
+}
+
+// ─── DraggableList — drag-to-reorder rows with a ⠿ handle ───────────────────
+function DraggableList({ items, onReorder, renderItem, keyFn }) {
+  const dragIdx = useRef(null);
+  const [dragOver, setDragOver] = useState(null);
+
+  function onDragStart(e, i) {
+    dragIdx.current = i;
+    e.dataTransfer.effectAllowed = "move";
+    // Ghost image: use the row itself
+    e.dataTransfer.setDragImage(e.currentTarget, 20, 20);
+  }
+  function onDragOver(e, i) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (i !== dragOver) setDragOver(i);
+  }
+  function onDrop(e, i) {
+    e.preventDefault();
+    if (dragIdx.current === null || dragIdx.current === i) { cleanup(); return; }
+    const next = [...items];
+    const [moved] = next.splice(dragIdx.current, 1);
+    next.splice(i, 0, moved);
+    onReorder(next);
+    cleanup();
+  }
+  function cleanup() { dragIdx.current = null; setDragOver(null); }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((item, i) => (
+        <div key={keyFn(item)}
+          draggable
+          onDragStart={e => onDragStart(e, i)}
+          onDragOver={e => onDragOver(e, i)}
+          onDrop={e => onDrop(e, i)}
+          onDragEnd={cleanup}
+          style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: 8,
+            background: dragOver === i ? "#e8f5ee" : "var(--color-background-secondary)",
+            border: dragOver === i ? "1.5px dashed #1a6b3c" : "0.5px solid var(--color-border-tertiary)",
+            transition: "background 0.12s, border 0.12s", cursor: "default", userSelect: "none" }}>
+          {/* Drag handle */}
+          <div style={{ padding: "0 4px 0 10px", color: "#bbb", fontSize: 16, cursor: "grab", flexShrink: 0, lineHeight: 1 }}
+            title="Drag to reorder">⠿</div>
+          {/* Row content fills the rest */}
+          <div style={{ flex: 1, minWidth: 0 }}>{renderItem(item, i)}</div>
+        </div>
+      ))}
     </div>
   );
 }
