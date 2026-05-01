@@ -345,17 +345,13 @@ export default function App() {
   const toggles = data.featureToggles || { fo: true, portfolio: true };
   const portfolioOn = toggles.portfolio !== false;
   const navItems = [
-    { id: "overview",      label: "Overview",       icon: "⊞" },
-    { id: "money",         label: "Money",          icon: "⊕" },
+    { id: "overview",   label: "Overview",  icon: "⊞" },
+    { id: "money",      label: "Money",     icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
-    ...(portfolioOn ? [
-      { id: "portfolio",   label: "Indian Stocks",  icon: "📈" },
-      { id: "us_stocks",   label: "US Stocks",      icon: "🇺🇸" },
-      { id: "mf",          label: "Mutual Funds",   icon: "💼" },
-    ] : []),
-    { id: "goals",         label: "Goals",          icon: "◎" },
-    { id: "business",      label: "Business",       icon: "🏢" },
-    { id: "projects",      label: "Projects",       icon: "📋" },
+    ...(portfolioOn ? [{ id: "portfolio", label: "Portfolio", icon: "📈" }] : []),
+    { id: "goals",      label: "Goals",     icon: "◎" },
+    { id: "business",   label: "Business",  icon: "🏢" },
+    { id: "projects",   label: "Projects",  icon: "📋" },
   ];
 
   return (
@@ -461,9 +457,7 @@ export default function App() {
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
-        {page === "portfolio" && portfolioOn && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
-        {page === "us_stocks" && portfolioOn && <PortfolioPage data={data} update={update} title="US Stocks" holdingsKey="usHoldings" defaultExchange="US" />}
-        {page === "mf" && portfolioOn && <MutualFundsPage data={data} update={update} />}
+        {page === "portfolio" && portfolioOn && <PortfolioHub data={data} update={update} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
         {page === "business" && <BusinessPage data={data} update={update} />}
         {page === "projects" && <ProjectsPage data={data} update={update} />}
@@ -781,12 +775,37 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
         {/* ── Portfolio Summary ── */}
         {portfolioOn && (() => {
-          const allHoldings = [...(data.portfolioHoldings || []), ...(data.usHoldings || [])];
           const mfs = data.mutualFunds || [];
-          const totalInvested = allHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0) + mfs.reduce((s, m) => s + (m.investedAmount || 0), 0);
-          const totalCurrent  = allHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0) + mfs.reduce((s, m) => s + (m.units || 0) * (m.nav || 0), 0);
+
+          // Indian stocks with live prices
+          const indHoldings = data.portfolioHoldings || [];
+          const indPrices = data["portfolioHoldings_livePrices"] || {};
+          const indInvested = indHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
+          const indCurrent  = indHoldings.reduce((s, h) => {
+            const ticker = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+            const ltp = ticker && indPrices[ticker]?.ok ? indPrices[ticker].price : h.buyPrice || 0;
+            return s + ltp * (h.qty || 0);
+          }, 0);
+
+          // US stocks with live prices
+          const usHoldings = data.usHoldings || [];
+          const usPrices = data["usHoldings_livePrices"] || {};
+          const usInvested = usHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
+          const usCurrent  = usHoldings.reduce((s, h) => {
+            const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+            const ltp = ticker && usPrices[ticker]?.ok ? usPrices[ticker].price : h.buyPrice || 0;
+            return s + ltp * (h.qty || 0);
+          }, 0);
+
+          // Mutual funds
+          const mfInvested = mfs.reduce((s, m) => s + (m.investedAmount || 0), 0);
+          const mfCurrent  = mfs.reduce((s, m) => s + (m.units || 0) * (m.nav || 0), 0);
+
+          const totalInvested = indInvested + usInvested + mfInvested;
+          const totalCurrent  = indCurrent  + usCurrent  + mfCurrent;
           const totalReturn   = totalCurrent - totalInvested;
           const returnPct     = totalInvested > 0 ? ((totalReturn / totalInvested) * 100).toFixed(2) : "0.00";
+
           return (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
@@ -795,10 +814,10 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 {[
-                  { label: "Invested", val: fmtCur(totalInvested), color: "var(--color-text-primary)" },
-                  { label: "Current Value", val: fmtCur(totalCurrent), color: "#1a6b3c" },
-                  { label: "Total Return", val: fmtCur(totalReturn), color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
-                  { label: "Return %", val: returnPct + "%", color: parseFloat(returnPct) >= 0 ? "#1a6b3c" : "#d44" },
+                  { label: "Invested",      val: fmtCur(totalInvested), color: "var(--color-text-primary)" },
+                  { label: "Current Value", val: fmtCur(totalCurrent),  color: "#1a6b3c" },
+                  { label: "Total Return",  val: fmtCur(totalReturn),   color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
+                  { label: "Return %",      val: returnPct + "%",       color: parseFloat(returnPct) >= 0 ? "#1a6b3c" : "#d44" },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
@@ -806,6 +825,9 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   </div>
                 ))}
               </div>
+              {Object.keys(indPrices).length === 0 && Object.keys(usPrices).length === 0 && (
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 8, textAlign: "center" }}>Open Portfolio and click Refresh to load live prices</div>
+              )}
             </div>
           );
         })()}
@@ -7063,6 +7085,32 @@ const NSE_SEARCH = NSE_STOCKS.map(([symbol, name]) => ({ symbol, name, lower: sy
 // ═══════════════════════════════════════════════════════════════════════════════
 // PORTFOLIO PAGE — CORS-safe prices via corsproxy.io + stock autocomplete
 // ═══════════════════════════════════════════════════════════════════════════════
+// ─── Portfolio Hub — tabs: Indian Stocks / US Stocks / Mutual Funds ───────────
+function PortfolioHub({ data, update }) {
+  const [tab, setTab] = useState("indian");
+  const TABS = [
+    { id: "indian", label: "📈 Indian Stocks" },
+    { id: "us",     label: "🇺🇸 US Stocks"   },
+    { id: "mf",     label: "💼 Mutual Funds" },
+  ];
+  return (
+    <div>
+      {/* Tab bar */}
+      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20 }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ padding: "10px 22px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "indian" && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
+      {tab === "us"     && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
+      {tab === "mf"     && <MutualFundsPage data={data} update={update} />}
+    </div>
+  );
+}
+
 // ─── Mutual Funds Page ────────────────────────────────────────────────────────
 function MutualFundsPage({ data, update }) {
   const mfs = data.mutualFunds || [];
@@ -7372,6 +7420,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       }
 
       setPrices(priceData);
+      // Save live prices to data so Overview portfolio card can use them
+      update(p => ({ [`${holdingsKey}_livePrices`]: priceData }));
       const failed = Object.values(priceData).filter(r => !r.ok).length;
       if (failed > 0) setPriceError(`${failed} ticker(s) not found on Yahoo Finance — use "Fix ticker" to correct the symbol.`);
       else setPriceError("");
