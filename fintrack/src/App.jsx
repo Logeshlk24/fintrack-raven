@@ -8593,6 +8593,13 @@ function PortfolioAnalysisView({ data }) {
 
   const rows = buildRows();
 
+  // Build sector total weight map for sector-by-weightage sort
+  const sectorWeight = {};
+  rows.forEach(r => {
+    const s = r.sector || "__none__";
+    sectorWeight[s] = (sectorWeight[s] || 0) + r.weight;
+  });
+
   // Sort
   function sortedRows() {
     return [...rows].sort((a, b) => {
@@ -8606,10 +8613,12 @@ function PortfolioAnalysisView({ data }) {
       }
       else if (sortCol === "symbol") { return sortAsc ? a.symbol.localeCompare(b.symbol) : b.symbol.localeCompare(a.symbol); }
       else if (sortCol === "sector") {
-        const sa = a.sector || "zzz"; const sb = b.sector || "zzz";
-        const cmp = sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
-        if (cmp !== 0) return cmp;
-        return b.weight - a.weight; // within same sector, sort by weight desc
+        // Sort sectors by their total weight (heaviest sector first)
+        const sa = a.sector || "__none__"; const sb = b.sector || "__none__";
+        const wa = sectorWeight[sa] || 0;  const wb = sectorWeight[sb] || 0;
+        if (wa !== wb) return sortAsc ? wa - wb : wb - wa;
+        // Within same sector, sort stocks by individual weight desc
+        return b.weight - a.weight;
       }
       else { av = a.weight; bv = b.weight; }
       return sortAsc ? av - bv : bv - av;
