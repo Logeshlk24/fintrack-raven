@@ -4449,7 +4449,16 @@ function LiabilitiesTab({ data, update }) {
   }, 0);
   const liabAnnual = activeLiabilities.reduce((s, l) => {
     const remaining = Math.max(0, l.totalMonths - (l.paidMonths || 0));
-    return s + l.amount * remaining;
+    const monthsInYear = Math.min(remaining, 12);
+    let total = l.amount * monthsInYear;
+    // For interest-only loans, also add capital if it falls due within next 12 months and not yet paid
+    if (l._paymentMode === "interestOnly" && !l.capitalPaid) {
+      const capitalAmt = parseFloat(l.capitalAmount) || 0;
+      if (capitalAmt > 0 && remaining <= 12) {
+        total += capitalAmt;
+      }
+    }
+    return s + total;
   }, 0);
 
   return (
