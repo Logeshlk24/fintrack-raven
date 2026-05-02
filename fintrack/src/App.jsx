@@ -70,6 +70,8 @@ const defaultData = {
   businessData: [],
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
+  liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
+  liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
 };
 
 
@@ -3113,11 +3115,58 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
           </div>
         </Card>
       ))}
+      <div style={{ gridColumn: "span 2" }}>
+        <LiabilityTypesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />
+      </div>
     </div>
   );
 }
 
-// ─── Transfer Tab ─────────────────────────────────────────────────────────────
+function LiabilityTypesSettings({ data, update, cardStyle, sectionTitle }) {
+  const DEFAULT_TYPES = ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"];
+  const types = (data.liabilityTypes && data.liabilityTypes.length > 0) ? data.liabilityTypes : DEFAULT_TYPES;
+  const [newType, setNewType] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function addType() {
+    const val = newType.trim();
+    if (!val || types.includes(val)) return;
+    update(() => ({ liabilityTypes: [...types, val] }));
+    setNewType(""); setSaved(true); setTimeout(() => setSaved(false), 1500);
+  }
+
+  function deleteType(t) {
+    if (types.length <= 1) return;
+    update(() => ({ liabilityTypes: types.filter(x => x !== t) }));
+  }
+
+  return (
+    <div style={cardStyle}>
+      {sectionTitle("🏦", "Liability Types", "Customize the liability type options shown when adding or editing liabilities.")}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        {types.map(t => (
+          <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff3e0", border: "0.5px solid #e6520033", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 }}>
+            <span style={{ fontWeight: 500, color: "#b45309" }}>{t}</span>
+            <button onClick={() => deleteType(t)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2, opacity: 0.7 }} title="Remove">✕</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>New Liability Type</label>
+          <input placeholder="e.g. Education Loan, Medical Loan…" value={newType} onChange={e => setNewType(e.target.value)} onKeyDown={e => e.key === "Enter" && addType()} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        <button onClick={addType} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+        {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ Saved</span>}
+      </div>
+      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+        💡 These types appear in the Type dropdown when adding or editing a liability. Deleting a type won't affect existing liabilities.
+      </p>
+    </div>
+  );
+}
+
+// ─── Transfer Tab ───────────────────────────────────────────────────────────── ─────────────────────────────────────────────────────────────
 function TransferTab({ data, update, accounts }) {
   const [form, setForm] = useState({ fromId: "", toId: "", amount: "", note: "", date: today() });
   const [error, setError] = useState("");
@@ -4388,11 +4437,9 @@ function LiabilitiesTab({ data, update }) {
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
                 <select value={editLiability.type} onChange={e => setEditLiability(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
-                  <option>Credit Card</option>
-                  <option>Personal Loan</option>
-                  <option>Car Loan</option>
-                  <option>Home Loan</option>
-                  <option>Other</option>
+                  {(data.liabilityTypes && data.liabilityTypes.length > 0 ? data.liabilityTypes : ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"]).map(t => (
+                    <option key={t}>{t}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -4406,6 +4453,10 @@ function LiabilitiesTab({ data, update }) {
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Payment Day</label>
                 <input type="number" min="1" max="31" value={editLiability.paymentDay} onChange={e => setEditLiability(p => ({ ...p, paymentDay: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Start Date</label>
+                <input type="date" value={editLiability.startDate || ""} onChange={e => setEditLiability(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
               </div>
               <div style={{ gridColumn: "span 2" }}>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes</label>
@@ -4430,11 +4481,9 @@ function LiabilitiesTab({ data, update }) {
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
             <select value={liabilityForm.type} onChange={e => setLiabilityForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
-              <option>Credit Card</option>
-              <option>Personal Loan</option>
-              <option>Car Loan</option>
-              <option>Home Loan</option>
-              <option>Other</option>
+              {(data.liabilityTypes && data.liabilityTypes.length > 0 ? data.liabilityTypes : ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"]).map(t => (
+                <option key={t}>{t}</option>
+              ))}
             </select>
           </div>
           <div>
