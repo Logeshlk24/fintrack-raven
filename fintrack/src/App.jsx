@@ -7356,9 +7356,27 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
   // ── USD ↔ INR currency toggle (US Stocks only) ────────────────────────────
   const isUS = holdingsKey === "usHoldings";
-  const [showUSD, setShowUSD]       = useState(false);
+  const [showUSD, setShowUSD]       = useState(true);   // USD is default for US Stocks
   const [usdRate, setUsdRate]       = useState(data.usdInrRate || 84);
   const [editingRate, setEditingRate] = useState(false);
+  const [rateLoading, setRateLoading] = useState(false);
+
+  // ── Auto-fetch live USD→INR rate on mount ──────────────────────────────────
+  useEffect(() => {
+    if (!isUS) return;
+    setRateLoading(true);
+    fetch("https://api.frankfurter.app/latest?from=USD&to=INR")
+      .then(r => r.json())
+      .then(d => {
+        const rate = d?.rates?.INR;
+        if (rate && rate > 0) {
+          setUsdRate(Math.round(rate * 100) / 100);
+          update(() => ({ usdInrRate: Math.round(rate * 100) / 100 }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRateLoading(false));
+  }, []); // eslint-disable-line
 
   // Format value in current currency mode
   function fmtVal(inrVal) {
@@ -7531,7 +7549,10 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
     let override = form.yahooOverride.trim().toUpperCase() || "";
     // Auto-clear override if it equals what auto-detection already produces (redundant)
     if (override && override === toYahooTicker(sym, form.exchange, "")) override = "";
-    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: Number(form.buyPrice), qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, addedAt: editId ? undefined : today() };
+    // If US stocks in USD mode, user entered price in $, store in ₹
+    const rawPrice = Number(form.buyPrice);
+    const storedPrice = (isUS && showUSD && usdRate > 0) ? Math.round(rawPrice * usdRate * 100) / 100 : rawPrice;
+    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: storedPrice, qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, addedAt: editId ? undefined : today() };
     if (editId) {
       update(p => ({ [holdingsKey]: (p[holdingsKey] || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
     } else {
@@ -7637,7 +7658,9 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
               {showUSD && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 9px" }}>
                   <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>1$=₹</span>
-                  {editingRate ? (
+                  {rateLoading
+                    ? <span style={{ fontSize: 11, color: "#1a6b3c", animation: "spin 1s linear infinite", display: "inline-block" }}>↻</span>
+                    : editingRate ? (
                     <input type="number" value={usdRate} onChange={e => setUsdRate(Number(e.target.value))}
                       onBlur={() => { setEditingRate(false); update(() => ({ usdInrRate: usdRate })); }}
                       onKeyDown={e => e.key === "Enter" && setEditingRate(false)}
@@ -7645,6 +7668,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                       style={{ width: 52, fontSize: 12, padding: "2px 5px", borderRadius: 5, border: "0.5px solid #1a6b3c", outline: "none", fontFamily: "inherit" }} />
                   ) : (
                     <button onClick={() => setEditingRate(true)}
+                      title="Click to edit rate manually"
                       style={{ fontSize: 12, fontWeight: 700, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}>
                       {usdRate} ✏️
                     </button>
@@ -7738,7 +7762,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 style={{ width: "100%", boxSizing: "border-box", background: form.name ? "#fff" : "#f9f9f9" }} />
             </div>
 
-            <LabelInput label="Avg Buy Price (₹)" placeholder="1500" type="number" value={form.buyPrice} onChange={v => setForm(f => ({ ...f, buyPrice: v }))} />
+            <LabelInput label={isUS && showUSD ? "Avg Buy Price ($)" : "Avg Buy Price (₹)"} placeholder={isUS && showUSD ? "e.g. 20.50" : "1500"} type="number" value={form.buyPrice} onChange={v => setForm(f => ({ ...f, buyPrice: v }))} />
             <LabelInput label="Quantity (shares)"  placeholder="10"   type="number" value={form.qty}      onChange={v => setForm(f => ({ ...f, qty: v }))} />
           </div>
 
