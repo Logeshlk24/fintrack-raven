@@ -4251,12 +4251,22 @@ function LiabilitiesTab({ data, update }) {
     paymentDay: "",
     accountId: "",
     startDate: today(),
-    notes: ""
+    notes: "",
+    interestRate: "",
   });
   
   const [editLiability, setEditLiability] = useState(null);
   const [amountMode, setAmountMode] = useState("monthly"); // "monthly" | "total"
   const [totalAmountInput, setTotalAmountInput] = useState("");
+
+  // EMI formula: P * r * (1+r)^n / ((1+r)^n - 1)
+  function calcEMI(principal, annualRatePct, months) {
+    if (!principal || !months) return 0;
+    if (!annualRatePct || annualRatePct <= 0) return principal / months;
+    const r = annualRatePct / 12 / 100;
+    const n = months;
+    return (principal * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+  }
 
   // Check and auto-create expenses based on payment dates
   useEffect(() => {
@@ -4324,11 +4334,12 @@ function LiabilitiesTab({ data, update }) {
       accountId: liabilityForm.accountId,
       startDate: liabilityForm.startDate,
       notes: liabilityForm.notes,
+      interestRate: parseFloat(liabilityForm.interestRate) || 0,
       active: true
     };
     
     update(p => ({ emis: [...(p.emis || []), newLiability] }));
-    setLiabilityForm({ name: "", type: "Credit Card", amount: "", totalMonths: "", paymentDay: "", accountId: "", startDate: today(), notes: "" });
+    setLiabilityForm({ name: "", type: "Credit Card", amount: "", totalMonths: "", paymentDay: "", accountId: "", startDate: today(), notes: "", interestRate: "" });
   }
 
   function saveEditLiability() {
@@ -4447,7 +4458,7 @@ function LiabilitiesTab({ data, update }) {
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                   <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                    {editLiability._amountMode === "total" ? "Total Amount (₹)" : "Monthly Amount (₹)"}
+                    {editLiability._amountMode === "total" ? "Total/Principal Amount (₹)" : "Monthly Amount (₹)"}
                   </label>
                   <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
                     <button onClick={() => setEditLiability(p => ({ ...p, _amountMode: "monthly", _totalInput: "" }))}
@@ -4464,17 +4475,23 @@ function LiabilitiesTab({ data, update }) {
                   <div>
                     <input type="number" placeholder="e.g. 60000" value={editLiability._totalInput || ""}
                       onChange={e => {
-                        const total = parseFloat(e.target.value) || 0;
+                        const principal = parseFloat(e.target.value) || 0;
                         const months = parseFloat(editLiability.totalMonths) || 0;
+                        const rate = parseFloat(editLiability.interestRate) || 0;
                         setEditLiability(p => ({
                           ...p, _totalInput: e.target.value,
-                          amount: total > 0 && months > 0 ? (total / months).toFixed(2) : p.amount
+                          amount: principal > 0 && months > 0 ? calcEMI(principal, rate, months).toFixed(2) : p.amount
                         }));
                       }}
                       style={{ width: "100%", boxSizing: "border-box" }} />
                     {editLiability._totalInput && editLiability.totalMonths && (
                       <div style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
                         = ₹{editLiability.amount ? Number(editLiability.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"} / month
+                        {editLiability.interestRate > 0 && (
+                          <span style={{ color: "#f59e0b", marginLeft: 6 }}>
+                            (incl. {editLiability.interestRate}% p.a.)
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -4483,14 +4500,32 @@ function LiabilitiesTab({ data, update }) {
                 )}
               </div>
               <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Interest Rate (% p.a.)</label>
+                <input type="number" placeholder="e.g. 12" value={editLiability.interestRate || ""}
+                  onChange={e => {
+                    const rate = parseFloat(e.target.value) || 0;
+                    const principal = parseFloat(editLiability._totalInput) || 0;
+                    const months = parseFloat(editLiability.totalMonths) || 0;
+                    setEditLiability(p => ({
+                      ...p, interestRate: e.target.value,
+                      ...(p._amountMode === "total" && principal > 0 && months > 0
+                        ? { amount: calcEMI(principal, rate, months).toFixed(2) }
+                        : {})
+                    }));
+                  }}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Total Months</label>
                 <input type="number" value={editLiability.totalMonths}
                   onChange={e => {
                     const months = parseFloat(e.target.value) || 0;
+                    const principal = parseFloat(editLiability._totalInput) || 0;
+                    const rate = parseFloat(editLiability.interestRate) || 0;
                     setEditLiability(p => ({
                       ...p, totalMonths: e.target.value,
-                      amount: p._amountMode === "total" && p._totalInput && months > 0
-                        ? ((parseFloat(p._totalInput)||0) / months).toFixed(2)
+                      amount: p._amountMode === "total" && principal > 0 && months > 0
+                        ? calcEMI(principal, rate, months).toFixed(2)
                         : p.amount
                     }));
                   }}
@@ -4536,7 +4571,7 @@ function LiabilitiesTab({ data, update }) {
             {/* Amount mode toggle */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                {amountMode === "monthly" ? "Monthly Amount (₹)" : "Total Amount (₹)"}
+                {amountMode === "monthly" ? "Monthly Amount (₹)" : "Total/Principal Amount (₹)"}
               </label>
               <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
                 <button onClick={() => { setAmountMode("monthly"); setTotalAmountInput(""); }}
@@ -4557,11 +4592,12 @@ function LiabilitiesTab({ data, update }) {
               <div style={{ position: "relative" }}>
                 <input type="number" placeholder="e.g. 60000" value={totalAmountInput}
                   onChange={e => {
-                    const total = parseFloat(e.target.value) || 0;
+                    const principal = parseFloat(e.target.value) || 0;
                     const months = parseFloat(liabilityForm.totalMonths) || 0;
+                    const rate = parseFloat(liabilityForm.interestRate) || 0;
                     setTotalAmountInput(e.target.value);
-                    if (total > 0 && months > 0) {
-                      setLiabilityForm(p => ({ ...p, amount: (total / months).toFixed(2) }));
+                    if (principal > 0 && months > 0) {
+                      setLiabilityForm(p => ({ ...p, amount: calcEMI(principal, rate, months).toFixed(2) }));
                     } else {
                       setLiabilityForm(p => ({ ...p, amount: "" }));
                     }
@@ -4570,24 +4606,49 @@ function LiabilitiesTab({ data, update }) {
                 {totalAmountInput && liabilityForm.totalMonths && (
                   <div style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
                     = ₹{liabilityForm.amount ? Number(liabilityForm.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"} / month
+                    {liabilityForm.interestRate > 0 && (
+                      <span style={{ color: "#f59e0b", marginLeft: 6 }}>
+                        (incl. {liabilityForm.interestRate}% p.a. interest)
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
             )}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Total Months</label>
             <input type="number" placeholder="e.g. 12" value={liabilityForm.totalMonths}
               onChange={e => {
                 const months = parseFloat(e.target.value) || 0;
-                setLiabilityForm(p => ({ ...p, totalMonths: e.target.value }));
-                // Recalculate monthly if in total mode
-                if (amountMode === "total" && totalAmountInput) {
-                  const total = parseFloat(totalAmountInput) || 0;
-                  if (total > 0 && months > 0) setLiabilityForm(p => ({ ...p, totalMonths: e.target.value, amount: (total / months).toFixed(2) }));
-                }
+                const principal = parseFloat(totalAmountInput) || 0;
+                const rate = parseFloat(liabilityForm.interestRate) || 0;
+                setLiabilityForm(p => ({
+                  ...p,
+                  totalMonths: e.target.value,
+                  ...(amountMode === "total" && principal > 0 && months > 0
+                    ? { amount: calcEMI(principal, rate, months).toFixed(2) }
+                    : {})
+                }));
+              }}
+              style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Interest Rate (% p.a.)</label>
+            <input type="number" placeholder="e.g. 12" value={liabilityForm.interestRate}
+              onChange={e => {
+                const rate = parseFloat(e.target.value) || 0;
+                const principal = parseFloat(totalAmountInput) || 0;
+                const months = parseFloat(liabilityForm.totalMonths) || 0;
+                setLiabilityForm(p => ({
+                  ...p,
+                  interestRate: e.target.value,
+                  ...(amountMode === "total" && principal > 0 && months > 0
+                    ? { amount: calcEMI(principal, rate, months).toFixed(2) }
+                    : {})
+                }));
               }}
               style={{ width: "100%", boxSizing: "border-box" }} />
           </div>
