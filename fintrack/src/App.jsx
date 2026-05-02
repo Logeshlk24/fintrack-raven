@@ -8507,8 +8507,25 @@ const CAP_COLORS   = { Large:"#1a6b3c", Mid:"#4da6ff", Small:"#f59e0b", ETF:"#8b
 const SECTOR_COLORS = ["#1a6b3c","#4da6ff","#f59e0b","#ef4444","#8b5cf6","#10b981","#f97316","#ec4899","#14b8a6","#6366f1","#84cc16","#0ea5e9","#a78bfa","#fb923c","#34d399","#f43f5e","#06b6d4"];
 
 function PortfolioAnalysisView({ data }) {
-  const indHoldings = data.portfolioHoldings || [];
-  const usHoldings  = data.usHoldings || [];
+  // Merge duplicate symbol+exchange entries into weighted avg (same logic as Portfolio tab)
+  function computeMerged(list) {
+    const map = new Map();
+    (list || []).forEach(h => {
+      const key = `${(h.symbol || "").trim().toUpperCase()}|${h.exchange || "NSE"}`;
+      if (!map.has(key)) {
+        map.set(key, { ...h, _ids: [h.id], _merged: false, _originalCount: 1 });
+      } else {
+        const ex = map.get(key);
+        const totalQty = ex.qty + h.qty;
+        const avgPrice = ((ex.buyPrice * ex.qty) + (h.buyPrice * h.qty)) / totalQty;
+        map.set(key, { ...ex, qty: totalQty, buyPrice: Math.round(avgPrice * 100) / 100, _ids: [...ex._ids, h.id], _merged: true, _originalCount: ex._originalCount + 1, yahooOverride: ex.yahooOverride || h.yahooOverride });
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  const indHoldings = computeMerged(data.portfolioHoldings || []);
+  const usHoldings  = computeMerged(data.usHoldings || []);
   const allEmpty    = indHoldings.length === 0 && usHoldings.length === 0;
 
   // Live fundamentals state: { "INFY.NS": { pe, beta, sector, cap, marketCap, ... } }
