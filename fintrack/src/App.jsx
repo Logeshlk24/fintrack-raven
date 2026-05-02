@@ -82,6 +82,56 @@ const fmt = (n) => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).
 const fmtCur = (n) => "₹" + fmt(n);
 const fmtPct = (n) => (n >= 0 ? "+" : "") + (n || 0).toFixed(2) + "%";
 
+// ── XIRR — Newton-Raphson solver ──────────────────────────────────────────────
+// cashflows: [{ amount, date }]  (negative = outflow, positive = inflow)
+function calcXIRR(cashflows, guess = 0.1, maxIter = 1000, tol = 1e-7) {
+  if (!cashflows || cashflows.length < 2) return null;
+  const t0 = cashflows[0].date;
+  const daysArr = cashflows.map(cf => (cf.date - t0) / (1000 * 60 * 60 * 24 * 365));
+  let rate = guess;
+  for (let i = 0; i < maxIter; i++) {
+    let f = 0, df = 0;
+    for (let j = 0; j < cashflows.length; j++) {
+      const t = daysArr[j];
+      const v = cashflows[j].amount / Math.pow(1 + rate, t);
+      f  += v;
+      df -= t * cashflows[j].amount / Math.pow(1 + rate, t + 1);
+    }
+    const newRate = rate - f / df;
+    if (Math.abs(newRate - rate) < tol) return isFinite(newRate) ? newRate : null;
+    rate = newRate;
+  }
+  return isFinite(rate) ? rate : null;
+}
+
+// ── CAGR — simple point-to-point ──────────────────────────────────────────────
+function calcCAGR(invested, current, buyDate) {
+  if (!buyDate || invested <= 0 || current <= 0) return null;
+  const years = (Date.now() - new Date(buyDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+  if (years < 0.01) return null;
+  return Math.pow(current / invested, 1 / years) - 1;
+}
+
+// ── Portfolio-level XIRR from multiple holdings ───────────────────────────────
+// Each holding contributes one outflow (buyDate) and one inflow (today at curVal)
+function calcPortfolioXIRR(holdings, getCurVal) {
+  const cashflows = [];
+  holdings.forEach(h => {
+    if (!h.buyDate) return;
+    const invested = (h.buyPrice || 0) * (h.qty || 0);
+    const curVal   = getCurVal(h);
+    if (!invested || curVal == null) return;
+    cashflows.push({ amount: -invested, date: new Date(h.buyDate) });
+    cashflows.push({ amount: curVal,    date: new Date() });
+  });
+  return calcXIRR(cashflows);
+}
+
+function fmtRate(r) {
+  if (r == null || !isFinite(r)) return "—";
+  return (r * 100).toFixed(2) + "%";
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GOOGLE DRIVE CONTEXT — persistent auth + upload utility used app-wide
@@ -7192,10 +7242,10 @@ function DraggableList({ items, onReorder, renderItem, keyFn }) {
 }
 
 // ─── Shared Components ────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, icon, danger, pnl, big, accent }) {
+function StatCard({ label, value, sub, icon, danger, pnl, big, accent, tooltip }) {
   const color = pnl !== undefined ? (pnl >= 0 ? "#1a6b3c" : "#d44") : danger ? "#d44" : "var(--color-text-primary)";
   return (
-    <div style={{ background: accent ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 12, padding: big ? "1.2rem" : "0.9rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+    <div title={tooltip} style={{ background: accent ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 12, padding: big ? "1.2rem" : "0.9rem", border: "0.5px solid var(--color-border-tertiary)", cursor: tooltip ? "help" : "default" }}>
       {icon && <div style={{ fontSize: 14, color: "#1a6b3c", marginBottom: 4 }}>{icon}</div>}
       <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: big ? 28 : 18, fontWeight: 500, color, fontFamily: big ? "'DM Serif Display', serif" : "inherit" }}>{value}</div>
@@ -8082,7 +8132,7 @@ function ComparativeAnalysisView({ data }) {
 function MutualFundsPage({ data, update }) {
   const mfs = data.mutualFunds || [];
   const [tab, setTab] = useState("holdings"); // "holdings" | "sip"
-  const [form, setForm] = useState({ name: "", units: "", nav: "", investedAmount: "" });
+  const [form, setForm] = useState({ name: "", units: "", nav: "", investedAmount: "", startDate: "" });
   const [showForm, setShowForm] = useState(false);
 
   // SIP Calculator state
@@ -8094,8 +8144,8 @@ function MutualFundsPage({ data, update }) {
 
   function addMF() {
     if (!form.name.trim() || !form.nav) return;
-    update(p => ({ mutualFunds: [...(p.mutualFunds || []), { id: Date.now(), ...form, units: parseFloat(form.units) || 0, nav: parseFloat(form.nav) || 0, investedAmount: parseFloat(form.investedAmount) || 0, addedAt: new Date().toISOString() }] }));
-    setForm({ name: "", units: "", nav: "", investedAmount: "" }); setShowForm(false);
+    update(p => ({ mutualFunds: [...(p.mutualFunds || []), { id: Date.now(), ...form, units: parseFloat(form.units) || 0, nav: parseFloat(form.nav) || 0, investedAmount: parseFloat(form.investedAmount) || 0, startDate: form.startDate || "", addedAt: new Date().toISOString() }] }));
+    setForm({ name: "", units: "", nav: "", investedAmount: "", startDate: "" }); setShowForm(false);
   }
   function deleteMF(id) { update(p => ({ mutualFunds: (p.mutualFunds || []).filter(m => m.id !== id) })); }
 
@@ -8121,6 +8171,28 @@ function MutualFundsPage({ data, update }) {
   const totalReturn   = currentValue - totalInvested;
   const returnPct     = totalInvested > 0 ? ((totalReturn / totalInvested) * 100).toFixed(2) : "0.00";
 
+  // ── Portfolio-level XIRR & CAGR for Mutual Funds ─────────────────────────────
+  const mfXIRR = useMemo(() => {
+    const cashflows = [];
+    mfs.forEach(m => {
+      if (!m.startDate) return;
+      const invested = m.investedAmount || 0;
+      const curVal   = (m.units || 0) * (m.nav || 0);
+      if (!invested || !curVal) return;
+      cashflows.push({ amount: -invested, date: new Date(m.startDate) });
+      cashflows.push({ amount: curVal,    date: new Date() });
+    });
+    return calcXIRR(cashflows);
+  }, [mfs]); // eslint-disable-line
+
+  const mfCAGR = useMemo(() => {
+    if (totalInvested <= 0 || currentValue <= 0) return null;
+    const dates = mfs.map(m => m.startDate).filter(Boolean).map(d => new Date(d).getTime());
+    if (!dates.length) return null;
+    const earliest = new Date(Math.min(...dates));
+    return calcCAGR(totalInvested, currentValue, earliest);
+  }, [totalInvested, currentValue, mfs]); // eslint-disable-line
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
@@ -8131,7 +8203,7 @@ function MutualFundsPage({ data, update }) {
       </div>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Total Invested", val: fmt(totalInvested), color: "var(--color-text-primary)" },
           { label: "Current Value",  val: fmt(currentValue),  color: "#1a6b3c" },
@@ -8143,6 +8215,26 @@ function MutualFundsPage({ data, update }) {
             <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
           </div>
         ))}
+        {/* XIRR */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>XIRR</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: mfXIRR != null ? (mfXIRR >= 0 ? "#1a6b3c" : "#d44") : "var(--color-text-secondary)" }}>
+            {mfXIRR != null ? fmtRate(mfXIRR) : "—"}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+            {mfXIRR != null ? "Annualised return" : "Add start dates"}
+          </div>
+        </div>
+        {/* CAGR */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>CAGR</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: mfCAGR != null ? (mfCAGR >= 0 ? "#1a6b3c" : "#d44") : "var(--color-text-secondary)" }}>
+            {mfCAGR != null ? fmtRate(mfCAGR) : "—"}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+            {mfCAGR != null ? "Since earliest fund" : "Add start dates"}
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -8159,11 +8251,12 @@ function MutualFundsPage({ data, update }) {
         <>
           {showForm && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem", marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 10 }}>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Fund Name *</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Mirae Asset Large Cap" style={{ width: "100%", boxSizing: "border-box" }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Units</label><input type="number" value={form.units} onChange={e => setForm(p => ({ ...p, units: e.target.value }))} placeholder="e.g. 100.5" style={{ width: "100%", boxSizing: "border-box" }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Current NAV (₹)</label><input type="number" value={form.nav} onChange={e => setForm(p => ({ ...p, nav: e.target.value }))} placeholder="e.g. 85.4" style={{ width: "100%", boxSizing: "border-box" }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Invested (₹)</label><input type="number" value={form.investedAmount} onChange={e => setForm(p => ({ ...p, investedAmount: e.target.value }))} placeholder="e.g. 8000" style={{ width: "100%", boxSizing: "border-box" }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label><input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} /></div>
               </div>
               <button onClick={addMF} style={{ marginTop: 10, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>+ Add Fund</button>
             </div>
@@ -8174,23 +8267,42 @@ function MutualFundsPage({ data, update }) {
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ background: "var(--color-background-secondary)" }}>
-                  {["Fund","Units","NAV","Invested","Current Value","Return","Return %",""].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>)}
+                  {["Fund","Units","NAV","Invested","Current Value","Return","Return %","CAGR","XIRR",""].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: h === "Fund" ? "left" : "right", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {mfs.map((m, i) => {
                     const cur = (m.units || 0) * (m.nav || 0);
                     const ret = cur - (m.investedAmount || 0);
                     const pct = m.investedAmount > 0 ? ((ret / m.investedAmount) * 100).toFixed(2) : "0.00";
+                    const mCAGR = m.startDate && m.investedAmount > 0 && cur > 0
+                      ? calcCAGR(m.investedAmount, cur, m.startDate) : null;
+                    const mXIRR = m.startDate && m.investedAmount > 0 && cur > 0
+                      ? calcXIRR([{ amount: -(m.investedAmount), date: new Date(m.startDate) }, { amount: cur, date: new Date() }])
+                      : null;
+                    const rateColor = r => r == null ? "var(--color-text-secondary)" : r >= 0 ? "#1a6b3c" : "#d44";
                     return (
                       <tr key={m.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
-                        <td style={{ padding: "9px 14px", fontWeight: 500 }}>{m.name}</td>
-                        <td style={{ padding: "9px 14px" }}>{m.units}</td>
-                        <td style={{ padding: "9px 14px" }}>₹{m.nav}</td>
-                        <td style={{ padding: "9px 14px" }}>{fmt(m.investedAmount || 0)}</td>
-                        <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmt(cur)}</td>
-                        <td style={{ padding: "9px 14px", color: ret >= 0 ? "#1a6b3c" : "#d44", fontWeight: 600 }}>{fmt(ret)}</td>
-                        <td style={{ padding: "9px 14px", color: parseFloat(pct) >= 0 ? "#1a6b3c" : "#d44" }}>{pct}%</td>
-                        <td style={{ padding: "9px 14px" }}><button onClick={() => deleteMF(m.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑</button></td>
+                        <td style={{ padding: "9px 14px", fontWeight: 500 }}>
+                          {m.name}
+                          {m.startDate && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>📅 Since {new Date(m.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
+                        </td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>{m.units}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>₹{m.nav}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>{fmt(m.investedAmount || 0)}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right", color: "#1a6b3c", fontWeight: 600 }}>{fmt(cur)}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right", color: ret >= 0 ? "#1a6b3c" : "#d44", fontWeight: 600 }}>{fmt(ret)}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right", color: parseFloat(pct) >= 0 ? "#1a6b3c" : "#d44" }}>{pct}%</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                          {mCAGR != null
+                            ? <span style={{ color: rateColor(mCAGR), fontWeight: 600 }}>{fmtRate(mCAGR)}</span>
+                            : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add start date">—</span>}
+                        </td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                          {mXIRR != null
+                            ? <span style={{ color: rateColor(mXIRR), fontWeight: 600 }}>{fmtRate(mXIRR)}</span>
+                            : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add start date">—</span>}
+                        </td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}><button onClick={() => deleteMF(m.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑</button></td>
                       </tr>
                     );
                   })}
@@ -8586,6 +8698,37 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
   const totalPnlPct   = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
   const dayPnl        = rows.filter(r => r.dayChange != null).reduce((s, r) => s + r.dayChange * r.qty, 0); // INR
 
+  // ── Portfolio-level XIRR & CAGR ──────────────────────────────────────────────
+  const portfolioXIRR = useMemo(() => {
+    const cashflows = [];
+    mergedHoldings.forEach(h => {
+      if (!h.buyDate) return;
+      const invested = (h.buyPrice || 0) * (h.qty || 0);
+      const ticker   = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
+      let pd = prices[ticker] || {};
+      if (!pd.price) {
+        const alt = ticker.endsWith(".NS") ? ticker.replace(".NS", ".BO") : ticker.endsWith(".BO") ? ticker.replace(".BO", ".NS") : null;
+        if (alt && prices[alt]?.ok) pd = prices[alt];
+      }
+      const priceRaw = pd.price ?? null;
+      const cur      = priceRaw != null ? (isUS ? priceRaw * usdRate : priceRaw) : null;
+      const curVal   = cur != null ? cur * h.qty : null;
+      if (!invested || curVal == null) return;
+      cashflows.push({ amount: -invested, date: new Date(h.buyDate) });
+      cashflows.push({ amount: curVal,    date: new Date() });
+    });
+    return calcXIRR(cashflows);
+  }, [mergedHoldings, prices, usdRate, isUS]); // eslint-disable-line
+
+  // Earliest buyDate among holdings for portfolio-level CAGR
+  const portfolioCAGR = useMemo(() => {
+    if (totalInvested <= 0 || totalCurVal <= 0) return null;
+    const dates = mergedHoldings.map(h => h.buyDate).filter(Boolean).map(d => new Date(d).getTime());
+    if (!dates.length) return null;
+    const earliest = new Date(Math.min(...dates));
+    return calcCAGR(totalInvested, totalCurVal, earliest);
+  }, [totalInvested, totalCurVal, mergedHoldings]); // eslint-disable-line
+
   const pnlColor = (v) => v == null ? "var(--color-text-secondary)" : v >= 0 ? "#1a6b3c" : "#d44";
 
   return (
@@ -8666,6 +8809,22 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             <StatCard label="Total P&L"      value={fmtPnlVal(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
             <StatCard label="Day's P&L"      value={fmtPnlVal(dayPnl)}         icon="📅" pnl={dayPnl} />
             <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
+            <StatCard
+              label="XIRR"
+              value={portfolioXIRR != null ? fmtRate(portfolioXIRR) : "Add buy dates"}
+              sub={portfolioXIRR != null ? "Annualised return" : "↑ Edit holdings"}
+              icon="📐"
+              pnl={portfolioXIRR != null ? portfolioXIRR : null}
+              tooltip="Extended Internal Rate of Return — accounts for timing of each investment"
+            />
+            <StatCard
+              label="CAGR"
+              value={portfolioCAGR != null ? fmtRate(portfolioCAGR) : "Add buy dates"}
+              sub={portfolioCAGR != null ? "Since earliest buy" : "↑ Edit holdings"}
+              icon="📈"
+              pnl={portfolioCAGR != null ? portfolioCAGR : null}
+              tooltip="Compound Annual Growth Rate — from your earliest purchase to today"
+            />
           </div>
         </>
       )}
@@ -8826,19 +8985,33 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
           </div>
 
           {/* Column headers */}
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 0.9fr 0.9fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
             <span>STOCK</span>
             <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>DAY CHG</span>
             <span style={{ textAlign: "right" }}>INVESTED {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>CUR VALUE {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>P&amp;L {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={{ textAlign: "right" }} title="Compound Annual Growth Rate">CAGR</span>
+            <span style={{ textAlign: "right" }} title="Extended Internal Rate of Return">XIRR</span>
             <span />
           </div>
 
           {/* Rows */}
-          {sorted.map(h => (
-            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
+          {sorted.map(h => {
+            // Per-holding CAGR
+            const hCAGR = h.buyDate && h.curVal != null
+              ? calcCAGR(h.invested, h.curVal, h.buyDate) : null;
+            // Per-holding XIRR (single investment = same as CAGR, but computed via solver for accuracy)
+            const hXIRR = h.buyDate && h.curVal != null && h.invested > 0
+              ? calcXIRR([
+                  { amount: -h.invested, date: new Date(h.buyDate) },
+                  { amount: h.curVal,    date: new Date() },
+                ])
+              : null;
+            const rateColor = (r) => r == null ? "var(--color-text-secondary)" : r >= 0 ? "#1a6b3c" : "#d44";
+            return (
+            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 0.9fr 0.9fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
               <div>
                 <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {h.symbol.replace(/\.(NS|BO)$/i, "")}
@@ -8911,14 +9084,34 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
               </div>
 
+              {/* CAGR */}
+              <div style={{ textAlign: "right" }}>
+                {hCAGR != null ? (
+                  <div>
+                    <div style={{ color: rateColor(hCAGR), fontWeight: 600, fontSize: 12 }}>{fmtRate(hCAGR)}</div>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>p.a.</div>
+                  </div>
+                ) : (
+                  <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add buy date to see CAGR">—</span>
+                )}
+              </div>
+
+              {/* XIRR */}
+              <div style={{ textAlign: "right" }}>
+                {hXIRR != null ? (
+                  <div>
+                    <div style={{ color: rateColor(hXIRR), fontWeight: 600, fontSize: 12 }}>{fmtRate(hXIRR)}</div>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>p.a.</div>
+                  </div>
+                ) : (
+                  <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add buy date to see XIRR">—</span>
+                )}
+              </div>
+
               <div style={{ textAlign: "right" }}>
                 <ThreeDotMenu
                   onEdit={() => {
                     if (h._merged && h._ids?.length > 1) {
-                      // Merged row: open a special "edit all entries" modal using the merged data
-                      // We use the merged row itself (correct total qty + weighted avg price)
-                      // and set editId to _ids[0] as the primary — saveHolding will update that
-                      // entry and delete the rest, consolidating into one clean entry
                       const mergedAsOne = { ...h, id: h._ids[0], qty: h.qty, buyPrice: h.buyPrice };
                       openEdit(mergedAsOne);
                     } else {
@@ -8937,7 +9130,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 />
               </div>
             </div>
-          ))}
+            );
+          })}
 
           {/* Footer */}
           <div style={{ padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
