@@ -7668,14 +7668,14 @@ function PortfolioHub({ data, update }) {
                   {/* 24K */}
                   <div>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 2 }}>24K (999 fine)</div>
-                    <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", color: "#b8860b" }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", color: "var(--color-text-primary)" }}>
                       {goldData.price24k.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
                     </div>
                   </div>
                   {/* 22K */}
                   <div>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 2 }}>22K (916 hallmark)</div>
-                    <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", color: "#b8860b" }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", color: "var(--color-text-primary)" }}>
                       {goldData.price22k.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
                     </div>
                   </div>
