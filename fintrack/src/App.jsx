@@ -404,7 +404,6 @@ export default function App() {
     { id: "goals",      label: "Goals",     icon: "◎" },
     { id: "business",   label: "Business",  icon: "🏢" },
     { id: "projects",   label: "Projects",  icon: "📋" },
-    { id: "profile",    label: "Profile",   icon: "👤" },
   ];
 
   return (
@@ -515,7 +514,6 @@ export default function App() {
         {page === "business" && <BusinessPage data={data} update={update} />}
         {page === "projects" && <ProjectsPage data={data} update={update} />}
         {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} />}
-        {page === "profile" && <ProfilePage data={data} update={update} />}
       </main>
     </div>
     </DriveProvider>
@@ -2389,14 +2387,14 @@ function SettingsPage({ data, update, tab, setTab }) {
   );
 
   // If current tab is "trading" but FO is off, redirect to accounts
-  const effectiveTab = (!foOn && tab === "trading") ? "accounts" : tab;
+  const effectiveTab = (!foOn && tab === "trading") ? "profile" : tab;
 
   const settingsTabs = foOn
-    ? ["trading", "accounts", "categories", "projects", "documents", "features"]
-    : ["accounts", "categories", "projects", "documents", "features"];
+    ? ["profile", "trading", "accounts", "categories", "projects", "documents", "features"]
+    : ["profile", "accounts", "categories", "projects", "documents", "features"];
   const settingsLabels = foOn
-    ? ["Trading Settings", "Account Settings", "Categories", "Projects", "Documents", "Features"]
-    :  ["Account Settings", "Categories", "Projects", "Documents", "Features"];
+    ? ["Profile", "Trading Settings", "Account Settings", "Categories", "Projects", "Documents", "Features"]
+    :  ["Profile", "Account Settings", "Categories", "Projects", "Documents", "Features"];
 
   return (
     <div>
@@ -2408,6 +2406,9 @@ function SettingsPage({ data, update, tab, setTab }) {
         setActive={setTab}
         labels={settingsLabels}
       />
+
+      {/* ── Profile Settings ── */}
+      {effectiveTab === "profile" && <ProfilePage data={data} update={update} />}
 
       {/* ── Trading Settings — only shown when F&O is on ── */}
       {foOn && effectiveTab === "trading" && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
