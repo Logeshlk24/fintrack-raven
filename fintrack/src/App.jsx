@@ -7664,37 +7664,37 @@ function PortfolioHub({ data, update }) {
               </div>
               {goldError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {goldError}</div>}
               {goldData ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ display: "flex", flexDirection: "row", gap: 24, flexWrap: "wrap" }}>
                   {[
                     { label: "24K (999 fine)",     price: goldData.price24k, change: goldData.change,              changePct: goldData.changePct },
                     { label: "22K (916 hallmark)", price: goldData.price22k, change: goldData.change * (22 / 24),  changePct: goldData.changePct },
                   ].map(k => (
-                    <div key={k.label} style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                    <div key={k.label} style={{ flex: 1, minWidth: 260, background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                       {/* Karat label + price */}
-                      <div style={{ minWidth: 160 }}>
+                      <div style={{ minWidth: 120 }}>
                         <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{k.label}</div>
                         <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--color-text-primary)" }}>
                           {k.price.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
                         </div>
                       </div>
                       {/* Day Change */}
-                      <div style={{ background: k.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 130 }}>
+                      <div style={{ background: k.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "8px 14px" }}>
                         <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change</div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: k.change >= 0 ? "#1a6b3c" : "#d44" }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: k.change >= 0 ? "#1a6b3c" : "#d44" }}>
                           {k.change >= 0 ? "▲ +" : "▼ "}{Math.abs(k.change).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                         </div>
                       </div>
                       {/* Day Change % */}
-                      <div style={{ background: k.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 110 }}>
+                      <div style={{ background: k.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "8px 14px" }}>
                         <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change %</div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: k.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: k.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
                           {k.changePct >= 0 ? "+" : ""}{Number(k.changePct).toFixed(2)}%
                         </div>
                       </div>
                     </div>
                   ))}
                   {goldUpdated && (
-                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", width: "100%" }}>
                       Updated {goldUpdated} · 15-min delayed
                     </div>
                   )}
