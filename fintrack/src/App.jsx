@@ -7763,6 +7763,172 @@ function ComparativeAnalysisView({ data }) {
   const [sortKey, setSortKey] = useState("current");
   const [sortAsc, setSortAsc] = useState(false);
 
+  // ── Benchmark chart state ─────────────────────────────────────────────────
+  const BENCHMARKS = [
+    { id: "nifty50",    label: "Nifty 50",         ticker: "%5ENSEI",   color: "#f59e0b" },
+    { id: "midcap",     label: "Nifty Midcap 150",  ticker: "NIFTY_MID_SELECT.NS", color: "#8b5cf6" },
+    { id: "smallcap",   label: "Nifty Smallcap 250",ticker: "%5ENSMIDCP",color: "#ef4444" },
+  ];
+  const [activeBenchmarks, setActiveBenchmarks] = useState(["nifty50", "midcap", "smallcap"]);
+  const [showPortfolio,    setShowPortfolio]     = useState(true);
+  const [benchData,   setBenchData]   = useState({});
+  const [benchLoading,setBenchLoading]= useState(false);
+  const [benchError,  setBenchError]  = useState("");
+  const [benchUpdated,setBenchUpdated]= useState(null);
+  const [period,      setPeriod]      = useState("10y"); // 1y 3y 5y 10y
+
+  const PERIOD_OPTIONS = [
+    { id: "1y",  label: "1Y"  },
+    { id: "3y",  label: "3Y"  },
+    { id: "5y",  label: "5Y"  },
+    { id: "10y", label: "10Y" },
+  ];
+
+  async function fetchBenchmarks() {
+    setBenchLoading(true); setBenchError("");
+    try {
+      const tickers = BENCHMARKS.map(b => b.ticker);
+      // Use your existing /api/stock-price proxy. For history we need chart data.
+      // Fetch each index history via Yahoo Finance chart API through proxy
+      const results = {};
+      await Promise.all(BENCHMARKS.map(async b => {
+        try {
+          // Map period to Yahoo interval/range
+          const rangeMap = { "1y": "1y", "3y": "3y", "5y": "5y", "10y": "10y" };
+          const res = await fetch(`/api/stock-history?ticker=${b.ticker}&range=${rangeMap[period]}&interval=1mo`);
+          if (res.ok) {
+            const d = await res.json();
+            if (d.prices && d.prices.length > 0) {
+              results[b.id] = d.prices; // [{date, close}, ...]
+            }
+          }
+        } catch (_) {}
+      }));
+      setBenchData(results);
+      setBenchUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+      if (Object.keys(results).length === 0) setBenchError("Could not load benchmark data. Make sure /api/stock-history is deployed.");
+    } catch (e) {
+      setBenchError("Failed to load benchmark data.");
+    }
+    setBenchLoading(false);
+  }
+
+  useEffect(() => { fetchBenchmarks(); }, [period]); // eslint-disable-line
+
+  // ── Normalise series to 100 at start ──────────────────────────────────────
+  function normalise(prices) {
+    if (!prices || prices.length === 0) return [];
+    const base = prices[0].close;
+    if (!base || base === 0) return [];
+    return prices.map(p => ({ date: p.date, value: (p.close / base) * 100 }));
+  }
+
+  // Portfolio growth: use earliest buyDate among holdings, map to index growth
+  // Since we don't have portfolio historical prices, we show a single point line
+  // (invested → current) normalised to 100. We derive implied CAGR for display.
+  const portfolioReturn = totalInvested > 0 ? ((totalCurrent / totalInvested) - 1) * 100 : 0;
+
+  // ── Build SVG chart ───────────────────────────────────────────────────────
+  function BenchmarkChart() {
+    const W = 900, H = 320, PAD = { top: 20, right: 20, bottom: 36, left: 52 };
+    const chartW = W - PAD.left - PAD.right;
+    const chartH = H - PAD.top  - PAD.bottom;
+
+    // Collect all normalised series
+    const series = [];
+    BENCHMARKS.filter(b => activeBenchmarks.includes(b.id)).forEach(b => {
+      const raw = benchData[b.id];
+      if (!raw) return;
+      const norm = normalise(raw);
+      if (norm.length > 0) series.push({ ...b, points: norm });
+    });
+
+    if (series.length === 0 && !benchLoading) {
+      return (
+        <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+          {benchError || "No data. Click ↻ Refresh."}
+        </div>
+      );
+    }
+    if (benchLoading && series.length === 0) {
+      return <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>Loading benchmark data…</div>;
+    }
+
+    // Gather all values + dates
+    const allValues = series.flatMap(s => s.points.map(p => p.value));
+    if (showPortfolio && totalInvested > 0) allValues.push(100, 100 + portfolioReturn);
+    const minV = Math.min(...allValues, 80);
+    const maxV = Math.max(...allValues, 120);
+    const allDates = series.length > 0 ? series[0].points.map(p => p.date) : [];
+
+    function xScale(i) { return PAD.left + (i / Math.max(allDates.length - 1, 1)) * chartW; }
+    function yScale(v) { return PAD.top + chartH - ((v - minV) / (maxV - minV)) * chartH; }
+
+    // Y grid lines
+    const yTicks = [];
+    const step = Math.ceil((maxV - minV) / 5 / 10) * 10;
+    for (let y = Math.ceil(minV / step) * step; y <= maxV; y += step) yTicks.push(y);
+
+    // X labels — show year markers
+    const xLabels = allDates.reduce((acc, d, i) => {
+      const yr = new Date(d * 1000).getFullYear();
+      if (acc.length === 0 || new Date(allDates[acc[acc.length-1].i] * 1000).getFullYear() !== yr) acc.push({ i, yr });
+      return acc;
+    }, []);
+
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+        {/* Grid */}
+        {yTicks.map(y => (
+          <g key={y}>
+            <line x1={PAD.left} x2={W - PAD.right} y1={yScale(y)} y2={yScale(y)} stroke="var(--color-border-tertiary)" strokeWidth={0.5} strokeDasharray="4 4" />
+            <text x={PAD.left - 6} y={yScale(y) + 4} textAnchor="end" fontSize={9} fill="var(--color-text-secondary)">{y}</text>
+          </g>
+        ))}
+        {/* Baseline 100 */}
+        <line x1={PAD.left} x2={W - PAD.right} y1={yScale(100)} y2={yScale(100)} stroke="#94a3b8" strokeWidth={1} strokeDasharray="6 3" />
+
+        {/* Benchmark lines */}
+        {series.map(s => {
+          const pts = s.points.map((p, i) => `${xScale(i)},${yScale(p.value)}`).join(" ");
+          const last = s.points[s.points.length - 1];
+          const lastX = xScale(s.points.length - 1);
+          const lastY = yScale(last.value);
+          return (
+            <g key={s.id}>
+              <polyline points={pts} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              <circle cx={lastX} cy={lastY} r={4} fill={s.color} />
+              <text x={lastX + 6} y={lastY + 4} fontSize={9} fill={s.color} fontWeight={600}>{last.value.toFixed(0)}</text>
+            </g>
+          );
+        })}
+
+        {/* Portfolio line — straight from 100 to (100 + portfolioReturn) across full width */}
+        {showPortfolio && totalInvested > 0 && (
+          <g>
+            <line
+              x1={PAD.left} y1={yScale(100)}
+              x2={W - PAD.right} y2={yScale(100 + portfolioReturn)}
+              stroke="#1a6b3c" strokeWidth={2.5} strokeDasharray="8 4"
+            />
+            <circle cx={W - PAD.right} cy={yScale(100 + portfolioReturn)} r={5} fill="#1a6b3c" />
+            <text x={W - PAD.right - 6} y={yScale(100 + portfolioReturn) - 7} fontSize={9} fill="#1a6b3c" fontWeight={700} textAnchor="end">
+              My Portfolio {portfolioReturn >= 0 ? "+" : ""}{portfolioReturn.toFixed(1)}%
+            </text>
+          </g>
+        )}
+
+        {/* X-axis labels */}
+        {xLabels.map(({ i, yr }) => (
+          <text key={yr} x={xScale(i)} y={H - 8} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)">{yr}</text>
+        ))}
+
+        {/* Y-axis label */}
+        <text x={12} y={PAD.top + chartH / 2} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)" transform={`rotate(-90, 12, ${PAD.top + chartH / 2})`}>Indexed (Base=100)</text>
+      </svg>
+    );
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortAsc(a => !a);
     else { setSortKey(key); setSortAsc(false); }
@@ -7794,6 +7960,75 @@ function ComparativeAnalysisView({ data }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
+
+      {/* ── Benchmark Chart ── */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+
+        {/* Header row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>📈 Portfolio vs Benchmark</div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>All series indexed to 100 at start. Portfolio shown as implied growth from your avg buy price.</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {/* Period selector */}
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 2, gap: 1 }}>
+              {PERIOD_OPTIONS.map(p => (
+                <button key={p.id} onClick={() => setPeriod(p.id)}
+                  style={{ padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: period === p.id ? "#1a6b3c" : "transparent",
+                    color: period === p.id ? "#fff" : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={fetchBenchmarks} disabled={benchLoading}
+              style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "4px 11px", cursor: "pointer", opacity: benchLoading ? 0.5 : 1 }}>
+              {benchLoading ? "↻ Loading…" : "↻ Refresh"}
+            </button>
+          </div>
+        </div>
+
+        {/* Legend + toggles */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+          {/* My Portfolio toggle */}
+          <button onClick={() => setShowPortfolio(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${showPortfolio ? "#1a6b3c" : "var(--color-border-secondary)"}`,
+              background: showPortfolio ? "#e8f5ee" : "var(--color-background-secondary)", cursor: "pointer", fontSize: 12, fontWeight: 600, color: showPortfolio ? "#1a6b3c" : "var(--color-text-secondary)" }}>
+            <svg width={24} height={4}><line x1={0} y1={2} x2={24} y2={2} stroke="#1a6b3c" strokeWidth={2.5} strokeDasharray="6 3" /></svg>
+            My Portfolio ({portfolioReturn >= 0 ? "+" : ""}{portfolioReturn.toFixed(1)}%)
+          </button>
+
+          {BENCHMARKS.map(b => {
+            const active = activeBenchmarks.includes(b.id);
+            const lastPt = benchData[b.id];
+            const lastVal = lastPt ? normalise(lastPt) : null;
+            const lastPct = lastVal && lastVal.length > 0 ? (lastVal[lastVal.length - 1].value - 100).toFixed(1) : null;
+            return (
+              <button key={b.id} onClick={() => setActiveBenchmarks(prev => prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id])}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20,
+                  border: `1.5px solid ${active ? b.color : "var(--color-border-secondary)"}`,
+                  background: active ? b.color + "18" : "var(--color-background-secondary)", cursor: "pointer",
+                  fontSize: 12, fontWeight: 600, color: active ? b.color : "var(--color-text-secondary)" }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: active ? b.color : "var(--color-border-primary)" }} />
+                {b.label}{lastPct ? ` (${lastPct >= 0 ? "+" : ""}${lastPct}%)` : ""}
+              </button>
+            );
+          })}
+          {benchUpdated && <span style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>Updated {benchUpdated} · 15-min delayed</span>}
+        </div>
+
+        {benchError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {benchError}</div>}
+
+        {/* Chart */}
+        <div style={{ overflowX: "auto" }}>
+          <BenchmarkChart />
+        </div>
+
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 8 }}>
+          ⓘ Click legend buttons to show/hide lines. "My Portfolio" shows your total return spread across the selected period (dashed green line). Benchmark data via Yahoo Finance.
+        </div>
+      </div>
 
       {/* ── Summary KPI cards ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
@@ -8185,7 +8420,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
   const holdings = data[holdingsKey] || [];
 
   // ── local UI state ──────────────────────────────────────────────────────────
-  const [form, setForm] = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: defaultExchange, yahooOverride: "" });
+  const [form, setForm] = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: defaultExchange, yahooOverride: "", buyDate: "" });
   const [editId, setEditId]     = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [prices, setPrices]     = useState({});
@@ -8378,8 +8613,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
   }, []);
 
   // ── form helpers ────────────────────────────────────────────────────────────
-  function openAdd()  { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE", yahooOverride: "" }); setEditId(null); setShowForm(true); setAcOpen(false); }
-  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE", yahooOverride: h.yahooOverride || "", _mergedIds: h._ids || [] }); setEditId(h.id); setShowForm(true); }
+  function openAdd()  { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE", yahooOverride: "", buyDate: "" }); setEditId(null); setShowForm(true); setAcOpen(false); }
+  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE", yahooOverride: h.yahooOverride || "", buyDate: h.buyDate || "", _mergedIds: h._ids || [] }); setEditId(h.id); setShowForm(true); }
   function closeForm(){ setShowForm(false); setEditId(null); setAcOpen(false); }
 
   function saveHolding() {
@@ -8392,7 +8627,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
     // If US stocks in USD mode, user entered price in $, store in ₹
     const rawPrice = Number(form.buyPrice);
     const storedPrice = (isUS && showUSD && usdRate > 0) ? Math.round(rawPrice * usdRate * 100) / 100 : rawPrice;
-    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: storedPrice, qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, addedAt: editId ? undefined : today() };
+    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: storedPrice, qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, buyDate: form.buyDate || "", addedAt: editId ? undefined : today() };
     if (editId) {
       // Check if we are editing a merged row (form may carry _ids from merged data)
       // In that case: update the primary entry and remove the duplicates
@@ -8630,6 +8865,15 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
             <LabelInput label={isUS && showUSD ? "Avg Buy Price ($)" : "Avg Buy Price (₹)"} placeholder={isUS && showUSD ? "e.g. 20.50" : "1500"} type="number" value={form.buyPrice} onChange={v => setForm(f => ({ ...f, buyPrice: v }))} />
             <LabelInput label="Quantity (shares)"  placeholder="10"   type="number" value={form.qty}      onChange={v => setForm(f => ({ ...f, qty: v }))} />
+
+            {/* Buy Date */}
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Buy Date <span style={{ fontWeight: 400, color: "#94a3b8" }}>(optional)</span></label>
+              <input type="date" value={form.buyDate}
+                onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))}
+                max={new Date().toISOString().split("T")[0]}
+                style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
           </div>
 
           {/* Hint line + Yahoo ticker preview */}
@@ -8745,6 +8989,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 </div>
                 {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
                 <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) + " (₹" + fmt(h.buyPrice) + ")" : "₹" + fmt(h.buyPrice)}</div>
+                {h.buyDate && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>📅 Bought: {new Date(h.buyDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
               </div>
 
               {/* LTP — currency-aware */}
