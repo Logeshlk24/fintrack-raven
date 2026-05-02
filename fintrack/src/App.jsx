@@ -873,7 +873,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   function OverviewWidget({ compact }) {
     if (widgetType === "none") return null;
     const box = compact
-      ? { background: "var(--color-background-primary)", borderRadius: 10, border: "0.5px solid var(--color-border-tertiary)", padding: "0.5rem 1rem", display: "flex", alignItems: "center", gap: 10 }
+      ? { display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", borderRadius: 20, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }
       : { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem", display: "flex", flexDirection: "column", justifyContent: "center" };
     if (widgetType === "clock") return (
       <div style={box}>
@@ -967,13 +967,9 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   return (
     <div>
       {/* Overview Header row: title + inline widget */}
-      <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0, flexShrink: 0 }}>Overview</h1>
-        {widgetType !== "none" && (
-          <div style={{ flex: 1, minWidth: 220, maxWidth: 420 }}>
-            <OverviewWidget compact />
-          </div>
-        )}
+        {widgetType !== "none" && <OverviewWidget compact />}
       </div>
 
       {/* Top stat row — F&O card hidden when toggle is off */}
