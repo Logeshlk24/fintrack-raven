@@ -7035,10 +7035,6 @@ function PortfolioPage({ data, update }) {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [priceError, setPriceError]   = useState("");
   const [sortBy, setSortBy]     = useState("symbol");
-  const [pfTab, setPfTab]       = useState("holdings");
-  // Fundamentals (PE, Beta) state
-  const [fundData, setFundData]   = useState({});   // { ticker: { pe, beta, mktCap, sector } }
-  const [fundLoading, setFundLoading] = useState(false);
   // Autocomplete state
   const [acResults, setAcResults]   = useState([]);
   const [acOpen, setAcOpen]         = useState(false);
@@ -7174,41 +7170,6 @@ function PortfolioPage({ data, update }) {
 
     setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
     setLoading(false);
-  }, []); // eslint-disable-line
-
-  // ── Fetch PE, Beta, Market Cap, Sector from Yahoo Finance ───────────────────
-  const fetchFundamentals = useCallback(async (holdingsList) => {
-    if (!holdingsList || holdingsList.length === 0) return;
-    setFundLoading(true);
-    const results = {};
-    await Promise.all(holdingsList.map(async (h) => {
-      const ticker = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
-      const proxies = [
-        `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=summaryDetail,defaultKeyStatistics,assetProfile`)}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=summaryDetail,defaultKeyStatistics,assetProfile`)}`,
-      ];
-      for (const url of proxies) {
-        try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-          if (!res.ok) continue;
-          const json = await res.json();
-          const q = json?.quoteSummary?.result?.[0];
-          if (!q) continue;
-          const sd = q.summaryDetail || {};
-          const ks = q.defaultKeyStatistics || {};
-          const ap = q.assetProfile || {};
-          const pe = sd.trailingPE?.raw ?? sd.forwardPE?.raw ?? null;
-          const beta = sd.beta?.raw ?? ks.beta3Year?.raw ?? null;
-          const mktCap = sd.marketCap?.raw ?? null;
-          const sector = ap.sector || ap.industry || null;
-          results[ticker] = { pe, beta, mktCap, sector };
-          break;
-        } catch (_) { continue; }
-      }
-      if (!results[ticker]) results[ticker] = { pe: null, beta: null, mktCap: null, sector: null };
-    }));
-    setFundData(results);
-    setFundLoading(false);
   }, []); // eslint-disable-line
 
   // Fetch prices on mount, when holdings count changes, OR when any override changes
@@ -7369,19 +7330,7 @@ function PortfolioPage({ data, update }) {
         </>
       )}
 
-      {/* Sub-tab bar */}
-      {holdings.length > 0 && (
-        <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20, gap: 0 }}>
-          {[["holdings","📋 Holdings"],["analysis","📊 Analysis"]].map(([v,l]) => (
-            <button key={v} onClick={() => { setPfTab(v); if (v === "analysis" && mergedHoldings.length > 0 && Object.keys(fundData).length === 0) fetchFundamentals(mergedHoldings); }}
-              style={{ padding: "9px 20px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: pfTab === v ? 600 : 400, background: "transparent", color: pfTab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: pfTab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1, transition: "all 0.15s" }}>
-              {l}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Add/Edit form — shown regardless of tab */}
+      {/* Add/Edit form */}
       {showForm && (
         <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
           <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
@@ -7512,7 +7461,7 @@ function PortfolioPage({ data, update }) {
       )}
 
       {/* Holdings table */}
-      {holdings.length > 0 && pfTab === "holdings" && (
+      {holdings.length > 0 && (
         <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontWeight: 500, fontSize: 14 }}>
@@ -7631,236 +7580,6 @@ function PortfolioPage({ data, update }) {
           </div>
         </div>
       )}
-
-      {/* ── ANALYSIS TAB ──────────────────────────────────────────────────── */}
-      {holdings.length > 0 && pfTab === "analysis" && (() => {
-        // Compute totals for analysis
-        const totalVal = rows.reduce((s,r) => s + (r.curVal ?? r.invested), 0) || 1;
-
-        // 1) Indian vs US split
-        const inRows = rows.filter(r => r.exchange === "NSE" || r.exchange === "BSE");
-        const usRows = rows.filter(r => r.exchange === "US");
-        const inVal  = inRows.reduce((s,r) => s + (r.curVal ?? r.invested), 0);
-        const usVal  = usRows.reduce((s,r) => s + (r.curVal ?? r.invested), 0);
-        const inPct  = totalVal > 0 ? (inVal / totalVal) * 100 : 0;
-        const usPct  = totalVal > 0 ? (usVal / totalVal) * 100 : 0;
-
-        // 2) Market Cap buckets (from fundData)
-        const MCbuckets = { "Large Cap": 0, "Mid Cap": 0, "Small Cap": 0, "Unknown": 0 };
-        rows.forEach(r => {
-          const fd = fundData[r.ticker];
-          const v = r.curVal ?? r.invested;
-          if (!fd || fd.mktCap == null) { MCbuckets["Unknown"] += v; return; }
-          const mc = fd.mktCap;
-          if (mc >= 2e11) MCbuckets["Large Cap"] += v;
-          else if (mc >= 5e9) MCbuckets["Mid Cap"] += v;
-          else MCbuckets["Small Cap"] += v;
-        });
-
-        // 3) Sector buckets
-        const secBuckets = {};
-        rows.forEach(r => {
-          const fd = fundData[r.ticker];
-          const sec = fd?.sector || "Other";
-          secBuckets[sec] = (secBuckets[sec] || 0) + (r.curVal ?? r.invested);
-        });
-
-        // 4) PE & Beta weighted averages (Indian & US separately)
-        let inPeSum=0, inPeW=0, inBetaSum=0, inBetaW=0;
-        let usPeSum=0, usPeW=0, usBetaSum=0, usBetaW=0;
-        rows.forEach(r => {
-          const fd = fundData[r.ticker];
-          const v = r.curVal ?? r.invested;
-          const isUS = r.exchange === "US";
-          if (fd?.pe   != null && fd.pe   > 0 && fd.pe   < 1000) { isUS ? (usPeSum   += fd.pe*v, usPeW   += v) : (inPeSum   += fd.pe*v, inPeW   += v); }
-          if (fd?.beta != null && Math.abs(fd.beta) < 10)         { isUS ? (usBetaSum += fd.beta*v, usBetaW += v) : (inBetaSum += fd.beta*v, inBetaW += v); }
-        });
-        const inAvgPE   = inPeW   > 0 ? inPeSum   / inPeW   : null;
-        const inAvgBeta = inBetaW > 0 ? inBetaSum / inBetaW : null;
-        const usAvgPE   = usPeW   > 0 ? usPeSum   / usPeW   : null;
-        const usAvgBeta = usBetaW > 0 ? usBetaSum / usBetaW : null;
-        const betaLabel = (b) => b == null ? "—" : b < 0.8 ? "Low" : b < 1.2 ? "Moderate" : "High";
-
-        const COLORS = ["#1a6b3c","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#10b981","#f97316","#ec4899","#14b8a6","#6d28d9","#84cc16","#a78bfa"];
-
-        // SVG Donut helper
-        function Donut({ buckets, size = 140, title, subtitle }) {
-          const entries = Object.entries(buckets).filter(([,v]) => v > 0);
-          const total   = entries.reduce((s,[,v]) => s+v, 0) || 1;
-          const R=46, r=28, cx=70, cy=70;
-          let angle = -Math.PI / 2;
-          const slices = entries.map(([k,v],i) => {
-            const pct = v / total;
-            const sweep = pct * 2 * Math.PI;
-            const x1=cx+R*Math.cos(angle), y1=cy+R*Math.sin(angle);
-            const x2=cx+R*Math.cos(angle+sweep), y2=cy+R*Math.sin(angle+sweep);
-            const ix1=cx+r*Math.cos(angle), iy1=cy+r*Math.sin(angle);
-            const ix2=cx+r*Math.cos(angle+sweep), iy2=cy+r*Math.sin(angle+sweep);
-            const large = sweep > Math.PI ? 1 : 0;
-            const d = `M${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} L${ix2.toFixed(2)},${iy2.toFixed(2)} A${r},${r} 0 ${large},0 ${ix1.toFixed(2)},${iy1.toFixed(2)} Z`;
-            angle += sweep;
-            return { k, pct: (pct*100).toFixed(1), d, color: COLORS[i % COLORS.length] };
-          });
-          if (entries.length === 0) {
-            return (
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flex:1, padding:"1rem" }}>
-                <div style={{ fontSize:13, color:"var(--color-text-secondary)", textAlign:"center" }}>
-                  {fundLoading ? "Loading…" : "1 items"}
-                </div>
-              </div>
-            );
-          }
-          return (
-            <div style={{ display:"flex", alignItems:"center", gap:16, flex:1 }}>
-              <svg width={size} height={size} viewBox="0 0 140 140" style={{ flexShrink:0 }}>
-                {slices.length === 1
-                  ? <circle cx={cx} cy={cy} r={R} fill={slices[0].color}/>
-                  : slices.map((s,i) => <path key={i} d={s.d} fill={s.color}/>)
-                }
-                {slices.length === 1 && <circle cx={cx} cy={cy} r={r} fill="var(--color-background-primary)"/>}
-                <text x={cx} y={cy-4}  textAnchor="middle" fontSize={entries.length} fill="var(--color-text-secondary)" style={{fontSize:9}}>{entries.length} items</text>
-              </svg>
-              <div style={{ fontSize:12, lineHeight:1.8 }}>
-                {slices.map((s,i) => (
-                  <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    <span style={{ width:8, height:8, borderRadius:2, background:s.color, display:"inline-block", flexShrink:0 }}/>
-                    <span style={{ color: i===0 ? s.color : "var(--color-text-secondary)", fontWeight: i===0?600:400 }}>{s.pct}%</span>
-                    <span style={{ color:"var(--color-text-secondary)", fontSize:11 }}>{s.k}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        }
-
-        return (
-          <div>
-            {/* Row 1: Indian vs US + Market Cap */}
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
-              {/* Indian vs US */}
-              <div style={{ background:"var(--color-background-primary)", borderRadius:12, border:"0.5px solid var(--color-border-tertiary)", padding:"1rem" }}>
-                <div style={{ fontWeight:500, fontSize:13, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
-                  🌏 Indian vs US Holdings
-                </div>
-                <Donut
-                  buckets={{ "Indian (NSE/BSE)": inVal, "US (NYSE/NASDAQ)": usVal }}
-                  title="Indian vs US"
-                />
-                <div style={{ marginTop:10, display:"flex", gap:16 }}>
-                  <div>
-                    <div style={{ fontSize:13, fontWeight:600, color:"#1a6b3c" }}>{inPct.toFixed(1)}%</div>
-                    <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{inRows.length} stocks</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize:13, fontWeight:600, color:"#3b82f6" }}>{usPct.toFixed(1)}%</div>
-                    <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{usRows.length} stocks</div>
-                  </div>
-                </div>
-              </div>
-              {/* Market Cap */}
-              <div style={{ background:"var(--color-background-primary)", borderRadius:12, border:"0.5px solid var(--color-border-tertiary)", padding:"1rem" }}>
-                <div style={{ fontWeight:500, fontSize:13, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
-                  🪣 Market Cap Allocation
-                </div>
-                {fundLoading
-                  ? <div style={{ fontSize:13, color:"var(--color-text-secondary)", padding:"2rem 0", textAlign:"center" }}>Loading fundamentals…</div>
-                  : <Donut buckets={MCbuckets} title="Market Cap" />
-                }
-              </div>
-            </div>
-
-            {/* Row 2: Sector + PE & Beta */}
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
-              {/* Sector */}
-              <div style={{ background:"var(--color-background-primary)", borderRadius:12, border:"0.5px solid var(--color-border-tertiary)", padding:"1rem" }}>
-                <div style={{ fontWeight:500, fontSize:13, marginBottom:10 }}>📊 Sector Allocation</div>
-                {fundLoading
-                  ? <div style={{ fontSize:13, color:"var(--color-text-secondary)", padding:"2rem 0", textAlign:"center" }}>Loading…</div>
-                  : <Donut buckets={secBuckets} title="Sector" />
-                }
-              </div>
-              {/* PE & Beta */}
-              <div style={{ background:"var(--color-background-primary)", borderRadius:12, border:"0.5px solid var(--color-border-tertiary)", padding:"1rem" }}>
-                <div style={{ fontWeight:500, fontSize:13, marginBottom:14 }}>📐 Portfolio PE &amp; Beta</div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10 }}>
-                  {[
-                    { flag:"🇮🇳", label:"Avg PE",   val: inAvgPE   != null ? inAvgPE.toFixed(1)  : "—", sub:"Weighted avg (Indian)" },
-                    { flag:"🇮🇳", label:"Avg Beta", val: inAvgBeta != null ? betaLabel(inAvgBeta) : "—", sub: inAvgBeta != null ? inAvgBeta.toFixed(2) : "—" },
-                    { flag:"🇺🇸", label:"Avg PE",   val: usAvgPE   != null ? usAvgPE.toFixed(1)  : "—", sub:"Weighted avg (US)" },
-                    { flag:"🇺🇸", label:"Avg Beta", val: usAvgBeta != null ? betaLabel(usAvgBeta) : "—", sub: usAvgBeta != null ? usAvgBeta.toFixed(2) : "—" },
-                  ].map((c,i) => (
-                    <div key={i} style={{ textAlign:"center" }}>
-                      <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:4 }}>{c.flag} {c.label}</div>
-                      <div style={{ borderBottom:"2px solid #1a6b3c", width:32, margin:"0 auto 6px" }}/>
-                      <div style={{ fontSize:15, fontWeight:600 }}>{c.val}</div>
-                      <div style={{ fontSize:10, color:"var(--color-text-secondary)", marginTop:2 }}>{c.sub}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontSize:10, color:"var(--color-text-secondary)", marginTop:12, display:"flex", alignItems:"center", gap:4 }}>
-                  ℹ️ PE &amp; Beta fetched live from Yahoo Finance. Click ↻ Refresh to update.
-                </div>
-              </div>
-            </div>
-
-            {/* Stock-Level Fundamentals table */}
-            <div style={{ background:"var(--color-background-primary)", borderRadius:12, border:"0.5px solid var(--color-border-tertiary)", overflow:"hidden" }}>
-              <div style={{ padding:"0.75rem 1rem", borderBottom:"0.5px solid var(--color-border-tertiary)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span style={{ fontWeight:500, fontSize:14 }}>📋 Stock-Level Fundamentals</span>
-                <button onClick={() => fetchFundamentals(mergedHoldings)} disabled={fundLoading}
-                  style={{ fontSize:12, padding:"4px 12px", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, background:"transparent", cursor:"pointer", color:"var(--color-text-secondary)", opacity: fundLoading ? 0.6:1 }}>
-                  {fundLoading ? "Loading…" : "↻ Refresh"}
-                </button>
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"2fr 1.2fr 1fr 1fr 1fr 1fr 1fr", padding:"6px 1rem", background:"var(--color-background-secondary)", fontSize:11, color:"var(--color-text-secondary)", fontWeight:500 }}>
-                <span>STOCK</span>
-                <span>SECTOR</span>
-                <span style={{ textAlign:"right" }}>WEIGHT</span>
-                <span style={{ textAlign:"right" }}>MARKET CAP</span>
-                <span style={{ textAlign:"right" }}>P/E</span>
-                <span style={{ textAlign:"right" }}>BETA</span>
-                <span style={{ textAlign:"right" }}>DAY CHG</span>
-              </div>
-              {sorted.map(h => {
-                const fd = fundData[h.ticker] || {};
-                const val = h.curVal ?? h.invested;
-                const wt  = totalVal > 0 ? (val/totalVal)*100 : 0;
-                const wtBar = Math.max(2, Math.min(100, wt));
-                const mc = fd.mktCap;
-                const mcLabel = mc == null ? "—" : mc >= 1e12 ? (mc/1e12).toFixed(1)+"T" : mc >= 1e9 ? (mc/1e9).toFixed(1)+"B" : mc >= 1e7 ? (mc/1e7).toFixed(1)+"Cr" : (mc/1e5).toFixed(0)+"L";
-                return (
-                  <div key={h._ids?.[0] ?? h.id} style={{ display:"grid", gridTemplateColumns:"2fr 1.2fr 1fr 1fr 1fr 1fr 1fr", padding:"8px 1rem", borderTop:"0.5px solid var(--color-border-tertiary)", alignItems:"center", fontSize:12 }}>
-                    <div>
-                      <div style={{ fontWeight:500 }}>{h.symbol.replace(/\.(NS|BO)$/i,"")}</div>
-                      {h.name && h.name !== h.symbol && <div style={{ fontSize:10, color:"var(--color-text-secondary)" }}>{h.name}</div>}
-                    </div>
-                    <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{fd.sector || (fundLoading?"…":"—")}</div>
-                    <div style={{ textAlign:"right" }}>
-                      <div style={{ marginBottom:2 }}>{wt.toFixed(1)}%</div>
-                      <div style={{ height:3, background:"var(--color-background-secondary)", borderRadius:2, overflow:"hidden" }}>
-                        <div style={{ width:`${wtBar}%`, height:"100%", background:"#1a6b3c", borderRadius:2 }}/>
-                      </div>
-                    </div>
-                    <div style={{ textAlign:"right", fontSize:11 }}>{mcLabel}</div>
-                    <div style={{ textAlign:"right" }}>{fd.pe != null ? fd.pe.toFixed(1) : (fundLoading?"…":"—")}</div>
-                    <div style={{ textAlign:"right" }}>{fd.beta != null ? fd.beta.toFixed(2) : (fundLoading?"…":"—")}</div>
-                    <div style={{ textAlign:"right", color: h.dayChangePct != null ? (h.dayChangePct>=0?"#1a6b3c":"#d44") : "var(--color-text-secondary)" }}>
-                      {h.dayChangePct != null ? `${h.dayChangePct>=0?"▲":"▼"} ${Math.abs(h.dayChangePct).toFixed(2)}%` : "—"}
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ padding:"6px 1rem", borderTop:"0.5px solid var(--color-border-tertiary)", fontSize:10, color:"var(--color-text-secondary)" }}>
-                Fundamentals via Yahoo Finance · Click column headers to sort · For informational purposes only
-              </div>
-            </div>
-
-            <div style={{ marginTop:12, fontSize:11, color:"var(--color-text-secondary)" }}>
-              ℹ️ PE &amp; Beta fetched live from Yahoo Finance. Click ↻ Refresh to update.
-            </div>
-          </div>
-        );
-      })()}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
