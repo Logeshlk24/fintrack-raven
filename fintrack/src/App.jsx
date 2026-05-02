@@ -8449,11 +8449,14 @@ function DividendView({ data }) {
     return s;
   }
 
+  // Keep a ref so fetchDividends always sees the latest indHoldings (avoids stale closure on mount)
+  const indHoldingsRef = useRef(indHoldings);
+  useEffect(() => { indHoldingsRef.current = indHoldings; }, [indHoldings]);
+
   async function fetchDividends() {
+    const holdings = indHoldingsRef.current;
     setLoading(true); setError(""); setLoaded(false);
-    const allH = [
-      ...indHoldings.map(h => ({ ...h, region: "IN" })),
-    ];
+    const allH = holdings.map(h => ({ ...h, region: "IN" }));
     if (!allH.length) { setLoading(false); setLoaded(true); return; }
 
     const tickers = [...new Set(allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
@@ -8480,8 +8483,16 @@ function DividendView({ data }) {
     setLastUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
   }
 
-  // Auto-fetch on mount
-  useEffect(() => { fetchDividends(); }, []); // eslint-disable-line
+  // Auto-fetch once indHoldings actually has data (Firestore loads async, so [] on first render)
+  const prevLenRef = useRef(0);
+  useEffect(() => {
+    if (indHoldings.length > 0 && prevLenRef.current === 0) {
+      prevLenRef.current = indHoldings.length;
+      fetchDividends();
+    } else if (indHoldings.length === 0 && !loaded) {
+      setLoaded(true); // truly empty portfolio
+    }
+  }, [indHoldings.length]); // eslint-disable-line
 
   // Build rows — Indian stocks only for Dividend view
   const allH = [
