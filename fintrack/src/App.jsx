@@ -7353,6 +7353,30 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
   const [lastRefresh, setLastRefresh] = useState(null);
   const [priceError, setPriceError]   = useState("");
   const [sortBy, setSortBy]     = useState("symbol");
+
+  // ── USD ↔ INR currency toggle (US Stocks only) ────────────────────────────
+  const isUS = holdingsKey === "usHoldings";
+  const [showUSD, setShowUSD]       = useState(false);
+  const [usdRate, setUsdRate]       = useState(data.usdInrRate || 84);
+  const [editingRate, setEditingRate] = useState(false);
+
+  // Format value in current currency mode
+  function fmtVal(inrVal) {
+    if (!isUS || !showUSD) return fmtCur(inrVal);
+    if (inrVal == null || inrVal === 0) return "$0.00";
+    return "$" + (inrVal / usdRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtPnlVal(inrVal) {
+    if (!isUS || !showUSD) {
+      if (inrVal == null) return "—";
+      return (inrVal >= 0 ? "+" : "") + fmtCur(inrVal);
+    }
+    if (inrVal == null) return "—";
+    const usd = inrVal / usdRate;
+    return (usd >= 0 ? "+" : "") + "$" + Math.abs(usd).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const curSymbol = isUS && showUSD ? "$" : "₹";
+
   // Autocomplete state
   const [acResults, setAcResults]   = useState([]);
   const [acOpen, setAcOpen]         = useState(false);
@@ -7590,7 +7614,35 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add your demat holdings to get started"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* USD ↔ INR toggle — only for US Stocks */}
+          {isUS && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 10px" }}>
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>₹ INR</span>
+              <button onClick={() => setShowUSD(p => !p)}
+                style={{ width: 38, height: 20, borderRadius: 10, border: "none", cursor: "pointer", padding: 0, background: showUSD ? "#1a6b3c" : "#ccc", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: showUSD ? 20 : 2, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+              </button>
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>$ USD</span>
+              {showUSD && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4, borderLeft: "0.5px solid var(--color-border-secondary)", paddingLeft: 8 }}>
+                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>1$=₹</span>
+                  {editingRate ? (
+                    <input type="number" value={usdRate} onChange={e => setUsdRate(Number(e.target.value))}
+                      onBlur={() => { setEditingRate(false); update(() => ({ usdInrRate: usdRate })); }}
+                      onKeyDown={e => e.key === "Enter" && setEditingRate(false)}
+                      autoFocus
+                      style={{ width: 54, fontSize: 12, padding: "2px 5px", borderRadius: 5, border: "0.5px solid #1a6b3c", outline: "none", fontFamily: "inherit" }} />
+                  ) : (
+                    <button onClick={() => setEditingRate(true)}
+                      style={{ fontSize: 12, fontWeight: 600, color: "#1a6b3c", background: "#e8f5ee", border: "0.5px solid #1a6b3c44", borderRadius: 5, padding: "2px 7px", cursor: "pointer" }}>
+                      {usdRate} ✏️
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <button onClick={() => fetchPrices(mergedHoldings)} disabled={loading || mergedHoldings.length === 0}
             style={{ padding: "7px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.6 : 1 }}>
             <span style={{ display: "inline-block", animation: loading ? "spin 1s linear infinite" : "none" }}>↻</span>
@@ -7612,10 +7664,10 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
-            <StatCard label="Total Invested" value={fmtCur(totalInvested)} icon="💰" />
-            <StatCard label="Current Value"  value={fmtCur(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
-            <StatCard label="Total P&L"      value={fmtCur(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
-            <StatCard label="Day's P&L"      value={fmtCur(dayPnl)}         icon="📅" pnl={dayPnl} />
+            <StatCard label={`Total Invested (${isUS && showUSD ? "USD" : "INR"})`} value={fmtVal(totalInvested)} icon="💰" />
+            <StatCard label={`Current Value (${isUS && showUSD ? "USD" : "INR"})`}  value={fmtVal(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
+            <StatCard label="Total P&L"      value={fmtPnlVal(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
+            <StatCard label="Day's P&L"      value={fmtPnlVal(dayPnl)}         icon="📅" pnl={dayPnl} />
             <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
           </div>
         </>
@@ -7770,11 +7822,11 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
           {/* Column headers */}
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
             <span>STOCK</span>
-            <span style={{ textAlign: "right" }}>LTP</span>
+            <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>DAY CHG</span>
-            <span style={{ textAlign: "right" }}>INVESTED</span>
-            <span style={{ textAlign: "right" }}>CUR VALUE</span>
-            <span style={{ textAlign: "right" }}>P&amp;L</span>
+            <span style={{ textAlign: "right" }}>INVESTED {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={{ textAlign: "right" }}>CUR VALUE {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={{ textAlign: "right" }}>P&amp;L {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span />
           </div>
 
@@ -7792,18 +7844,18 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                   )}
                 </div>
                 {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
-                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ ₹{fmt(h.buyPrice)}</div>
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + fmt(h.buyPrice)}</div>
               </div>
 
-              {/* LTP — show ticker used, fix button on failure */}
+              {/* LTP — currency-aware */}
               <div style={{ textAlign: "right" }}>
                 {loading
                   ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
                   : h.cur != null
                     ? <div>
-                        {holdingsKey === "usHoldings" && h.curUsd != null
+                        {isUS && showUSD
                           ? <div>
-                              <span style={{ fontWeight: 500 }}>${h.curUsd.toFixed(2)}</span>
+                              <span style={{ fontWeight: 500 }}>${(h.cur / usdRate).toFixed(2)}</span>
                               <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>= ₹{fmt(h.cur)}</div>
                             </div>
                           : <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
@@ -7837,16 +7889,16 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 {h.dayChangePct != null ? <>{h.dayChangePct >= 0 ? "▲" : "▼"} {Math.abs(h.dayChangePct).toFixed(2)}%</> : "—"}
               </div>
 
-              <div style={{ textAlign: "right" }}>{fmtCur(h.invested)}</div>
+              <div style={{ textAlign: "right" }}>{fmtVal(h.invested)}</div>
 
               <div style={{ textAlign: "right" }}>
-                {h.curVal != null ? fmtCur(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                {h.curVal != null ? fmtVal(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
               </div>
 
               <div style={{ textAlign: "right" }}>
                 {h.pnl != null ? (
                   <div>
-                    <div style={{ color: pnlColor(h.pnl), fontWeight: 500 }}>{h.pnl >= 0 ? "+" : ""}{fmtCur(h.pnl)}</div>
+                    <div style={{ color: pnlColor(h.pnl), fontWeight: 500 }}>{fmtPnlVal(h.pnl)}</div>
                     <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
                   </div>
                 ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
