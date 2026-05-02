@@ -923,7 +923,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   function OverviewWidget({ compact }) {
     if (widgetType === "none") return null;
     const box = compact
-      ? { display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", borderRadius: 20, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }
+      ? { display: "flex", alignItems: "center", gap: 8, padding: "4px 16px", borderRadius: 20, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }
       : { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem", display: "flex", flexDirection: "column", justifyContent: "center" };
     if (widgetType === "clock") return (
       <div style={box}>
@@ -939,7 +939,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
     );
     if (widgetType === "greeting") return (
       <div style={box}>
-        <div style={{ fontSize: 28, fontWeight: 400, fontFamily: "'DM Serif Display', serif", color: "#1a6b3c", whiteSpace: "nowrap" }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
+        <div style={{ fontSize: 26, fontWeight: 400, fontFamily: "'DM Serif Display', serif", color: "var(--color-text-primary)", whiteSpace: "nowrap", lineHeight: 1 }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
       </div>
     );
     if (widgetType === "quote") return (
