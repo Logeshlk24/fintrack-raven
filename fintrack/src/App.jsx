@@ -8503,24 +8503,89 @@ function PortfolioAnalysisView({ data }) {
     return s;
   }
 
-  // Fetch fundamentals for all holdings in one batch call
+  // ── Fetch fundamentals directly from browser (avoids Vercel server-side CORS blocks)
+  // Uses Yahoo Finance quoteSummary via corsproxy.io — runs client-side so it works
+  async function fetchOneFundamental(ticker) {
+    const modules = "summaryDetail,defaultKeyStatistics,assetProfile,price";
+    const proxyUrl = "https://corsproxy.io/?url=" + encodeURIComponent(
+      "https://query1.finance.yahoo.com/v10/finance/quoteSummary/" + ticker + "?modules=" + modules
+    );
+    try {
+      const res = await fetch(proxyUrl, { headers: { "Accept": "application/json" } });
+      if (!res.ok) return { ok: false, ticker };
+      const json = await res.json();
+      const r = json && json.quoteSummary && json.quoteSummary.result && json.quoteSummary.result[0];
+      if (!r) return { ok: false, ticker };
+
+      const priceData = r.price                || {};
+      const summary   = r.summaryDetail        || {};
+      const keyStats  = r.defaultKeyStatistics || {};
+      const profile   = r.assetProfile         || {};
+
+      const currency     = priceData.currency || "INR";
+      const quoteType    = priceData.quoteType || "";
+      const isETF        = quoteType === "ETF";
+      const marketCapRaw = (priceData.marketCap && priceData.marketCap.raw) || (summary.marketCap && summary.marketCap.raw) || null;
+
+      const pe   = (summary.trailingPE && summary.trailingPE.raw)
+                || (summary.forwardPE && summary.forwardPE.raw)
+                || (keyStats.forwardPE && keyStats.forwardPE.raw)
+                || null;
+      const beta = (keyStats.beta && keyStats.beta.raw)
+                || (summary.beta && summary.beta.raw)
+                || null;
+
+      function classifyCap(raw, cur) {
+        if (!raw) return null;
+        if (cur === "INR") {
+          const cr = raw / 1e7;
+          if (cr >= 20000) return "Large";
+          if (cr >= 5000)  return "Mid";
+          return "Small";
+        }
+        const b = raw / 1e9;
+        if (b >= 10) return "Large";
+        if (b >= 2)  return "Mid";
+        return "Small";
+      }
+
+      return {
+        ok:        true,
+        ticker,
+        name:      priceData.longName || priceData.shortName || null,
+        pe:        pe   != null ? +Number(pe).toFixed(2)   : null,
+        beta:      beta != null ? +Number(beta).toFixed(2) : null,
+        sector:    isETF ? "ETF" : (profile.sector   || null),
+        industry:  isETF ? "ETF" : (profile.industry || null),
+        cap:       isETF ? "ETF" : classifyCap(marketCapRaw, currency),
+        marketCap: marketCapRaw,
+      };
+    } catch (e) {
+      return { ok: false, ticker };
+    }
+  }
+
   async function fetchFundamentals() {
     if (allEmpty) return;
     setFundLoading(true);
-    const all = [...indHoldings, ...usHoldings];
+    const all     = [...indHoldings, ...usHoldings];
     const tickers = [...new Set(all.map(toTicker))];
-    try {
-      const res = await fetch(`/api/stock-fundamentals?ticker=${tickers.map(encodeURIComponent).join(",")}`);
-      if (res.ok) {
-        const d = await res.json();
-        setFundMap(d);
-      }
-    } catch {}
+
+    const result = {};
+    // Fetch in batches of 4 concurrently, 300ms between batches
+    for (let i = 0; i < tickers.length; i += 4) {
+      const batch = tickers.slice(i, i + 4);
+      const batchResults = await Promise.all(batch.map(function(t) { return fetchOneFundamental(t); }));
+      batchResults.forEach(function(r, idx) { result[batch[idx]] = r; });
+      if (i + 4 < tickers.length) await new Promise(function(resolve) { setTimeout(resolve, 300); });
+    }
+
+    setFundMap(result);
     setFundLoading(false);
     setFundLoaded(true);
   }
 
-  React.useEffect(() => { fetchFundamentals(); }, [indHoldings.length, usHoldings.length]);
+  React.useEffect(function() { fetchFundamentals(); }, [indHoldings.length, usHoldings.length]); // eslint-disable-line
 
   function holdingValue(h) { return (h.buyPrice || 0) * (h.qty || 0); }
 
