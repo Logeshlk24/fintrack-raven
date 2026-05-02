@@ -3641,9 +3641,10 @@ function AnalysisTab({ data }) {
 
   // ── Main render ────────────────────────────────────────────────────────────
   const views=[
-    {id:"graph",   label:"📈 Income vs Expense"},
-    {id:"pie",     label:"🥧 Category Breakdown"},
-    {id:"calendar",label:"📅 Calendar"},
+    {id:"graph",     label:"📈 Income vs Expense"},
+    {id:"pie",       label:"🥧 Category Breakdown"},
+    {id:"calendar",  label:"📅 Calendar"},
+    {id:"portfolio", label:"📊 Portfolio Analysis"},
   ];
   return (
     <div style={{marginTop:16}}>
@@ -3657,7 +3658,7 @@ function AnalysisTab({ data }) {
             {v.label}
           </button>
         ))}
-        {view!=="calendar" && (
+        {view!=="calendar" && view!=="portfolio" && (
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
             {["1M","3M","6M","1Y","All"].map(p=>(
               <button key={p} onClick={()=>setPeriod(p)}
@@ -3673,6 +3674,7 @@ function AnalysisTab({ data }) {
         {view==="graph"    && <GraphView/>}
         {view==="pie"      && <PieView/>}
         {view==="calendar" && <CalendarView/>}
+        {view==="portfolio" && <PortfolioAnalysisView data={data} />}
       </div>
     </div>
   );
@@ -8469,6 +8471,496 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       )}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO ANALYSIS VIEW — Market Cap, Sector, IN/US Split, PE & Beta
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// NSE symbol → { sector, cap, pe, beta }  (static baseline data, ~150 stocks)
+const STOCK_META = {
+  // Large Cap — IT
+  INFY:    { sector:"IT",           cap:"Large", pe:27,  beta:0.62 },
+  TCS:     { sector:"IT",           cap:"Large", pe:31,  beta:0.55 },
+  HCLTECH: { sector:"IT",           cap:"Large", pe:26,  beta:0.58 },
+  WIPRO:   { sector:"IT",           cap:"Large", pe:22,  beta:0.60 },
+  TECHM:   { sector:"IT",           cap:"Large", pe:29,  beta:0.72 },
+  LTIM:    { sector:"IT",           cap:"Large", pe:34,  beta:0.65 },
+  PERSISTENT:{ sector:"IT",         cap:"Mid",   pe:55,  beta:0.70 },
+  COFORGE: { sector:"IT",           cap:"Mid",   pe:48,  beta:0.75 },
+  MPHASIS: { sector:"IT",           cap:"Mid",   pe:38,  beta:0.68 },
+  KPITTECH:{ sector:"IT",           cap:"Mid",   pe:62,  beta:0.80 },
+  OFSS:    { sector:"IT",           cap:"Large", pe:35,  beta:0.50 },
+  // Large Cap — Banks & Finance
+  HDFCBANK:  { sector:"Banking",    cap:"Large", pe:17,  beta:0.90 },
+  ICICIBANK: { sector:"Banking",    cap:"Large", pe:18,  beta:1.00 },
+  KOTAKBANK: { sector:"Banking",    cap:"Large", pe:20,  beta:0.88 },
+  AXISBANK:  { sector:"Banking",    cap:"Large", pe:14,  beta:1.05 },
+  SBIN:      { sector:"Banking",    cap:"Large", pe:10,  beta:1.20 },
+  INDUSINDBK:{ sector:"Banking",    cap:"Large", pe:11,  beta:1.30 },
+  BANDHANBNK:{ sector:"Banking",    cap:"Mid",   pe:13,  beta:1.40 },
+  FEDERALBNK:{ sector:"Banking",    cap:"Mid",   pe:10,  beta:1.10 },
+  IDFCFIRSTB:{ sector:"Banking",    cap:"Mid",   pe:18,  beta:1.20 },
+  AUBANK:    { sector:"Banking",    cap:"Mid",   pe:30,  beta:1.15 },
+  RBLBANK:   { sector:"Banking",    cap:"Small", pe:12,  beta:1.35 },
+  BAJFINANCE:{ sector:"NBFC",       cap:"Large", pe:35,  beta:1.10 },
+  BAJAJFINSV:{ sector:"NBFC",       cap:"Large", pe:20,  beta:1.05 },
+  CHOLAFIN:  { sector:"NBFC",       cap:"Mid",   pe:22,  beta:1.00 },
+  MUTHOOTFIN:{ sector:"NBFC",       cap:"Mid",   pe:18,  beta:0.90 },
+  MANAPPURAM:{ sector:"NBFC",       cap:"Small", pe:12,  beta:0.95 },
+  SHRIRAMFIN:{ sector:"NBFC",       cap:"Mid",   pe:15,  beta:1.00 },
+  LICHSGFIN: { sector:"NBFC",       cap:"Mid",   pe:8,   beta:1.10 },
+  // Insurance
+  SBILIFE:   { sector:"Insurance",  cap:"Large", pe:72,  beta:0.80 },
+  HDFCLIFE:  { sector:"Insurance",  cap:"Large", pe:80,  beta:0.78 },
+  ICICIPRULI:{ sector:"Insurance",  cap:"Large", pe:90,  beta:0.75 },
+  ICICIGI:   { sector:"Insurance",  cap:"Large", pe:40,  beta:0.70 },
+  LICI:      { sector:"Insurance",  cap:"Large", pe:14,  beta:0.85 },
+  STARHEALTH:{ sector:"Insurance",  cap:"Mid",   pe:50,  beta:0.80 },
+  // Conglomerate / Energy
+  RELIANCE:  { sector:"Energy",     cap:"Large", pe:25,  beta:0.85 },
+  ONGC:      { sector:"Energy",     cap:"Large", pe:8,   beta:0.95 },
+  BPCL:      { sector:"Energy",     cap:"Large", pe:12,  beta:1.05 },
+  IOC:       { sector:"Energy",     cap:"Large", pe:8,   beta:1.00 },
+  HPCL:      { sector:"Energy",     cap:"Large", pe:11,  beta:1.10 },
+  HINDPETRO: { sector:"Energy",     cap:"Large", pe:9,   beta:1.05 },
+  GAIL:      { sector:"Energy",     cap:"Large", pe:14,  beta:0.90 },
+  // Power
+  NTPC:      { sector:"Power",      cap:"Large", pe:14,  beta:0.80 },
+  POWERGRID: { sector:"Power",      cap:"Large", pe:16,  beta:0.65 },
+  TATAPOWER: { sector:"Power",      cap:"Mid",   pe:30,  beta:0.95 },
+  ADANIGREEN:{ sector:"Power",      cap:"Large", pe:120, beta:1.05 },
+  ADANITRANS:{ sector:"Power",      cap:"Large", pe:60,  beta:1.00 },
+  ADANIPOWER:{ sector:"Power",      cap:"Large", pe:15,  beta:1.10 },
+  TORNTPOWER:{ sector:"Power",      cap:"Mid",   pe:22,  beta:0.75 },
+  CESC:      { sector:"Power",      cap:"Small", pe:10,  beta:0.80 },
+  NHPC:      { sector:"Power",      cap:"Mid",   pe:18,  beta:0.70 },
+  // Pharma
+  SUNPHARMA: { sector:"Pharma",     cap:"Large", pe:38,  beta:0.65 },
+  DRREDDY:   { sector:"Pharma",     cap:"Large", pe:22,  beta:0.60 },
+  CIPLA:     { sector:"Pharma",     cap:"Large", pe:28,  beta:0.70 },
+  DIVISLAB:  { sector:"Pharma",     cap:"Large", pe:50,  beta:0.55 },
+  LUPIN:     { sector:"Pharma",     cap:"Large", pe:35,  beta:0.72 },
+  AUROPHARMA:{ sector:"Pharma",     cap:"Mid",   pe:18,  beta:0.80 },
+  TORNTPHARM:{ sector:"Pharma",     cap:"Mid",   pe:32,  beta:0.65 },
+  ZYDUSLIFE: { sector:"Pharma",     cap:"Mid",   pe:25,  beta:0.68 },
+  ALKEM:     { sector:"Pharma",     cap:"Mid",   pe:28,  beta:0.60 },
+  IPCALAB:   { sector:"Pharma",     cap:"Mid",   pe:30,  beta:0.65 },
+  BIOCON:    { sector:"Pharma",     cap:"Mid",   pe:65,  beta:0.75 },
+  GLAND:     { sector:"Pharma",     cap:"Mid",   pe:22,  beta:0.60 },
+  // FMCG
+  HINDUNILVR:{ sector:"FMCG",       cap:"Large", pe:55,  beta:0.55 },
+  ITC:       { sector:"FMCG",       cap:"Large", pe:28,  beta:0.70 },
+  NESTLEIND: { sector:"FMCG",       cap:"Large", pe:75,  beta:0.50 },
+  BRITANNIA: { sector:"FMCG",       cap:"Large", pe:55,  beta:0.60 },
+  DABUR:     { sector:"FMCG",       cap:"Large", pe:52,  beta:0.55 },
+  MARICO:    { sector:"FMCG",       cap:"Large", pe:45,  beta:0.60 },
+  COLPAL:    { sector:"FMCG",       cap:"Large", pe:48,  beta:0.55 },
+  GODREJCP:  { sector:"FMCG",       cap:"Large", pe:58,  beta:0.65 },
+  VBL:       { sector:"FMCG",       cap:"Large", pe:55,  beta:0.70 },
+  RADICO:    { sector:"FMCG",       cap:"Mid",   pe:68,  beta:0.75 },
+  UBL:       { sector:"FMCG",       cap:"Mid",   pe:72,  beta:0.75 },
+  // Auto
+  MARUTI:    { sector:"Auto",       cap:"Large", pe:28,  beta:0.85 },
+  "BAJAJ-AUTO":{ sector:"Auto",     cap:"Large", pe:30,  beta:0.80 },
+  EICHERMOT: { sector:"Auto",       cap:"Large", pe:35,  beta:0.88 },
+  HEROMOTOCO:{ sector:"Auto",       cap:"Large", pe:20,  beta:0.82 },
+  TATAMOTORS:{ sector:"Auto",       cap:"Large", pe:8,   beta:1.25 },
+  "M&M":     { sector:"Auto",       cap:"Large", pe:28,  beta:1.00 },
+  BALKRISIND:{ sector:"Auto",       cap:"Mid",   pe:38,  beta:0.90 },
+  APOLLOTYRE:{ sector:"Auto",       cap:"Mid",   pe:22,  beta:0.95 },
+  MOTHERSON: { sector:"Auto",       cap:"Large", pe:42,  beta:1.10 },
+  BHARATFORG:{ sector:"Auto",       cap:"Mid",   pe:55,  beta:1.00 },
+  // Metals
+  TATASTEEL: { sector:"Metals",     cap:"Large", pe:14,  beta:1.35 },
+  JSWSTEEL:  { sector:"Metals",     cap:"Large", pe:18,  beta:1.25 },
+  HINDALCO:  { sector:"Metals",     cap:"Large", pe:12,  beta:1.30 },
+  VEDL:      { sector:"Metals",     cap:"Large", pe:8,   beta:1.40 },
+  NMDC:      { sector:"Metals",     cap:"Mid",   pe:10,  beta:1.20 },
+  SAIL:      { sector:"Metals",     cap:"Large", pe:10,  beta:1.35 },
+  JINDALSTEL:{ sector:"Metals",     cap:"Mid",   pe:12,  beta:1.25 },
+  COALINDIA: { sector:"Metals",     cap:"Large", pe:9,   beta:0.95 },
+  // Capital Goods / Infra
+  LT:        { sector:"Capital Goods",cap:"Large",pe:35, beta:0.95 },
+  SIEMENS:   { sector:"Capital Goods",cap:"Large",pe:65, beta:0.85 },
+  ABB:       { sector:"Capital Goods",cap:"Large",pe:70, beta:0.80 },
+  BOSCHLTD:  { sector:"Capital Goods",cap:"Large",pe:55, beta:0.75 },
+  THERMAX:   { sector:"Capital Goods",cap:"Mid",  pe:60, beta:0.85 },
+  CUMMINSIND:{ sector:"Capital Goods",cap:"Mid",  pe:45, beta:0.80 },
+  HAVELLS:   { sector:"Capital Goods",cap:"Large",pe:52, beta:0.85 },
+  POLYCAB:   { sector:"Capital Goods",cap:"Mid",  pe:48, beta:0.90 },
+  DIXON:     { sector:"Capital Goods",cap:"Mid",  pe:85, beta:1.00 },
+  VOLTAS:    { sector:"Capital Goods",cap:"Mid",  pe:60, beta:0.90 },
+  // Cement
+  ULTRACEMCO:{ sector:"Cement",     cap:"Large", pe:40,  beta:0.85 },
+  SHREECEM:  { sector:"Cement",     cap:"Large", pe:45,  beta:0.80 },
+  AMBUJACEM: { sector:"Cement",     cap:"Large", pe:35,  beta:0.88 },
+  ACC:       { sector:"Cement",     cap:"Large", pe:28,  beta:0.85 },
+  GRASIM:    { sector:"Cement",     cap:"Large", pe:22,  beta:0.90 },
+  // Telecom
+  BHARTIARTL:{ sector:"Telecom",    cap:"Large", pe:80,  beta:0.90 },
+  // Real Estate
+  DLF:       { sector:"Real Estate",cap:"Large", pe:55,  beta:1.05 },
+  GODREJPROP:{ sector:"Real Estate",cap:"Large", pe:75,  beta:1.10 },
+  OBEROIRLTY:{ sector:"Real Estate",cap:"Mid",   pe:35,  beta:0.90 },
+  PRESTIGE:  { sector:"Real Estate",cap:"Mid",   pe:40,  beta:1.00 },
+  PHOENIXLTD:{ sector:"Real Estate",cap:"Mid",   pe:45,  beta:0.95 },
+  // Consumer / Retail
+  TITAN:     { sector:"Consumer",   cap:"Large", pe:90,  beta:0.85 },
+  ASIANPAINT:{ sector:"Consumer",   cap:"Large", pe:60,  beta:0.70 },
+  PIDILITIND:{ sector:"Consumer",   cap:"Large", pe:70,  beta:0.72 },
+  BERGEPAINT:{ sector:"Consumer",   cap:"Mid",   pe:58,  beta:0.75 },
+  DMART:     { sector:"Consumer",   cap:"Large", pe:95,  beta:0.78 },
+  TRENT:     { sector:"Consumer",   cap:"Large", pe:120, beta:0.90 },
+  PAGEIND:   { sector:"Consumer",   cap:"Mid",   pe:55,  beta:0.80 },
+  BATAINDIA: { sector:"Consumer",   cap:"Mid",   pe:60,  beta:0.75 },
+  // Hospitality / Media
+  JUBLFOOD:  { sector:"Consumer",   cap:"Mid",   pe:65,  beta:0.90 },
+  ZOMATO:    { sector:"Consumer",   cap:"Large", pe:200, beta:1.10 },
+  NYKAA:     { sector:"Consumer",   cap:"Mid",   pe:180, beta:1.15 },
+  IRCTC:     { sector:"Consumer",   cap:"Large", pe:55,  beta:0.85 },
+  INDIGO:    { sector:"Aviation",   cap:"Large", pe:22,  beta:1.20 },
+  // Fintech / New Age
+  PAYTM:     { sector:"Fintech",    cap:"Mid",   pe:null,beta:1.30 },
+  POLICYBZR: { sector:"Fintech",    cap:"Mid",   pe:null,beta:1.25 },
+  ANGELONE:  { sector:"Fintech",    cap:"Mid",   pe:18,  beta:1.20 },
+  CDSL:      { sector:"Fintech",    cap:"Mid",   pe:45,  beta:0.95 },
+  "360ONE":  { sector:"Fintech",    cap:"Mid",   pe:38,  beta:1.00 },
+  CAMS:      { sector:"Fintech",    cap:"Mid",   pe:42,  beta:0.90 },
+  MCX:       { sector:"Fintech",    cap:"Mid",   pe:35,  beta:0.95 },
+  // Adani group misc
+  ADANIENT:  { sector:"Conglomerate",cap:"Large",pe:60,  beta:1.20 },
+  ADANIPORTS:{ sector:"Infra",      cap:"Large", pe:28,  beta:1.05 },
+  // Logistics
+  CONCOR:    { sector:"Logistics",  cap:"Large", pe:45,  beta:0.85 },
+  DELHIVERY: { sector:"Logistics",  cap:"Mid",   pe:null,beta:1.10 },
+};
+
+// US stocks baseline PE & Beta
+const US_STOCK_META = {
+  AAPL:  { sector:"IT",      pe:29,  beta:1.20 },
+  MSFT:  { sector:"IT",      pe:35,  beta:0.90 },
+  GOOGL: { sector:"IT",      pe:22,  beta:1.05 },
+  AMZN:  { sector:"Consumer",pe:45,  beta:1.15 },
+  META:  { sector:"IT",      pe:28,  beta:1.25 },
+  NVDA:  { sector:"IT",      pe:40,  beta:1.65 },
+  TSLA:  { sector:"Auto",    pe:55,  beta:2.00 },
+  BRK:   { sector:"Finance", pe:22,  beta:0.88 },
+  JPM:   { sector:"Banking", pe:12,  beta:1.10 },
+  V:     { sector:"Fintech", pe:32,  beta:0.95 },
+  MA:    { sector:"Fintech", pe:35,  beta:1.02 },
+  JNJ:   { sector:"Pharma",  pe:14,  beta:0.55 },
+  XOM:   { sector:"Energy",  pe:14,  beta:1.05 },
+  WMT:   { sector:"Consumer",pe:30,  beta:0.60 },
+  PG:    { sector:"FMCG",    pe:26,  beta:0.55 },
+  HD:    { sector:"Consumer",pe:24,  beta:1.05 },
+  BAC:   { sector:"Banking", pe:12,  beta:1.35 },
+  NFLX:  { sector:"Media",   pe:38,  beta:1.35 },
+  ADBE:  { sector:"IT",      pe:30,  beta:1.20 },
+  CRM:   { sector:"IT",      pe:50,  beta:1.25 },
+  AMD:   { sector:"IT",      pe:35,  beta:1.70 },
+  INTC:  { sector:"IT",      pe:12,  beta:0.95 },
+};
+
+const CAP_ORDER = ["Large","Mid","Small"];
+const CAP_COLORS = { Large:"#1a6b3c", Mid:"#4da6ff", Small:"#f59e0b" };
+const SECTOR_COLORS = [
+  "#1a6b3c","#4da6ff","#f59e0b","#ef4444","#8b5cf6",
+  "#10b981","#f97316","#ec4899","#14b8a6","#6366f1",
+  "#84cc16","#0ea5e9","#a78bfa","#fb923c","#34d399",
+];
+
+function PortfolioAnalysisView({ data }) {
+  const indHoldings = data.portfolioHoldings || [];
+  const usHoldings  = data.usHoldings || [];
+  const allEmpty = indHoldings.length === 0 && usHoldings.length === 0;
+
+  // ── Compute invested values (use buyPrice * qty as proxy for current value) ─
+  // For more accuracy we'd use live prices but those are async; buyPrice*qty is instant
+  function holdingValue(h) { return (h.buyPrice || 0) * (h.qty || 0); }
+
+  const indTotal = indHoldings.reduce((s, h) => s + holdingValue(h), 0);
+  const usTotal  = usHoldings.reduce((s, h) => s + holdingValue(h), 0);
+  const grandTotal = indTotal + usTotal || 1;
+
+  // ── Market Cap Allocation (Indian only) ─────────────────────────────────────
+  const capMap = {};
+  indHoldings.forEach(h => {
+    const meta = STOCK_META[h.symbol.toUpperCase()];
+    const cap  = meta?.cap || "Unknown";
+    capMap[cap] = (capMap[cap] || 0) + holdingValue(h);
+  });
+
+  // ── Sector Allocation (both) ─────────────────────────────────────────────────
+  const sectorMap = {};
+  indHoldings.forEach(h => {
+    const meta   = STOCK_META[h.symbol.toUpperCase()];
+    const sector = meta?.sector || "Other";
+    sectorMap[sector] = (sectorMap[sector] || 0) + holdingValue(h);
+  });
+  usHoldings.forEach(h => {
+    const meta   = US_STOCK_META[h.symbol.toUpperCase()];
+    const sector = meta?.sector || "Other";
+    sectorMap[sector] = (sectorMap[sector] || 0) + holdingValue(h);
+  });
+
+  // ── PE & Beta (weighted average) ─────────────────────────────────────────────
+  let wPeNum = 0, wPeDen = 0, wBetaNum = 0, wBetaDen = 0;
+  let wPeUS = 0, wPeDenUS = 0, wBetaUS = 0, wBetaDenUS = 0;
+
+  indHoldings.forEach(h => {
+    const meta = STOCK_META[h.symbol.toUpperCase()];
+    const val  = holdingValue(h);
+    if (meta?.pe   != null) { wPeNum   += meta.pe   * val; wPeDen   += val; }
+    if (meta?.beta != null) { wBetaNum += meta.beta * val; wBetaDen += val; }
+  });
+  usHoldings.forEach(h => {
+    const meta = US_STOCK_META[h.symbol.toUpperCase()];
+    const val  = holdingValue(h);
+    if (meta?.pe   != null) { wPeUS    += meta.pe   * val; wPeDenUS += val; }
+    if (meta?.beta != null) { wBetaUS  += meta.beta * val; wBetaDenUS += val; }
+  });
+
+  const indPE   = wPeDen   > 0 ? (wPeNum   / wPeDen).toFixed(1)   : "—";
+  const indBeta = wBetaDen > 0 ? (wBetaNum / wBetaDen).toFixed(2)  : "—";
+  const usPE    = wPeDenUS  > 0 ? (wPeUS    / wPeDenUS).toFixed(1)  : "—";
+  const usBeta  = wBetaDenUS > 0 ? (wBetaUS  / wBetaDenUS).toFixed(2): "—";
+
+  // ── Render helpers ────────────────────────────────────────────────────────────
+  function DonutChart({ items, total, size = 140 }) {
+    const [hov, setHov] = React.useState(null);
+    if (!items.length || total === 0) return null;
+    const r = 50, cx = 60, cy = 60, stroke = 18;
+    const circ = 2 * Math.PI * r;
+    let cum = 0;
+    const slices = items.map((item, i) => {
+      const pct   = item.value / total;
+      const dash  = pct * circ;
+      const gap   = circ - dash;
+      const offset = circ * 0.25 - cum * circ; // start from top
+      cum += pct;
+      return { ...item, dash, gap, offset: -cum * circ + circ * 0.25 + dash, pct, i };
+    });
+    return (
+      <svg width={size} height={size} viewBox="0 0 120 120">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--color-background-secondary)" strokeWidth={stroke} />
+        {slices.map((s, i) => (
+          <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+            stroke={s.color} strokeWidth={hov === i ? stroke + 3 : stroke}
+            strokeDasharray={`${s.dash} ${s.gap}`}
+            strokeDashoffset={s.offset}
+            style={{ cursor: "pointer", transition: "stroke-width 0.15s" }}
+            onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} />
+        ))}
+        {hov !== null ? (
+          <>
+            <text x={cx} y={cy - 5} textAnchor="middle" fontSize="9" fill="var(--color-text-secondary)">{slices[hov].label}</text>
+            <text x={cx} y={cy + 8} textAnchor="middle" fontSize="11" fontWeight="bold" fill="var(--color-text-primary)">{(slices[hov].pct * 100).toFixed(1)}%</text>
+          </>
+        ) : (
+          <text x={cx} y={cy + 5} textAnchor="middle" fontSize="10" fill="var(--color-text-secondary)">{items.length} slots</text>
+        )}
+      </svg>
+    );
+  }
+
+  function AllocationCard({ title, items, total, colors, showCap }) {
+    const sorted = [...items].sort((a, b) => b.value - a.value);
+    return (
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem 1.1rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>{title}</div>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <DonutChart items={sorted.map((it, i) => ({ ...it, color: colors[i % colors.length] }))} total={total} size={130} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+            {sorted.map((it, i) => {
+              const pct = total > 0 ? (it.value / total * 100).toFixed(1) : 0;
+              return (
+                <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: colors[i % colors.length], flexShrink: 0 }} />
+                  <span style={{ flex: 1, color: "var(--color-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 11 }}>{pct}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function MetricBadge({ label, value, sub, color }) {
+    return (
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", textAlign: "center" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{label}</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: color || "var(--color-text-primary)" }}>{value}</div>
+        {sub && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>{sub}</div>}
+      </div>
+    );
+  }
+
+  if (allEmpty) return (
+    <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)" }}>
+      <div style={{ fontSize: 36, marginBottom: 10 }}>📊</div>
+      <div style={{ fontWeight: 500, marginBottom: 6 }}>No portfolio holdings yet</div>
+      <div style={{ fontSize: 13 }}>Add Indian or US stocks in the Portfolio tab to see analysis.</div>
+    </div>
+  );
+
+  // Sector items
+  const sectorItems = Object.entries(sectorMap).map(([label, value]) => ({ label, value }));
+  // Cap items (Indian only)
+  const capItems = CAP_ORDER.filter(c => capMap[c]).map(c => ({ label: c + " Cap", value: capMap[c], color: CAP_COLORS[c] }));
+  if (capMap["Unknown"]) capItems.push({ label: "Unknown", value: capMap["Unknown"], color: "#9ca3af" });
+
+  // Per-stock PE & Beta table
+  const allHoldings = [
+    ...indHoldings.map(h => ({ ...h, region: "🇮🇳", meta: STOCK_META[h.symbol.toUpperCase()] })),
+    ...usHoldings.map(h =>  ({ ...h, region: "🇺🇸", meta: US_STOCK_META[h.symbol.toUpperCase()] })),
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* Row 1: IN vs US + Cap Allocation */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+
+        {/* Indian vs US split */}
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem 1.1rem" }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>🌏 Indian vs US Holdings</div>
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            <DonutChart
+              items={[
+                indTotal > 0 ? { label: "🇮🇳 Indian", value: indTotal, color: "#1a6b3c" } : null,
+                usTotal  > 0 ? { label: "🇺🇸 US",     value: usTotal,  color: "#4da6ff" } : null,
+              ].filter(Boolean)}
+              total={grandTotal} size={130} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+              {indTotal > 0 && (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: "#1a6b3c" }} />
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>🇮🇳 Indian (NSE/BSE)</span>
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#1a6b3c" }}>{(indTotal / grandTotal * 100).toFixed(1)}%</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{indHoldings.length} stocks</div>
+                </div>
+              )}
+              {usTotal > 0 && (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: "#4da6ff" }} />
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>🇺🇸 US (NYSE/NASDAQ)</span>
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#4da6ff" }}>{(usTotal / grandTotal * 100).toFixed(1)}%</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{usHoldings.length} stocks</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Market Cap Allocation */}
+        {indHoldings.length > 0 ? (
+          <AllocationCard
+            title="📏 Market Cap Allocation (Indian)"
+            items={capItems}
+            total={indTotal}
+            colors={capItems.map(c => c.color)}
+          />
+        ) : (
+          <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem 1.1rem", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            No Indian holdings for cap analysis
+          </div>
+        )}
+      </div>
+
+      {/* Row 2: Sector Allocation */}
+      <AllocationCard
+        title="🏭 Sector Allocation (All Holdings)"
+        items={sectorItems}
+        total={indTotal + usTotal}
+        colors={SECTOR_COLORS}
+      />
+
+      {/* Row 3: PE & Beta summary */}
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem 1.1rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>📐 Portfolio PE & Beta</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+          {indHoldings.length > 0 && <>
+            <MetricBadge label="🇮🇳 Avg PE (Indian)" value={indPE} sub="Weighted by investment" color={Number(indPE) > 40 ? "#f59e0b" : "#1a6b3c"} />
+            <MetricBadge label="🇮🇳 Avg Beta (Indian)" value={indBeta} sub={Number(indBeta) > 1.2 ? "High risk" : Number(indBeta) < 0.8 ? "Low risk" : "Moderate risk"} color={Number(indBeta) > 1.2 ? "#ef4444" : Number(indBeta) < 0.8 ? "#1a6b3c" : "#f59e0b"} />
+          </>}
+          {usHoldings.length > 0 && <>
+            <MetricBadge label="🇺🇸 Avg PE (US)" value={usPE} sub="Weighted by investment" color={Number(usPE) > 40 ? "#f59e0b" : "#4da6ff"} />
+            <MetricBadge label="🇺🇸 Avg Beta (US)" value={usBeta} sub={Number(usBeta) > 1.2 ? "High risk" : Number(usBeta) < 0.8 ? "Low risk" : "Moderate risk"} color={Number(usBeta) > 1.2 ? "#ef4444" : Number(usBeta) < 0.8 ? "#4da6ff" : "#f59e0b"} />
+          </>}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 10 }}>
+          ⓘ PE & Beta values are static reference data (updated periodically). For live values, check NSE/BSE directly.
+        </div>
+      </div>
+
+      {/* Row 4: Per-stock PE & Beta table */}
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem 1.1rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>📋 Stock-Level Fundamentals</div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "var(--color-background-primary)" }}>
+                {["","Symbol","Company","Sector","Cap","PE","Beta","Weight"].map(h => (
+                  <th key={h} style={{ padding: "7px 10px", textAlign: h === "" || h === "PE" || h === "Beta" || h === "Weight" ? "center" : "left",
+                    fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", whiteSpace: "nowrap",
+                    borderBottom: "0.5px solid var(--color-border-tertiary)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {allHoldings.map((h, i) => {
+                const val    = holdingValue(h);
+                const weight = ((val / grandTotal) * 100).toFixed(1);
+                const pe     = h.meta?.pe   ?? null;
+                const beta   = h.meta?.beta ?? null;
+                const sector = h.meta?.sector || "—";
+                const cap    = h.meta?.cap   || "—";
+                return (
+                  <tr key={i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-primary)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "7px 10px", textAlign: "center" }}>{h.region}</td>
+                    <td style={{ padding: "7px 10px", fontWeight: 600 }}>{h.symbol}</td>
+                    <td style={{ padding: "7px 10px", color: "var(--color-text-secondary)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name || "—"}</td>
+                    <td style={{ padding: "7px 10px" }}>
+                      <span style={{ background: "var(--color-background-primary)", borderRadius: 4, padding: "2px 6px", fontSize: 10 }}>{sector}</span>
+                    </td>
+                    <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                      {cap !== "—" ? <span style={{ color: CAP_COLORS[cap] || "#9ca3af", fontWeight: 500, fontSize: 11 }}>{cap}</span> : "—"}
+                    </td>
+                    <td style={{ padding: "7px 10px", textAlign: "center", fontWeight: 500,
+                      color: pe == null ? "var(--color-text-secondary)" : pe > 60 ? "#ef4444" : pe > 35 ? "#f59e0b" : "#1a6b3c" }}>
+                      {pe ?? "—"}
+                    </td>
+                    <td style={{ padding: "7px 10px", textAlign: "center", fontWeight: 500,
+                      color: beta == null ? "var(--color-text-secondary)" : beta > 1.3 ? "#ef4444" : beta < 0.8 ? "#1a6b3c" : "#f59e0b" }}>
+                      {beta ?? "—"}
+                    </td>
+                    <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <div style={{ flex: 1, height: 4, borderRadius: 2, background: "var(--color-border-tertiary)", overflow: "hidden" }}>
+                          <div style={{ width: weight + "%", height: "100%", background: h.region === "🇮🇳" ? "#1a6b3c" : "#4da6ff", borderRadius: 2 }} />
+                        </div>
+                        <span style={{ fontSize: 10, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{weight}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   );
 }
