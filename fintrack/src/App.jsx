@@ -396,8 +396,7 @@ export default function App() {
 
   const toggles = data.featureToggles || { fo: true, portfolio: true };
   const portfolioOn = toggles.portfolio !== false;
-  const navItems = [
-    { id: "overview",   label: "Overview",  icon: "⊞" },
+  const allNavItems = [
     { id: "money",      label: "Money",     icon: "⊕" },
     ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
     ...(portfolioOn ? [{ id: "portfolio", label: "Portfolio", icon: "📈" }] : []),
@@ -405,6 +404,29 @@ export default function App() {
     { id: "business",   label: "Business",  icon: "🏢" },
     { id: "projects",   label: "Projects",  icon: "📋" },
   ];
+
+  // Restore saved nav order, filtering out items that may have been toggled off
+  const savedNavOrder = data.navOrder || [];
+  const availableIds = allNavItems.map(i => i.id);
+  const orderedIds = [
+    ...savedNavOrder.filter(id => availableIds.includes(id)),
+    ...availableIds.filter(id => !savedNavOrder.includes(id)),
+  ];
+  const navItems = orderedIds.map(id => allNavItems.find(i => i.id === id)).filter(Boolean);
+
+  const navDragIdx = useRef(null);
+  const [navDragOver, setNavDragOver] = useState(null);
+  function onNavDragStart(e, i) { navDragIdx.current = i; e.dataTransfer.effectAllowed = "move"; }
+  function onNavDragOver(e, i) { e.preventDefault(); if (i !== navDragOver) setNavDragOver(i); }
+  function onNavDrop(e, i) {
+    e.preventDefault();
+    if (navDragIdx.current === null || navDragIdx.current === i) { setNavDragOver(null); return; }
+    const next = [...navItems.map(x => x.id)];
+    const [moved] = next.splice(navDragIdx.current, 1);
+    next.splice(i, 0, moved);
+    update(() => ({ navOrder: next }));
+    navDragIdx.current = null; setNavDragOver(null);
+  }
 
   return (
     <DriveProvider data={data} update={update}>
@@ -437,22 +459,50 @@ export default function App() {
           </button>
         </div>
 
-        {navItems.map(item => (
-          <button key={item.id} onClick={() => setPage(item.id)} title={sidebarCollapsed ? item.label : undefined} style={{
-            display: "flex", alignItems: "center",
-            gap: sidebarCollapsed ? 0 : 10,
-            justifyContent: sidebarCollapsed ? "center" : "flex-start",
-            padding: sidebarCollapsed ? "0.6rem 0" : "0.6rem 1rem",
-            background: page === item.id ? "var(--color-background-secondary)" : "transparent",
-            border: "none", cursor: "pointer",
-            color: page === item.id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-            fontWeight: page === item.id ? 500 : 400, fontSize: 14,
-            borderLeft: page === item.id ? "2px solid #1a6b3c" : "2px solid transparent",
-            width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
-          }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
-            {!sidebarCollapsed && item.label}
-          </button>
+        {/* Fixed Overview at top */}
+        <button onClick={() => setPage("overview")} style={{
+          display: "flex", alignItems: "center",
+          gap: sidebarCollapsed ? 0 : 10,
+          justifyContent: sidebarCollapsed ? "center" : "flex-start",
+          padding: sidebarCollapsed ? "0.6rem 0" : "0.6rem 1rem",
+          background: page === "overview" ? "var(--color-background-secondary)" : "transparent",
+          border: "none", cursor: "pointer",
+          color: page === "overview" ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+          fontWeight: page === "overview" ? 500 : 400, fontSize: 14,
+          borderLeft: page === "overview" ? "2px solid #1a6b3c" : "2px solid transparent",
+          width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
+        }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>⊞</span>
+          {!sidebarCollapsed && "Overview"}
+        </button>
+
+        {/* Draggable nav items */}
+        {navItems.map((item, i) => (
+          <div key={item.id}
+            draggable={!sidebarCollapsed}
+            onDragStart={e => onNavDragStart(e, i)}
+            onDragOver={e => onNavDragOver(e, i)}
+            onDrop={e => onNavDrop(e, i)}
+            onDragEnd={() => { navDragIdx.current = null; setNavDragOver(null); }}
+            style={{ display: "flex", alignItems: "center", borderLeft: navDragOver === i ? "2px solid #1a6b3c" : page === item.id ? "2px solid #1a6b3c" : "2px solid transparent", background: navDragOver === i ? "#e8f5ee" : page === item.id ? "var(--color-background-secondary)" : "transparent" }}
+          >
+            {!sidebarCollapsed && (
+              <span style={{ paddingLeft: 6, color: "var(--color-border-primary)", cursor: "grab", fontSize: 13, userSelect: "none" }}>⠿</span>
+            )}
+            <button onClick={() => setPage(item.id)} title={sidebarCollapsed ? item.label : undefined} style={{
+              flex: 1, display: "flex", alignItems: "center",
+              gap: sidebarCollapsed ? 0 : 8,
+              justifyContent: sidebarCollapsed ? "center" : "flex-start",
+              padding: sidebarCollapsed ? "0.6rem 0" : "0.6rem 0.6rem 0.6rem 4px",
+              background: "transparent", border: "none", cursor: "pointer",
+              color: page === item.id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+              fontWeight: page === item.id ? 500 : 400, fontSize: 14,
+              width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
+            }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
+              {!sidebarCollapsed && item.label}
+            </button>
+          </div>
         ))}
 
         {!sidebarCollapsed && (
