@@ -7939,10 +7939,23 @@ function ComparativeAnalysisView({ data }) {
     return prices.map(p => ({ date: p.date, value: (p.close / base) * 100 }));
   }
 
-  // Portfolio growth: use earliest buyDate among holdings, map to index growth
-  // Since we don't have portfolio historical prices, we show a single point line
-  // (invested → current) normalised to 100. We derive implied CAGR for display.
+  // Portfolio growth: weighted-average buy date anchors the line correctly per period
   const portfolioReturn = totalInvested > 0 ? ((totalCurrent / totalInvested) - 1) * 100 : 0;
+
+  // Weighted average buy date (by invested amount) — used to anchor the portfolio line
+  const allHoldings = [
+    ...indHoldings.map(h => ({ buyDate: h.buyDate, invested: (h.buyPrice||0)*(h.qty||0) })),
+    ...usHoldings.map(h => ({ buyDate: h.buyDate, invested: (h.buyPrice||0)*(h.qty||0) })),
+    ...(data.mutualFunds||[]).map(m => ({ buyDate: m.buyDate || m.startDate, invested: m.investedAmount||0 })),
+  ].filter(h => h.buyDate && h.invested > 0);
+
+  const avgBuyTimestamp = (() => {
+    if (allHoldings.length === 0) return null;
+    const totalInv = allHoldings.reduce((s, h) => s + h.invested, 0);
+    if (totalInv === 0) return null;
+    const weightedMs = allHoldings.reduce((s, h) => s + new Date(h.buyDate).getTime() * h.invested, 0);
+    return weightedMs / totalInv / 1000; // unix seconds
+  })();
 
   // ── Build SVG chart ───────────────────────────────────────────────────────
   function BenchmarkChart() {
@@ -8080,20 +8093,64 @@ function ComparativeAnalysisView({ data }) {
           );
         })}
 
-        {/* Portfolio line — straight from 100 to (100 + portfolioReturn) across full width */}
-        {showPortfolio && totalInvested > 0 && (
-          <g>
-            <line
-              x1={PAD.left} y1={yScale(100)}
-              x2={W - PAD.right} y2={yScale(100 + portfolioReturn)}
-              stroke="#1a6b3c" strokeWidth={2.5} strokeDasharray="8 4"
-            />
-            <circle cx={W - PAD.right} cy={yScale(100 + portfolioReturn)} r={5} fill="#1a6b3c" />
-            <text x={W - PAD.right - 6} y={yScale(100 + portfolioReturn) - 7} fontSize={9} fill="#1a6b3c" fontWeight={700} textAnchor="end">
-              My Portfolio {portfolioReturn >= 0 ? "+" : ""}{portfolioReturn.toFixed(1)}%
-            </text>
-          </g>
-        )}
+        {/* Portfolio line — anchored to weighted avg buy date */}
+        {showPortfolio && totalInvested > 0 && (() => {
+          // Find where avgBuyTimestamp falls on the chart x-axis
+          // allDates is in unix seconds; chart goes from allDates[0] to allDates[last]
+          const chartStart = allDates.length > 0 ? allDates[0] : null;
+          const chartEnd   = allDates.length > 0 ? allDates[allDates.length - 1] : null;
+
+          if (!chartStart || !chartEnd) return null;
+
+          // If avg buy date is AFTER the chart window ends → nothing to show
+          if (avgBuyTimestamp && avgBuyTimestamp > chartEnd) {
+            return null;
+          }
+
+          // Where does the buy date sit on the x-axis? (clamped to chart start)
+          let startFraction = 0;
+          if (avgBuyTimestamp && avgBuyTimestamp > chartStart) {
+            startFraction = (avgBuyTimestamp - chartStart) / (chartEnd - chartStart);
+          }
+
+          const x1 = PAD.left + startFraction * chartW;
+          const x2 = W - PAD.right;
+
+          // If period is shorter than holding — show full portfolio return across full chart
+          // but label it correctly with a note
+          const holdingYears = avgBuyTimestamp
+            ? (Date.now() / 1000 - avgBuyTimestamp) / (365.25 * 24 * 3600)
+            : null;
+
+          const periodDays = { "1d": 1, "1mo": 30, "6mo": 180, "1y": 365, "3y": 1095, "5y": 1825, "10y": 3650 };
+          const selectedDays = periodDays[period] || 3650;
+          const holdingDays = holdingYears ? holdingYears * 365.25 : null;
+
+          // If avg buy is before chart start — portfolio line spans full chart width
+          // The return shown is still total return (since we don't have historical data)
+          // Show a note that return is since avg buy (longer than chart)
+          const buyBeforeChart = !avgBuyTimestamp || avgBuyTimestamp <= chartStart;
+          const labelNote = buyBeforeChart && holdingDays && holdingDays > selectedDays
+            ? ` (since avg buy)` : ``;
+
+          return (
+            <g>
+              <line
+                x1={x1} y1={yScale(100)}
+                x2={x2} y2={yScale(100 + portfolioReturn)}
+                stroke="#1a6b3c" strokeWidth={2.5} strokeDasharray="8 4"
+              />
+              {/* Start marker at avg buy date */}
+              {startFraction > 0.01 && (
+                <circle cx={x1} cy={yScale(100)} r={4} fill="#1a6b3c" opacity={0.6} />
+              )}
+              <circle cx={x2} cy={yScale(100 + portfolioReturn)} r={5} fill="#1a6b3c" />
+              <text x={x2 - 6} y={yScale(100 + portfolioReturn) - 7} fontSize={9} fill="#1a6b3c" fontWeight={700} textAnchor="end">
+                My Portfolio {portfolioReturn >= 0 ? "+" : ""}{portfolioReturn.toFixed(1)}%{labelNote}
+              </text>
+            </g>
+          );
+        })()}
 
         {/* X-axis labels */}
         {xLabels.map(({ i, label }) => (
