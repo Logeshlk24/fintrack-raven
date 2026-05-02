@@ -8229,6 +8229,7 @@ function PortfolioHub({ data, update }) {
     { id: "mf",        label: "💼 Mutual Funds"          },
     { id: "analysis",  label: "📊 Analysis"              },
     { id: "compare",   label: "🔍 Comparative Analysis"  },
+    { id: "dividend",  label: "💰 Dividend"              },
   ];
 
   return (
@@ -8414,6 +8415,214 @@ function PortfolioHub({ data, update }) {
       {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
       {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
       {tab === "compare"  && <ComparativeAnalysisView data={data} />}
+      {tab === "dividend" && <DividendView data={data} />}
+    </div>
+  );
+}
+
+// ─── Dividend View ────────────────────────────────────────────────────────────
+function DividendView({ data }) {
+  const usdInr = data.usdInrRate || 84;
+  const indHoldings = data.portfolioHoldings || [];
+  const usHoldings  = data.usHoldings || [];
+
+  const [divData,    setDivData]    = useState({});
+  const [loading,    setLoading]    = useState(false);
+  const [loaded,     setLoaded]     = useState(false);
+  const [error,      setError]      = useState("");
+  const [sortCol,    setSortCol]    = useState("yield");
+  const [sortAsc,    setSortAsc]    = useState(false);
+
+  const fmtCur  = n => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const fmtUSD  = n => "$" + Number(n || 0).toLocaleString("en-US",  { maximumFractionDigits: 2 });
+
+  function toYahooTicker(symbol, exchange, override) {
+    if (override && override.trim()) return override.trim().toUpperCase();
+    let s = (symbol || "").trim().toUpperCase().replace(/&/g, "-");
+    if (s.endsWith(".NS") || s.endsWith(".BO")) return s;
+    if (exchange === "NSE") return s + ".NS";
+    if (exchange === "BSE") return s + ".BO";
+    return s;
+  }
+
+  async function fetchDividends() {
+    setLoading(true); setError(""); setDivData({});
+    const allHoldings = [
+      ...indHoldings.map(h => ({ ...h, region: "IN" })),
+      ...usHoldings.map(h  => ({ ...h, region: "US" })),
+    ];
+    if (!allHoldings.length) { setLoading(false); setLoaded(true); return; }
+
+    const tickers = [...new Set(allHoldings.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
+
+    try {
+      // Batch fetch via existing stock-price API (returns trailingAnnualDividendRate, dividendYield etc from Yahoo)
+      const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
+      if (!res.ok) throw new Error("API error");
+      const json = await res.json();
+      setDivData(json);
+      setLoaded(true);
+    } catch(e) {
+      setError("Could not fetch dividend data. Make sure your /api/stock-price endpoint is deployed.");
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { fetchDividends(); }, []); // eslint-disable-line
+
+  // Build rows
+  const allHoldings = [
+    ...indHoldings.map(h => ({ ...h, region: "IN" })),
+    ...usHoldings.map(h  => ({ ...h, region: "US" })),
+  ];
+
+  const rows = allHoldings.map(h => {
+    const ticker = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
+    const d = divData[ticker] || {};
+    const isUS = h.region === "US";
+    const qty = h.qty || 0;
+    const divRate  = d.trailingAnnualDividendRate  ?? d.dividendRate  ?? null;
+    const divYield = d.trailingAnnualDividendYield ?? d.dividendYield ?? null;
+    const exDate   = d.exDividendDate  ? new Date(d.exDividendDate * 1000).toLocaleDateString("en-IN") : null;
+    const payDate  = d.dividendDate    ? new Date(d.dividendDate    * 1000).toLocaleDateString("en-IN") : null;
+    const annualDivInr = divRate != null ? (isUS ? divRate * usdInr * qty : divRate * qty) : null;
+    const currentPrice = d.price ?? null;
+    const currentValInr = currentPrice != null ? (isUS ? currentPrice * usdInr * qty : currentPrice * qty) : (h.buyPrice * qty);
+    return { ...h, ticker, divRate, divYield, exDate, payDate, annualDivInr, currentValInr, isUS, d };
+  });
+
+  const sorted = [...rows].sort((a, b) => {
+    let av, bv;
+    if (sortCol === "yield")    { av = a.divYield ?? -1;       bv = b.divYield ?? -1; }
+    else if (sortCol === "annual") { av = a.annualDivInr ?? -1; bv = b.annualDivInr ?? -1; }
+    else if (sortCol === "symbol") { av = a.symbol;             bv = b.symbol; return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av); }
+    else { av = a.divRate ?? -1; bv = b.divRate ?? -1; }
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  const totalAnnualInr = rows.reduce((s, r) => s + (r.annualDivInr || 0), 0);
+  const monthlyEstInr  = totalAnnualInr / 12;
+
+  function SortTh({ col, label, right }) {
+    const active = sortCol === col;
+    return (
+      <th onClick={() => { if (active) setSortAsc(a => !a); else { setSortCol(col); setSortAsc(false); } }}
+        style={{ padding: "8px 10px", textAlign: right ? "right" : "left", fontSize: 11, fontWeight: 600, color: active ? "#1a6b3c" : "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", cursor: "pointer", whiteSpace: "nowrap", userSelect: "none" }}>
+        {label} {active ? (sortAsc ? "↑" : "↓") : ""}
+      </th>
+    );
+  }
+
+  const payingRows   = rows.filter(r => r.divRate > 0);
+  const nonPayingCnt = rows.length - payingRows.length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
+
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        {[
+          { label: "💰 Est. Annual Dividend", val: fmtCur(totalAnnualInr), color: "#1a6b3c" },
+          { label: "📅 Est. Monthly Income",  val: fmtCur(monthlyEstInr),  color: "#1a6b3c" },
+          { label: "✅ Dividend-Paying",       val: `${payingRows.length} stocks`, color: "var(--color-text-primary)" },
+          { label: "⬜ Non-Paying",            val: `${nonPayingCnt} stocks`,       color: "var(--color-text-secondary)" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table card */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div>
+            <span style={{ fontWeight: 600, fontSize: 16 }}>💰 Dividend Details</span>
+            <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 10 }}>Click column headers to sort</span>
+          </div>
+          <button onClick={fetchDividends} disabled={loading}
+            style={{ padding: "5px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", opacity: loading ? 0.6 : 1 }}>
+            {loading ? "⟳ Loading…" : "↻ Refresh"}
+          </button>
+        </div>
+
+        {error && <div style={{ fontSize: 13, color: "#d44", marginBottom: 10 }}>⚠ {error}</div>}
+        {loading && !loaded && <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Fetching dividend data…</div>}
+
+        {(loaded || rows.length > 0) && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "var(--color-background-secondary)" }}>
+                  <th style={{ padding: "8px 10px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}></th>
+                  <SortTh col="symbol" label="Stock" />
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Qty</th>
+                  <SortTh col="rate"   label="Div / Share" right />
+                  <SortTh col="yield"  label="Yield %" right />
+                  <SortTh col="annual" label="Annual (₹)" right />
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Ex-Date</th>
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Pay Date</th>
+                  <th style={{ padding: "8px 10px", textAlign: "left",  fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r, i) => {
+                  const hasDiv = r.divRate > 0;
+                  return (
+                    <tr key={r.id || i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "8px 10px", textAlign: "center" }}>{r.region === "IN" ? "🇮🇳" : "🇺🇸"}</td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <div style={{ fontWeight: 600 }}>{r.symbol}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{r.name || r.ticker}</div>
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--color-text-secondary)" }}>{r.qty}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 500 }}>
+                        {r.divRate != null && r.divRate > 0
+                          ? <span style={{ color: "#1a6b3c" }}>{r.isUS ? fmtUSD(r.divRate) : fmtCur(r.divRate)}</span>
+                          : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                        {r.divYield != null && r.divYield > 0
+                          ? <span style={{ fontWeight: 600, color: r.divYield >= 0.04 ? "#1a6b3c" : r.divYield >= 0.02 ? "#f59e0b" : "var(--color-text-primary)" }}>
+                              {(r.divYield * 100).toFixed(2)}%
+                            </span>
+                          : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: "#1a6b3c" }}>
+                        {r.annualDivInr != null && r.annualDivInr > 0 ? fmtCur(r.annualDivInr) : <span style={{ color: "var(--color-text-secondary)", fontWeight: 400 }}>—</span>}
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        {r.exDate || "—"}
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        {r.payDate || "—"}
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        {hasDiv
+                          ? <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>Paying</span>
+                          : <span style={{ background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>No Dividend</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && loaded && rows.length === 0 && (
+          <div style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-secondary)", fontSize: 14 }}>
+            No holdings found. Add stocks in the Indian Stocks or US Stocks tab.
+          </div>
+        )}
+
+        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          ⓘ Dividend data is sourced from Yahoo Finance via your /api/stock-price endpoint. Annual dividend (₹) = dividend per share × quantity held. US stock dividends are converted at ₹{usdInr}/USD. Yield colour: green ≥ 4%, amber ≥ 2%.
+        </p>
+      </div>
     </div>
   );
 }
