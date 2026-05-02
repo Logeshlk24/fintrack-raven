@@ -10,8 +10,8 @@ export default async function handler(req, res) {
   const { ticker, range = "10y", interval = "1mo" } = req.query;
   if (!ticker) return res.status(400).json({ error: "ticker required" });
 
-  const VALID_RANGES    = ["1y","2y","3y","5y","10y","ytd","max"];
-  const VALID_INTERVALS = ["1d","1wk","1mo","3mo"];
+  const VALID_RANGES    = ["1d","5d","1mo","3mo","6mo","1y","2y","3y","5y","10y","ytd","max"];
+  const VALID_INTERVALS = ["1m","2m","5m","15m","30m","60m","90m","1h","1d","5d","1wk","1mo","3mo"];
   const safeRange    = VALID_RANGES.includes(range)    ? range    : "10y";
   const safeInterval = VALID_INTERVALS.includes(interval) ? interval : "1mo";
 
