@@ -300,6 +300,8 @@ export default function App() {
   const [essentialsTab, setEssentialsTab] = useState("essentials");
   const [settingsTab, setSettingsTab]   = useState("trading");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const navDragIdx = useRef(null);
+  const [navDragOver, setNavDragOver] = useState(null);
 
   // Debounce timer ref — avoids hammering Firestore on every keystroke
   const saveTimer = useRef(null);
@@ -414,8 +416,6 @@ export default function App() {
   ];
   const navItems = orderedIds.map(id => allNavItems.find(i => i.id === id)).filter(Boolean);
 
-  const navDragIdx = useRef(null);
-  const [navDragOver, setNavDragOver] = useState(null);
   function onNavDragStart(e, i) { navDragIdx.current = i; e.dataTransfer.effectAllowed = "move"; }
   function onNavDragOver(e, i) { e.preventDefault(); if (i !== navDragOver) setNavDragOver(i); }
   function onNavDrop(e, i) {
