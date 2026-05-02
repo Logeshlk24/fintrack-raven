@@ -3644,7 +3644,7 @@ function AnalysisTab({ data }) {
     {id:"graph",     label:"📈 Income vs Expense"},
     {id:"pie",       label:"🥧 Category Breakdown"},
     {id:"calendar",  label:"📅 Calendar"},
-    {id:"portfolio", label:"📊 Portfolio Analysis"},
+
   ];
   return (
     <div style={{marginTop:16}}>
@@ -3658,7 +3658,7 @@ function AnalysisTab({ data }) {
             {v.label}
           </button>
         ))}
-        {view!=="calendar" && view!=="portfolio" && (
+        {view!=="calendar" && (
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
             {["1M","3M","6M","1Y","All"].map(p=>(
               <button key={p} onClick={()=>setPeriod(p)}
@@ -3674,7 +3674,7 @@ function AnalysisTab({ data }) {
         {view==="graph"    && <GraphView/>}
         {view==="pie"      && <PieView/>}
         {view==="calendar" && <CalendarView/>}
-        {view==="portfolio" && <PortfolioAnalysisView data={data} />}
+
       </div>
     </div>
   );
@@ -7491,10 +7491,11 @@ function PortfolioHub({ data, update }) {
   const pnlColor = v => v >= 0 ? "#1a6b3c" : "#d44";
 
   const TABS = [
-    { id: "overall", label: "🏠 Overall"        },
-    { id: "indian",  label: "📈 Indian Stocks"  },
-    { id: "us",      label: "🇺🇸 US Stocks"     },
-    { id: "mf",      label: "💼 Mutual Funds"   },
+    { id: "overall",   label: "🏠 Overall"        },
+    { id: "indian",    label: "📈 Indian Stocks"  },
+    { id: "us",        label: "🇺🇸 US Stocks"     },
+    { id: "mf",        label: "💼 Mutual Funds"   },
+    { id: "analysis",  label: "📊 Analysis"       },
   ];
 
   return (
@@ -7626,9 +7627,10 @@ function PortfolioHub({ data, update }) {
         </div>
       )}
 
-      {tab === "indian" && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
-      {tab === "us"     && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
-      {tab === "mf"     && <MutualFundsPage data={data} update={update} />}
+      {tab === "indian"   && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
+      {tab === "us"       && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
+      {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
+      {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
     </div>
   );
 }
