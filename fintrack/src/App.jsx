@@ -4258,6 +4258,7 @@ function LiabilitiesTab({ data, update }) {
   const [editLiability, setEditLiability] = useState(null);
   const [amountMode, setAmountMode] = useState("monthly"); // "monthly" | "total"
   const [totalAmountInput, setTotalAmountInput] = useState("");
+  const [addPaymentMode, setAddPaymentMode] = useState("split"); // "split" | "interestOnly"
 
   // EMI formula: P * r * (1+r)^n / ((1+r)^n - 1)
   function calcEMI(principal, annualRatePct, months) {
@@ -4335,11 +4336,20 @@ function LiabilitiesTab({ data, update }) {
       startDate: liabilityForm.startDate,
       notes: liabilityForm.notes,
       interestRate: parseFloat(liabilityForm.interestRate) || 0,
-      active: true
+      active: true,
+      _paymentMode: addPaymentMode,
+      ...(addPaymentMode === "interestOnly" ? {
+        capitalAmount: parseFloat(liabilityForm.capitalAmount) || parseFloat(totalAmountInput) || 0,
+        capitalPaymentDay: parseInt(liabilityForm.capitalPaymentDay) || 0,
+        capitalPaid: false,
+      } : {})
     };
     
     update(p => ({ emis: [...(p.emis || []), newLiability] }));
-    setLiabilityForm({ name: "", type: "Credit Card", amount: "", totalMonths: "", paymentDay: "", accountId: "", startDate: today(), notes: "", interestRate: "" });
+    setLiabilityForm({ name: "", type: "Credit Card", amount: "", totalMonths: "", paymentDay: "", accountId: "", startDate: today(), notes: "", interestRate: "", capitalAmount: "", capitalPaymentDay: "" });
+    setAddPaymentMode("split");
+    setTotalAmountInput("");
+    setAmountMode("monthly");
   }
 
   function saveEditLiability() {
@@ -4696,13 +4706,16 @@ function LiabilitiesTab({ data, update }) {
                   }}
                   style={{ width: "100%", boxSizing: "border-box" }} />
                 {totalAmountInput && liabilityForm.totalMonths && (
-                  <div style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
+                  <div style={{ fontSize: 11, color: addPaymentMode === "interestOnly" ? "#f59e0b" : "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
                     = ₹{liabilityForm.amount ? Number(liabilityForm.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"} / month
-                    {liabilityForm.interestRate > 0 && (
-                      <span style={{ color: "#f59e0b", marginLeft: 6 }}>
-                        (incl. {liabilityForm.interestRate}% p.a. interest)
-                      </span>
-                    )}
+                    {addPaymentMode === "interestOnly"
+                      ? <span style={{ color: "#f59e0b", marginLeft: 6 }}>(interest only · {liabilityForm.interestRate}% p.a.)</span>
+                      : liabilityForm.interestRate > 0 && (
+                        <span style={{ color: "#f59e0b", marginLeft: 6 }}>
+                          (incl. {liabilityForm.interestRate}% p.a. interest)
+                        </span>
+                      )
+                    }
                   </div>
                 )}
               </div>
@@ -4711,7 +4724,32 @@ function LiabilitiesTab({ data, update }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Total Months</label>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                {addPaymentMode === "interestOnly" ? "🗓 Interest Due Day" : "Total Months"}
+              </label>
+              <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+                <button onClick={() => {
+                  setAddPaymentMode("split");
+                  const principal = parseFloat(totalAmountInput) || 0;
+                  const rate = parseFloat(liabilityForm.interestRate) || 0;
+                  const months = parseFloat(liabilityForm.totalMonths) || 0;
+                  if (amountMode === "total" && principal > 0 && months > 0)
+                    setLiabilityForm(p => ({ ...p, amount: calcEMI(principal, rate, months).toFixed(2) }));
+                }} style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
+                  background: addPaymentMode === "split" ? "#1a6b3c" : "transparent",
+                  color: addPaymentMode === "split" ? "#fff" : "var(--color-text-secondary)" }}>Split</button>
+                <button onClick={() => {
+                  setAddPaymentMode("interestOnly");
+                  const principal = parseFloat(totalAmountInput) || 0;
+                  const rate = parseFloat(liabilityForm.interestRate) || 0;
+                  if (amountMode === "total" && principal > 0 && rate > 0)
+                    setLiabilityForm(p => ({ ...p, amount: (principal * rate / 12 / 100).toFixed(2) }));
+                }} style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
+                  background: addPaymentMode === "interestOnly" ? "#f59e0b" : "transparent",
+                  color: addPaymentMode === "interestOnly" ? "#fff" : "var(--color-text-secondary)" }}>Interest Only</button>
+              </div>
+            </div>
             <input type="number" placeholder="e.g. 12" value={liabilityForm.totalMonths}
               onChange={e => {
                 const months = parseFloat(e.target.value) || 0;
@@ -4720,7 +4758,7 @@ function LiabilitiesTab({ data, update }) {
                 setLiabilityForm(p => ({
                   ...p,
                   totalMonths: e.target.value,
-                  ...(amountMode === "total" && principal > 0 && months > 0
+                  ...(amountMode === "total" && principal > 0 && months > 0 && addPaymentMode === "split"
                     ? { amount: calcEMI(principal, rate, months).toFixed(2) }
                     : {})
                 }));
@@ -4737,15 +4775,19 @@ function LiabilitiesTab({ data, update }) {
                 setLiabilityForm(p => ({
                   ...p,
                   interestRate: e.target.value,
-                  ...(amountMode === "total" && principal > 0 && months > 0
-                    ? { amount: calcEMI(principal, rate, months).toFixed(2) }
+                  ...(amountMode === "total" && principal > 0
+                    ? addPaymentMode === "interestOnly" && rate > 0
+                      ? { amount: (principal * rate / 12 / 100).toFixed(2) }
+                      : months > 0 ? { amount: calcEMI(principal, rate, months).toFixed(2) } : {}
                     : {})
                 }));
               }}
               style={{ width: "100%", boxSizing: "border-box" }} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Payment Day</label>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>
+              {addPaymentMode === "interestOnly" ? "🗓 Interest Due Day" : "Payment Day"}
+            </label>
             <input type="number" min="1" max="31" placeholder="e.g. 5" value={liabilityForm.paymentDay} onChange={e => setLiabilityForm(p => ({ ...p, paymentDay: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
           </div>
           <div>
@@ -4780,6 +4822,30 @@ function LiabilitiesTab({ data, update }) {
             </select>
           </div>
         </div>
+        {addPaymentMode === "interestOnly" && (
+          <div style={{ marginBottom: 10, background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 8 }}>💰 Capital Payment Settings</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Due Day</label>
+                <input type="number" min="1" max="31" placeholder="e.g. 10"
+                  value={liabilityForm.capitalPaymentDay || ""}
+                  onChange={e => setLiabilityForm(p => ({ ...p, capitalPaymentDay: e.target.value }))}
+                  style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Amount (₹)</label>
+                <input type="number" placeholder="e.g. 30000"
+                  value={liabilityForm.capitalAmount || totalAmountInput || ""}
+                  onChange={e => setLiabilityForm(p => ({ ...p, capitalAmount: e.target.value }))}
+                  style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "#92400e", marginTop: 6 }}>
+              ⓘ Interest paid monthly on day {liabilityForm.paymentDay || "—"} · Capital paid on day {liabilityForm.capitalPaymentDay || "—"}
+            </div>
+          </div>
+        )}
         <div style={{ marginBottom: 10 }}>
           <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes (optional)</label>
           <input placeholder="e.g. Interest rate 12%, Principal amount 60000" value={liabilityForm.notes} onChange={e => setLiabilityForm(p => ({ ...p, notes: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
