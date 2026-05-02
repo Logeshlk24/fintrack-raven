@@ -8532,8 +8532,8 @@ function PortfolioAnalysisView({ data }) {
   const [fundMap,   setFundMap]   = React.useState({});
   const [fundLoading, setFundLoading] = React.useState(false);
   const [fundLoaded,  setFundLoaded]  = React.useState(false);
-  const [sortCol,   setSortCol]   = React.useState("weight");
-  const [sortAsc,   setSortAsc]   = React.useState(false);
+  const [sortCol,   setSortCol]   = React.useState("sector");
+  const [sortAsc,   setSortAsc]   = React.useState(true);
 
   function toTicker(h) {
     const s = h.symbol.trim().toUpperCase();
@@ -8605,6 +8605,12 @@ function PortfolioAnalysisView({ data }) {
         av = order[a.cap] ?? 4; bv = order[b.cap] ?? 4;
       }
       else if (sortCol === "symbol") { return sortAsc ? a.symbol.localeCompare(b.symbol) : b.symbol.localeCompare(a.symbol); }
+      else if (sortCol === "sector") {
+        const sa = a.sector || "zzz"; const sb = b.sector || "zzz";
+        const cmp = sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+        if (cmp !== 0) return cmp;
+        return b.weight - a.weight; // within same sector, sort by weight desc
+      }
       else { av = a.weight; bv = b.weight; }
       return sortAsc ? av - bv : bv - av;
     });
@@ -8830,7 +8836,7 @@ function PortfolioAnalysisView({ data }) {
                 <th style={{padding:"7px 10px",textAlign:"center",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"}}></th>
                 <SortTh col="symbol" label="Symbol"/>
                 <th style={{padding:"7px 10px",textAlign:"left",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>Company</th>
-                <th style={{padding:"7px 10px",textAlign:"left",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>Sector</th>
+                <SortTh col="sector" label="Sector"/>
                 <SortTh col="cap"    label="Cap"/>
                 <SortTh col="pe"     label="PE" right/>
                 <SortTh col="beta"   label="Beta" right/>
