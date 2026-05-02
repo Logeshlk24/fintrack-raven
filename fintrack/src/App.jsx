@@ -7831,6 +7831,33 @@ function ComparativeAnalysisView({ data }) {
   const [period,      setPeriod]      = useState("10y");
   const autoRefreshRef = useRef(null);
 
+  // ── Live index prices for legend display ─────────────────────────────────
+  const [liveIndexPrices, setLiveIndexPrices] = useState({});
+  useEffect(() => {
+    async function fetchLiveIndices() {
+      try {
+        const tickers = BENCHMARKS.map(b => b.ticker).join(",");
+        const res = await fetch(`/api/stock-price?ticker=${tickers}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        // Map by benchmark id
+        const mapped = {};
+        BENCHMARKS.forEach(b => {
+          const decoded = decodeURIComponent(b.ticker);
+          const entry = json[decoded] || json[b.ticker] || Object.values(json).find(v => v?.ticker === decoded);
+          if (entry?.ok) mapped[b.id] = entry;
+        });
+        setLiveIndexPrices(mapped);
+      } catch (_) {}
+    }
+    fetchLiveIndices();
+    const iv = setInterval(fetchLiveIndices, 5 * 60 * 1000); // refresh every 5 min
+    return () => clearInterval(iv);
+  }, []); // eslint-disable-line
+
+  // ── Tooltip state for chart hover ─────────────────────────────────────────
+  const [tooltip, setTooltip] = useState(null); // { x, y, date, values: [{label, color, value}] }
+
   // Period → { range, interval } for Yahoo Finance API
   // Note: 1D intraday (5m) is unreliable for NSE indices via Yahoo Finance public API
   // We use range=5d + interval=1h to get recent hourly bars as a workaround
@@ -7991,8 +8018,39 @@ function ComparativeAnalysisView({ data }) {
       }
     })();
 
+    // ── Mouse hover handler ───────────────────────────────────────────────
+    function handleMouseMove(e) {
+      const svgEl = e.currentTarget;
+      const rect  = svgEl.getBoundingClientRect();
+      // Convert screen coords → SVG viewBox coords
+      const scaleX = W / rect.width;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      // Find nearest data index
+      if (allDates.length === 0) return;
+      const rawIdx = (mouseX - PAD.left) / chartW * (allDates.length - 1);
+      const idx    = Math.max(0, Math.min(allDates.length - 1, Math.round(rawIdx)));
+      // Build tooltip values
+      const values = series.map(s => {
+        const pt = s.points[idx];
+        return pt ? { label: s.label, color: s.color, indexedVal: pt.value, pct: (pt.value - 100).toFixed(1) } : null;
+      }).filter(Boolean);
+      const dateLabel = (() => {
+        const ts = allDates[idx];
+        if (!ts) return "";
+        const d = new Date(ts * 1000);
+        if (period === "1d") return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+        if (period === "1mo") return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+        return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+      })();
+      setTooltip({ svgX: xScale(idx), idx, date: dateLabel, values });
+    }
+    function handleMouseLeave() { setTooltip(null); }
+
+    const ttX = tooltip ? tooltip.svgX : null;
+
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair" }}
+        onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
         {/* Grid */}
         {yTicks.map(y => (
           <g key={y}>
@@ -8012,6 +8070,10 @@ function ComparativeAnalysisView({ data }) {
           return (
             <g key={s.id}>
               <polyline points={pts} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              {/* Hover dot */}
+              {tooltip && s.points[tooltip.idx] && (
+                <circle cx={xScale(tooltip.idx)} cy={yScale(s.points[tooltip.idx].value)} r={4} fill={s.color} stroke="#fff" strokeWidth={1.5}/>
+              )}
               <circle cx={lastX} cy={lastY} r={4} fill={s.color} />
               <text x={lastX + 6} y={lastY + 4} fontSize={9} fill={s.color} fontWeight={600}>{last.value.toFixed(0)}</text>
             </g>
@@ -8040,6 +8102,41 @@ function ComparativeAnalysisView({ data }) {
 
         {/* Y-axis label */}
         <text x={12} y={PAD.top + chartH / 2} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)" transform={`rotate(-90, 12, ${PAD.top + chartH / 2})`}>Indexed (Base=100)</text>
+
+        {/* ── Crosshair + tooltip box ── */}
+        {tooltip && ttX != null && (
+          <g pointerEvents="none">
+            {/* Vertical crosshair line */}
+            <line x1={ttX} x2={ttX} y1={PAD.top} y2={PAD.top + chartH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" />
+
+            {/* Tooltip box — auto-flip if near right edge */}
+            {(() => {
+              const TW = 160, TH = 20 + tooltip.values.length * 18 + 16;
+              const flip = ttX + TW + 16 > W - PAD.right;
+              const bx = flip ? ttX - TW - 10 : ttX + 10;
+              const by = PAD.top + 4;
+              return (
+                <g>
+                  <rect x={bx} y={by} width={TW} height={TH} rx={6} ry={6} fill="#1e293b" opacity={0.92} />
+                  {/* Date header */}
+                  <text x={bx + 10} y={by + 16} fontSize={10} fill="#cbd5e1" fontWeight={600}>{tooltip.date}</text>
+                  {/* Values */}
+                  {tooltip.values.map((v, vi) => (
+                    <g key={v.label}>
+                      <circle cx={bx + 14} cy={by + 28 + vi * 18} r={4} fill={v.color} />
+                      <text x={bx + 24} y={by + 32 + vi * 18} fontSize={10} fill="#f1f5f9">
+                        {v.label}
+                      </text>
+                      <text x={bx + TW - 8} y={by + 32 + vi * 18} fontSize={10} fill={v.pct >= 0 ? "#4ade80" : "#f87171"} textAnchor="end" fontWeight={700}>
+                        {v.pct >= 0 ? "+" : ""}{v.pct}%
+                      </text>
+                    </g>
+                  ))}
+                </g>
+              );
+            })()}
+          </g>
+        )}
       </svg>
     );
   }
@@ -8119,14 +8216,26 @@ function ComparativeAnalysisView({ data }) {
             const lastPt = benchData[b.id];
             const lastVal = lastPt ? normalise(lastPt) : null;
             const lastPct = lastVal && lastVal.length > 0 ? (lastVal[lastVal.length - 1].value - 100).toFixed(1) : null;
+            const liveData = liveIndexPrices[b.id];
             return (
               <button key={b.id} onClick={() => setActiveBenchmarks(prev => prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id])}
-                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20,
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 20,
                   border: `1.5px solid ${active ? b.color : "var(--color-border-secondary)"}`,
                   background: active ? b.color + "18" : "var(--color-background-secondary)", cursor: "pointer",
                   fontSize: 12, fontWeight: 600, color: active ? b.color : "var(--color-text-secondary)" }}>
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: active ? b.color : "var(--color-border-primary)" }} />
-                {b.label}{lastPct ? ` (${lastPct >= 0 ? "+" : ""}${lastPct}%)` : ""}
+                <span>{b.label}</span>
+                {liveData && (
+                  <span style={{ fontWeight: 700, marginLeft: 2 }}>
+                    {Number(liveData.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    <span style={{ fontWeight: 500, marginLeft: 3, color: liveData.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
+                      ({liveData.changePct >= 0 ? "+" : ""}{liveData.changePct.toFixed(2)}%)
+                    </span>
+                  </span>
+                )}
+                {!liveData && lastPct != null && (
+                  <span style={{ fontWeight: 500, marginLeft: 2 }}>({lastPct >= 0 ? "+" : ""}{lastPct}%)</span>
+                )}
               </button>
             );
           })}
