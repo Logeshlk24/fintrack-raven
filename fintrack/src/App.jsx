@@ -3323,33 +3323,6 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle, navItems, n
   return (
     <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
-      {/* Sidebar Order card */}
-      <div style={{ gridColumn: "span 2", ...cardStyle }}>
-        {sectionTitle("☰", "Sidebar Order", "Drag to reorder the navigation items in the sidebar.")}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <button
-            onClick={() => { setNavEditMode(m => !m); setNavDragOver(null); navDragIdx.current = null; }}
-            style={{ background: navEditMode ? "#1a6b3c" : "none", border: navEditMode ? "none" : "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: navEditMode ? "#fff" : "var(--color-text-secondary)", fontWeight: 500 }}
-          >{navEditMode ? "✓ Done Reordering" : "✏️ Reorder Items"}</button>
-          {navEditMode && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Drag the ⠿ handles to change order</span>}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {(navItems || []).map((item, i) => (
-            <div key={item.id}
-              draggable={navEditMode}
-              onDragStart={navEditMode ? e => onNavDragStart(e, i) : undefined}
-              onDragOver={navEditMode ? e => onNavDragOver(e, i) : undefined}
-              onDrop={navEditMode ? e => onNavDrop(e, i) : undefined}
-              onDragEnd={navEditMode ? () => { navDragIdx.current = null; setNavDragOver(null); } : undefined}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: navDragOver === i ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: navDragOver === i ? "#e8f5ee" : "var(--color-background-secondary)", cursor: navEditMode ? "grab" : "default", transition: "background 0.15s" }}
-            >
-              <span style={{ color: navEditMode ? "var(--color-text-secondary)" : "var(--color-border-secondary)", fontSize: 14, userSelect: "none", opacity: navEditMode ? 1 : 0.3 }}>⠿</span>
-              <span style={{ fontSize: 16 }}>{item.icon}</span>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{item.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
       {editCat && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(340px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
@@ -3388,6 +3361,34 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle, navItems, n
       ))}
       <div style={{ gridColumn: "span 2" }}>
         <LiabilityTypesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />
+      </div>
+
+      {/* Sidebar Order card — at the bottom */}
+      <div style={{ gridColumn: "span 2", ...cardStyle }}>
+        {sectionTitle("☰", "Sidebar Order", "Drag to reorder the navigation items in the sidebar.")}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <button
+            onClick={() => { setNavEditMode(m => !m); setNavDragOver(null); navDragIdx.current = null; }}
+            style={{ background: navEditMode ? "#1a6b3c" : "none", border: navEditMode ? "none" : "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: navEditMode ? "#fff" : "var(--color-text-secondary)", fontWeight: 500 }}
+          >{navEditMode ? "✓ Done Reordering" : "✏️ Reorder Items"}</button>
+          {navEditMode && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Drag the ⠿ handles to change order</span>}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {(navItems || []).map((item, i) => (
+            <div key={item.id}
+              draggable={navEditMode}
+              onDragStart={navEditMode ? e => onNavDragStart(e, i) : undefined}
+              onDragOver={navEditMode ? e => onNavDragOver(e, i) : undefined}
+              onDrop={navEditMode ? e => onNavDrop(e, i) : undefined}
+              onDragEnd={navEditMode ? () => { navDragIdx.current = null; setNavDragOver(null); } : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: navDragOver === i ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: navDragOver === i ? "#e8f5ee" : "var(--color-background-secondary)", cursor: navEditMode ? "grab" : "default", transition: "background 0.15s" }}
+            >
+              <span style={{ color: navEditMode ? "var(--color-text-secondary)" : "var(--color-border-secondary)", fontSize: 14, userSelect: "none", opacity: navEditMode ? 1 : 0.3 }}>⠿</span>
+              <span style={{ fontSize: 16 }}>{item.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{item.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
