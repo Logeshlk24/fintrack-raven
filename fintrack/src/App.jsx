@@ -832,7 +832,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
           return (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-                <span style={{ fontWeight: 500, fontSize: 15 }}>📈 Total Portfolio</span>
+                <span style={{ fontWeight: 500, fontSize: 15 }}>📈 Assets</span>
                 <button onClick={() => setPage("portfolio")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View →</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
