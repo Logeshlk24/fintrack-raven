@@ -7615,27 +7615,37 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* USD ↔ INR toggle — only for US Stocks */}
+          {/* USD ↔ INR segmented control — only for US Stocks */}
           {isUS && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 10px" }}>
-              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>₹ INR</span>
-              <button onClick={() => setShowUSD(p => !p)}
-                style={{ width: 38, height: 20, borderRadius: 10, border: "none", cursor: "pointer", padding: 0, background: showUSD ? "#1a6b3c" : "#ccc", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: showUSD ? 20 : 2, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
-              </button>
-              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>$ USD</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 3, gap: 2 }}>
+                <button onClick={() => setShowUSD(false)}
+                  style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: !showUSD ? "#1a6b3c" : "transparent",
+                    color: !showUSD ? "#fff" : "var(--color-text-secondary)",
+                    transition: "all 0.15s" }}>
+                  ₹ INR
+                </button>
+                <button onClick={() => setShowUSD(true)}
+                  style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: showUSD ? "#1a6b3c" : "transparent",
+                    color: showUSD ? "#fff" : "var(--color-text-secondary)",
+                    transition: "all 0.15s" }}>
+                  $ USD
+                </button>
+              </div>
               {showUSD && (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4, borderLeft: "0.5px solid var(--color-border-secondary)", paddingLeft: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 9px" }}>
                   <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>1$=₹</span>
                   {editingRate ? (
                     <input type="number" value={usdRate} onChange={e => setUsdRate(Number(e.target.value))}
                       onBlur={() => { setEditingRate(false); update(() => ({ usdInrRate: usdRate })); }}
                       onKeyDown={e => e.key === "Enter" && setEditingRate(false)}
                       autoFocus
-                      style={{ width: 54, fontSize: 12, padding: "2px 5px", borderRadius: 5, border: "0.5px solid #1a6b3c", outline: "none", fontFamily: "inherit" }} />
+                      style={{ width: 52, fontSize: 12, padding: "2px 5px", borderRadius: 5, border: "0.5px solid #1a6b3c", outline: "none", fontFamily: "inherit" }} />
                   ) : (
                     <button onClick={() => setEditingRate(true)}
-                      style={{ fontSize: 12, fontWeight: 600, color: "#1a6b3c", background: "#e8f5ee", border: "0.5px solid #1a6b3c44", borderRadius: 5, padding: "2px 7px", cursor: "pointer" }}>
+                      style={{ fontSize: 12, fontWeight: 700, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}>
                       {usdRate} ✏️
                     </button>
                   )}
