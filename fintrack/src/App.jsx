@@ -404,6 +404,7 @@ export default function App() {
     { id: "goals",      label: "Goals",     icon: "◎" },
     { id: "business",   label: "Business",  icon: "🏢" },
     { id: "projects",   label: "Projects",  icon: "📋" },
+    { id: "profile",    label: "Profile",   icon: "👤" },
   ];
 
   return (
@@ -477,7 +478,7 @@ export default function App() {
                 }
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.user?.name || "User"}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.user?.email || ""}</div>
+
                 </div>
               </div>
               <button onClick={signOutUser} style={{ width: "100%", background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>
@@ -514,6 +515,7 @@ export default function App() {
         {page === "business" && <BusinessPage data={data} update={update} />}
         {page === "projects" && <ProjectsPage data={data} update={update} />}
         {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} />}
+        {page === "profile" && <ProfilePage data={data} update={update} />}
       </main>
     </div>
     </DriveProvider>
@@ -724,11 +726,210 @@ function AddAssetMini({ update }) {
   );
 }
 
+
+// ─── Profile Page ─────────────────────────────────────────────────────────────
+function ProfilePage({ data, update }) {
+  const profile = data.userProfile || {};
+  const [name, setName] = useState(profile.name || data.user?.name || "");
+  const [dob, setDob] = useState(profile.dob || "");
+  const [headerText, setHeaderText] = useState(profile.headerText || "");
+  const [widgetType, setWidgetType] = useState(profile.widgetType || "none");
+  const [customWidget, setCustomWidget] = useState(profile.customWidget || "");
+  const [saved, setSaved] = useState(false);
+
+  function calcAge(dobStr) {
+    if (!dobStr) return null;
+    const birth = new Date(dobStr);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age;
+  }
+
+  const age = calcAge(dob);
+
+  function save() {
+    update(() => ({ userProfile: { name, dob, headerText, widgetType, customWidget } }));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  const cardStyle = { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.4rem 1.6rem", marginBottom: 16 };
+  const labelStyle = { fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, display: "block" };
+  const inputStyle = { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--color-border-primary)", fontSize: 14, boxSizing: "border-box" };
+
+  const WIDGET_OPTIONS = [
+    { id: "none",       label: "None",               desc: "No widget" },
+    { id: "clock",      label: "🕐 Live Clock",       desc: "Shows current time" },
+    { id: "greeting",   label: "👋 Greeting",         desc: "Good morning / afternoon / evening with your name" },
+    { id: "quote",      label: "💬 Daily Quote",      desc: "A motivational quote" },
+    { id: "networth",   label: "📊 Net Worth Trend",  desc: "Quick net worth snapshot" },
+    { id: "custom",     label: "✏️ Custom Text",      desc: "Write whatever you want" },
+  ];
+
+  return (
+    <div>
+      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 }}>Profile</h1>
+      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 20 }}>Personalise your FinTrack experience.</p>
+
+      {/* Personal Info */}
+      <div style={cardStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <span style={{ fontSize: 18 }}>👤</span>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Personal Info</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div>
+            <label style={labelStyle}>Display Name</label>
+            <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
+          </div>
+          <div>
+            <label style={labelStyle}>Date of Birth</label>
+            <input type="date" style={inputStyle} value={dob} onChange={e => setDob(e.target.value)} />
+          </div>
+        </div>
+        {age !== null && (
+          <div style={{ marginTop: 12, padding: "10px 14px", background: "#f0f9f4", borderRadius: 8, border: "0.5px solid #b7dfc8", display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>🎂</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#1a6b3c" }}>Age: {age} years old</span>
+          </div>
+        )}
+      </div>
+
+      {/* Overview Header Text */}
+      <div style={cardStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ fontSize: 18 }}>📝</span>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Overview Header Text</span>
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12 }}>This text appears on the right side of the Overview page header.</p>
+        <input
+          style={inputStyle}
+          value={headerText}
+          onChange={e => setHeaderText(e.target.value)}
+          placeholder="e.g. Welcome back! 🚀  or  My Financial Dashboard"
+        />
+      </div>
+
+      {/* Overview Widget */}
+      <div style={cardStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ fontSize: 18 }}>🧩</span>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Overview Widget</span>
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>Choose what to display in the widget area on the right side of your Overview.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+          {WIDGET_OPTIONS.map(opt => (
+            <button key={opt.id} onClick={() => setWidgetType(opt.id)} style={{
+              padding: "12px 14px", borderRadius: 10, textAlign: "left",
+              border: widgetType === opt.id ? "2px solid #1a6b3c" : "1px solid var(--color-border-primary)",
+              background: widgetType === opt.id ? "#f0f9f4" : "var(--color-background-secondary)",
+              cursor: "pointer"
+            }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: widgetType === opt.id ? "#1a6b3c" : "var(--color-text-primary)", marginBottom: 3 }}>{opt.label}</div>
+              <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+        {widgetType === "custom" && (
+          <div>
+            <label style={labelStyle}>Custom Widget Content</label>
+            <textarea
+              style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "inherit" }}
+              value={customWidget}
+              onChange={e => setCustomWidget(e.target.value)}
+              placeholder="Type anything you want to display — a note, a goal, a reminder..."
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Save */}
+      <button onClick={save} style={{
+        padding: "10px 28px", borderRadius: 8, border: "none", cursor: "pointer",
+        background: saved ? "#2d9e5f" : "#1a6b3c", color: "#fff", fontWeight: 600, fontSize: 14,
+        transition: "background 0.3s"
+      }}>
+        {saved ? "✓ Saved!" : "Save Profile"}
+      </button>
+    </div>
+  );
+}
+
 // ─── Overview ─────────────────────────────────────────────────────────────────
 function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfolioOn }) {
   const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const [period, setPeriod] = useState(data.overviewDefaultPeriod || "all");
+  const [clockTime, setClockTime] = useState(new Date());
+  useEffect(() => { const t = setInterval(() => setClockTime(new Date()), 1000); return () => clearInterval(t); }, []);
+
+  const userProfile = data.userProfile || {};
+  const headerText = userProfile.headerText || "";
+  const widgetType = userProfile.widgetType || "none";
+  const profileName = userProfile.name || data.user?.name || "";
+
+  function getGreeting() {
+    const h = new Date().getHours();
+    if (h < 12) return "Good morning";
+    if (h < 17) return "Good afternoon";
+    return "Good evening";
+  }
+
+  const QUOTES = [
+    "A budget is telling your money where to go instead of wondering where it went.",
+    "Do not save what is left after spending, but spend what is left after saving.",
+    "Financial freedom is available to those who learn about it and work for it.",
+    "The stock market is filled with individuals who know the price of everything, but the value of nothing.",
+    "It's not your salary that makes you rich, it's your spending habits.",
+    "Wealth is not about having a lot of money; it's about having a lot of options.",
+  ];
+  const dailyQuote = QUOTES[new Date().getDate() % QUOTES.length];
+
+  function OverviewWidget() {
+    if (widgetType === "none") return null;
+    const box = { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" };
+    if (widgetType === "clock") return (
+      <div style={box}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>🕐 Current Time</div>
+        <div style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "var(--color-text-primary)", letterSpacing: 1 }}>
+          {clockTime.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>
+          {clockTime.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+        </div>
+      </div>
+    );
+    if (widgetType === "greeting") return (
+      <div style={box}>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
+        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 8 }}>
+          {todayStr} · Have a great day!
+        </div>
+      </div>
+    );
+    if (widgetType === "quote") return (
+      <div style={box}>
+        <div style={{ fontSize: 18, marginBottom: 8 }}>💬</div>
+        <div style={{ fontSize: 13, fontStyle: "italic", color: "var(--color-text-primary)", lineHeight: 1.6 }}>"{dailyQuote}"</div>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 8 }}>— Daily Quote</div>
+      </div>
+    );
+    if (widgetType === "networth") return (
+      <div style={box}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>📊 Net Worth Snapshot</div>
+        <div style={{ fontSize: 26, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(netWorth)}</div>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4 }}>as of {todayStr}</div>
+      </div>
+    );
+    if (widgetType === "custom") return (
+      <div style={box}>
+        <div style={{ fontSize: 14, color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{userProfile.customWidget || "No custom content set yet. Edit in Profile → Overview Widget."}</div>
+      </div>
+    );
+    return null;
+  }
 
   // ── Quick To-Do ───────────────────────────────────────────────────────────
   const todos = data.overviewTodos || [];
@@ -779,7 +980,21 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
   return (
     <div>
-      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 20 }}>Overview</h1>
+      {/* Overview Header row with optional custom text */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 }}>Overview</h1>
+        {headerText && (
+          <div style={{ fontSize: 15, color: "var(--color-text-primary)", fontWeight: 500, textAlign: "right", maxWidth: 340, lineHeight: 1.5 }}>
+            {headerText}
+          </div>
+        )}
+      </div>
+      {/* Overview Widget (full-width, shown above stats if active) */}
+      {widgetType !== "none" && (
+        <div style={{ marginBottom: 12 }}>
+          <OverviewWidget />
+        </div>
+      )}
 
       {/* Top stat row — F&O card hidden when toggle is off */}
       <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
