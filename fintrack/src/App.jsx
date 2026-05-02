@@ -5035,100 +5035,28 @@ function GoalsPage({ data, update }) {
 // ─── Business Page ────────────────────────────────────────────────────────────
 // ─── Percentage Calculator ────────────────────────────────────────────────────
 function PercentageCalculator() {
-  const [mode, setMode] = useState("pct_of"); // pct_of | what_pct | increase | decrease | diff
+  const [mode, setMode] = useState("pct_of");
   const [a, setA] = useState("");
   const [b, setB] = useState("");
 
   const numA = parseFloat(a) || 0;
   const numB = parseFloat(b) || 0;
 
-  const MODES = [
-    { id: "pct_of",   label: "% of Amount",      desc: "What is X% of amount?" },
-    { id: "what_pct", label: "Amount is what %",  desc: "A is what % of B?" },
-    { id: "increase", label: "% Increase",        desc: "Increase amount by X%" },
-    { id: "decrease", label: "% Decrease",        desc: "Decrease amount by X%" },
-    { id: "diff",     label: "% Difference",      desc: "% change from A to B" },
-  ];
-
   function getConfig() {
-    switch (mode) {
-      case "pct_of":   return { labelA: "Amount (₹)",  labelB: "Percentage (%)", phA: "e.g. 50000", phB: "e.g. 18" };
-      case "what_pct": return { labelA: "Value (₹)",   labelB: "Total (₹)",      phA: "e.g. 1800",  phB: "e.g. 10000" };
-      case "increase": return { labelA: "Amount (₹)",  labelB: "Increase by (%)", phA: "e.g. 50000", phB: "e.g. 10" };
-      case "decrease": return { labelA: "Amount (₹)",  labelB: "Decrease by (%)", phA: "e.g. 50000", phB: "e.g. 10" };
-      case "diff":     return { labelA: "From (₹)",    labelB: "To (₹)",          phA: "e.g. 40000",  phB: "e.g. 50000" };
-      default:         return { labelA: "A", labelB: "B", phA: "", phB: "" };
-    }
+    return { labelA: "Amount (₹)", labelB: "Percentage (%)", phA: "e.g. 50000", phB: "e.g. 18" };
   }
 
   function compute() {
     if (!a && !b) return null;
-    switch (mode) {
-      case "pct_of": {
-        const result = (numB / 100) * numA;
-        return {
-          primary: `₹${result.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
-          label: `${numB}% of ₹${numA.toLocaleString("en-IN")}`,
-          breakdown: [
-            { k: "Result",    v: `₹${result.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
-            { k: "Remaining", v: `₹${(numA - result).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
-          ]
-        };
-      }
-      case "what_pct": {
-        if (!numB) return null;
-        const pct = (numA / numB) * 100;
-        return {
-          primary: `${pct.toFixed(2)}%`,
-          label: `₹${numA.toLocaleString("en-IN")} is ${pct.toFixed(2)}% of ₹${numB.toLocaleString("en-IN")}`,
-          breakdown: [
-            { k: "Percentage", v: `${pct.toFixed(2)}%` },
-            { k: "Remaining",  v: `${(100 - pct).toFixed(2)}%  (₹${(numB - numA).toLocaleString("en-IN", { maximumFractionDigits: 2 })})` },
-          ]
-        };
-      }
-      case "increase": {
-        const inc = numA * (numB / 100);
-        return {
-          primary: `₹${(numA + inc).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
-          label: `₹${numA.toLocaleString("en-IN")} + ${numB}% = ₹${(numA + inc).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
-          breakdown: [
-            { k: "Original",  v: `₹${numA.toLocaleString("en-IN")}` },
-            { k: "Increase",  v: `+₹${inc.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
-            { k: "Final",     v: `₹${(numA + inc).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
-          ],
-          positive: true,
-        };
-      }
-      case "decrease": {
-        const dec = numA * (numB / 100);
-        return {
-          primary: `₹${(numA - dec).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
-          label: `₹${numA.toLocaleString("en-IN")} − ${numB}% = ₹${(numA - dec).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
-          breakdown: [
-            { k: "Original",  v: `₹${numA.toLocaleString("en-IN")}` },
-            { k: "Decrease",  v: `-₹${dec.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
-            { k: "Final",     v: `₹${(numA - dec).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
-          ],
-          positive: false,
-        };
-      }
-      case "diff": {
-        if (!numA) return null;
-        const chg = ((numB - numA) / Math.abs(numA)) * 100;
-        const pos = chg >= 0;
-        return {
-          primary: `${pos ? "+" : ""}${chg.toFixed(2)}%`,
-          label: `From ₹${numA.toLocaleString("en-IN")} to ₹${numB.toLocaleString("en-IN")}`,
-          breakdown: [
-            { k: "Change",     v: `${pos ? "+" : ""}₹${(numB - numA).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
-            { k: "% Change",   v: `${pos ? "+" : ""}${chg.toFixed(2)}%` },
-          ],
-          positive: pos,
-        };
-      }
-      default: return null;
-    }
+    const result = (numB / 100) * numA;
+    return {
+      primary: `₹${result.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
+      label: `${numB}% of ₹${numA.toLocaleString("en-IN")}`,
+      breakdown: [
+        { k: "Result",    v: `₹${result.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
+        { k: "Remaining", v: `₹${(numA - result).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
+      ]
+    };
   }
 
   const result = compute();
@@ -5140,16 +5068,6 @@ function PercentageCalculator() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <span style={{ fontSize: 22 }}>🧮</span>
         <span style={{ fontWeight: 600, fontSize: 16 }}>Percentage Calculator</span>
-      </div>
-
-      {/* Mode tabs */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
-        {MODES.map(m => (
-          <button key={m.id} onClick={() => { setMode(m.id); setA(""); setB(""); }}
-            style={{ padding: "5px 12px", borderRadius: 20, border: "0.5px solid", borderColor: mode === m.id ? "#1a6b3c" : "var(--color-border-secondary)", background: mode === m.id ? "#e8f5ee" : "transparent", color: mode === m.id ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: mode === m.id ? 600 : 400, transition: "all 0.15s" }}>
-            {m.label}
-          </button>
-        ))}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: 14, alignItems: "start" }}>
@@ -5211,8 +5129,6 @@ function PercentageCalculator() {
         {[
           { label: "GST 18%", mode: "pct_of", a: "10000", b: "18" },
           { label: "TDS 10%", mode: "pct_of", a: "50000", b: "10" },
-          { label: "Discount 15%", mode: "decrease", a: "5000", b: "15" },
-          { label: "Profit %", mode: "diff", a: "40000", b: "50000" },
         ].map(q => (
           <button key={q.label} onClick={() => { setMode(q.mode); setA(q.a); setB(q.b); }}
             style={{ fontSize: 11, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", color: "var(--color-text-secondary)" }}>
