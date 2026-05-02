@@ -978,21 +978,20 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
   return (
     <div>
-      {/* Overview Header row with optional custom text */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 }}>Overview</h1>
-        {headerText && (
-          <div style={{ fontSize: 15, color: "var(--color-text-primary)", fontWeight: 500, textAlign: "right", maxWidth: 340, lineHeight: 1.5 }}>
-            {headerText}
+      {/* Overview Header row: title on left, widget on right */}
+      <div style={{ display: "flex", alignItems: "stretch", justifyContent: "space-between", gap: 20, marginBottom: 20 }}>
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 }}>Overview</h1>
+          {headerText && (
+            <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 4 }}>{headerText}</div>
+          )}
+        </div>
+        {widgetType !== "none" && (
+          <div style={{ flex: "0 0 340px" }}>
+            <OverviewWidget />
           </div>
         )}
       </div>
-      {/* Overview Widget (full-width, shown above stats if active) */}
-      {widgetType !== "none" && (
-        <div style={{ marginBottom: 12 }}>
-          <OverviewWidget />
-        </div>
-      )}
 
       {/* Top stat row — F&O card hidden when toggle is off */}
       <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
