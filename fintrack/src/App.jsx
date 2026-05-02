@@ -787,14 +787,15 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
             return s + ltp * (h.qty || 0);
           }, 0);
 
-          // US stocks with live prices
+          // US stocks with live prices — convert to INR
           const usHoldings = data.usHoldings || [];
           const usPrices = data["usHoldings_livePrices"] || {};
-          const usInvested = usHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
+          const usdInr = data.usdInrRate || 83.5;
+          const usInvested = usHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0) * usdInr, 0);
           const usCurrent  = usHoldings.reduce((s, h) => {
             const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
             const ltp = ticker && usPrices[ticker]?.ok ? usPrices[ticker].price : h.buyPrice || 0;
-            return s + ltp * (h.qty || 0);
+            return s + ltp * (h.qty || 0) * usdInr;
           }, 0);
 
           // Mutual funds
@@ -7420,7 +7421,27 @@ function MutualFundsPage({ data, update }) {
 }
 
 function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "portfolioHoldings", defaultExchange = "NSE" }) {
+  const isUS = defaultExchange === "US";
   const holdings = data[holdingsKey] || [];
+
+  // USD → INR rate (fetched for US stocks)
+  const [usdInr, setUsdInr] = useState(data.usdInrRate || 83.5);
+  useEffect(() => {
+    if (!isUS) return;
+    fetch("/api/stock-price?ticker=USDINR%3DX")
+      .then(r => r.json())
+      .then(d => {
+        const rate = d?.USDINR?.price || d?.["USDINR=X"]?.price;
+        if (rate && rate > 0) {
+          setUsdInr(rate);
+          update(() => ({ usdInrRate: rate }));
+        }
+      }).catch(() => {});
+  }, []); // eslint-disable-line
+
+  const fmtUSD  = n => "$" + fmt(n);
+  const fmtDisp = n => isUS ? fmtUSD(n) : fmtCur(n); // display in native currency
+  const toINR   = n => isUS ? n * usdInr : n;          // convert to INR for portfolio total
 
   // ── local UI state ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: defaultExchange, yahooOverride: "" });
@@ -7528,8 +7549,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       }
 
       setPrices(priceData);
-      // Save live prices to data so Overview portfolio card can use them
-      update(p => ({ [`${holdingsKey}_livePrices`]: priceData }));
+      // Save live prices + USD/INR rate to data so Overview portfolio card can use them
+      update(p => ({ [`${holdingsKey}_livePrices`]: priceData, usdInrRate: isUS ? usdInr : p.usdInrRate }));
       const failed = Object.values(priceData).filter(r => !r.ok).length;
       if (failed > 0) setPriceError(`${failed} ticker(s) not found on Yahoo Finance — use "Fix ticker" to correct the symbol.`);
       else setPriceError("");
@@ -7690,12 +7711,17 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
-            <StatCard label="Total Invested" value={fmtCur(totalInvested)} icon="💰" />
-            <StatCard label="Current Value"  value={fmtCur(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
-            <StatCard label="Total P&L"      value={fmtCur(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
-            <StatCard label="Day's P&L"      value={fmtCur(dayPnl)}         icon="📅" pnl={dayPnl} />
+            <StatCard label={`Total Invested (${isUS ? "USD" : "INR"})`} value={fmtDisp(totalInvested)} icon="💰" />
+            <StatCard label={`Current Value (${isUS ? "USD" : "INR"})`}  value={fmtDisp(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
+            <StatCard label="Total P&L"      value={fmtDisp(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
+            <StatCard label="Day's P&L"      value={fmtDisp(dayPnl)}         icon="📅" pnl={dayPnl} />
             <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
           </div>
+          {isUS && (
+            <div style={{ fontSize: 12, color: "#1d4ed8", background: "#dbeafe", borderRadius: 8, padding: "6px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+              💱 USD → INR: <strong>₹{usdInr.toFixed(2)}</strong> · All values shown in USD · INR equivalent used for Total Portfolio on Overview
+            </div>
+          )}
         </>
       )}
 
@@ -7879,7 +7905,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                   ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
                   : h.cur != null
                     ? <div>
-                        <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                        <span style={{ fontWeight: 500 }}>{isUS ? "$" : "₹"}{fmt(h.cur)}</span>
                         {/* Show auto-fixed ticker badge */}
                         {prices[h.ticker]?._autoFixedTo && (
                           <div style={{ fontSize: 9, color: "#1d4ed8", background: "#dbeafe", borderRadius: 3, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>
@@ -7910,16 +7936,16 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 {h.dayChangePct != null ? <>{h.dayChangePct >= 0 ? "▲" : "▼"} {Math.abs(h.dayChangePct).toFixed(2)}%</> : "—"}
               </div>
 
-              <div style={{ textAlign: "right" }}>{fmtCur(h.invested)}</div>
+              <div style={{ textAlign: "right" }}>{fmtDisp(h.invested)}</div>
 
               <div style={{ textAlign: "right" }}>
-                {h.curVal != null ? fmtCur(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                {h.curVal != null ? fmtDisp(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
               </div>
 
               <div style={{ textAlign: "right" }}>
                 {h.pnl != null ? (
                   <div>
-                    <div style={{ color: pnlColor(h.pnl), fontWeight: 500 }}>{h.pnl >= 0 ? "+" : ""}{fmtCur(h.pnl)}</div>
+                    <div style={{ color: pnlColor(h.pnl), fontWeight: 500 }}>{h.pnl >= 0 ? "+" : ""}{fmtDisp(h.pnl)}</div>
                     <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
                   </div>
                 ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
