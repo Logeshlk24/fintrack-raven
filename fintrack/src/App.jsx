@@ -9868,11 +9868,11 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
   const pnlColor = (v) => v == null ? "var(--color-text-secondary)" : v >= 0 ? "#1a6b3c" : "#d44";
 
   return (
-    <div style={{ maxWidth: 960, margin: "0 auto" }}>
+    <div>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 24 }}>{title}</h2>
+          <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{title}</h1>
           <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
             {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add your demat holdings to get started"}
           </div>
