@@ -8453,7 +8453,6 @@ function DividendView({ data }) {
     setLoading(true); setError(""); setLoaded(false);
     const allH = [
       ...indHoldings.map(h => ({ ...h, region: "IN" })),
-      ...usHoldings.map(h  => ({ ...h, region: "US" })),
     ];
     if (!allH.length) { setLoading(false); setLoaded(true); return; }
 
@@ -8484,10 +8483,9 @@ function DividendView({ data }) {
   // Auto-fetch on mount
   useEffect(() => { fetchDividends(); }, []); // eslint-disable-line
 
-  // Build ALL rows
+  // Build rows — Indian stocks only for Dividend view
   const allH = [
     ...indHoldings.map(h => ({ ...h, region: "IN" })),
-    ...usHoldings.map(h  => ({ ...h, region: "US" })),
   ];
 
   const allRows = allH.map(h => {
@@ -8588,8 +8586,8 @@ function DividendView({ data }) {
         {loaded && payingRows.length === 0 && !loading && (
           <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 14 }}>
             {allH.length === 0
-              ? "No holdings found. Add stocks in the Indian Stocks or US Stocks tab."
-              : "No dividend-paying stocks found in your portfolio yet."}
+              ? "No Indian holdings found. Add stocks in the Indian Stocks tab."
+              : "No dividend-paying Indian stocks found in your portfolio yet."}
           </div>
         )}
 
@@ -8654,7 +8652,7 @@ function DividendView({ data }) {
         )}
 
         <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
-          ⓘ Data from Yahoo Finance via <code style={{ background: "var(--color-background-secondary)", padding: "1px 4px", borderRadius: 3 }}>/api/stock-dividend</code> (quoteSummary). Annual (₹) = div/share × qty. US dividends converted at ₹{usdInr}/USD. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
+          ⓘ Data from Yahoo Finance via <code style={{ background: "var(--color-background-secondary)", padding: "1px 4px", borderRadius: 3 }}>/api/stock-dividend</code> (quoteSummary). Shows Indian portfolio stocks only. Annual (₹) = div/share × qty. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
         </p>
       </div>
     </div>
