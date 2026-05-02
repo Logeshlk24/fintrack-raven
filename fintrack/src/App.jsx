@@ -8474,6 +8474,10 @@ function DividendView({ data }) {
       setProgress({ done: Math.min(i + BATCH, tickers.length), total: tickers.length });
     }
 
+    console.log("[DividendDebug] tickers sent:", tickers);
+    console.log("[DividendDebug] raw API response:", collected);
+    const sampleKey = Object.keys(collected)[0];
+    if (sampleKey) console.log("[DividendDebug] sample entry:", sampleKey, collected[sampleKey]);
     setDivData(collected);
     setLoaded(true);
     setLoading(false);
@@ -8660,6 +8664,28 @@ function DividendView({ data }) {
         <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
           ⓘ Data from Yahoo Finance via <code style={{ background: "var(--color-background-secondary)", padding: "1px 4px", borderRadius: 3 }}>/api/stock-dividend</code> (quoteSummary). Shows Indian portfolio stocks only. Annual (₹) = div/share × qty. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
         </p>
+
+        {/* DEBUG PANEL — remove after fixing */}
+        {loaded && (
+          <details style={{ marginTop: 10, fontSize: 11, color: "#555", background: "#f9f9f9", borderRadius: 6, padding: "8px 12px", border: "1px solid #ddd" }}>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>🔍 Debug: API Response ({Object.keys(divData).length} tickers fetched)</summary>
+            <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
+              <div><b>Holdings in portfolio:</b> {allH.length} | <b>Paying rows:</b> {payingRows.length}</div>
+              <div style={{ marginTop: 6 }}><b>Tickers looked up:</b> {allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)).join(", ")}</div>
+              <div style={{ marginTop: 6 }}><b>API keys returned:</b> {Object.keys(divData).join(", ") || "none"}</div>
+              <div style={{ marginTop: 6 }}>
+                {allH.slice(0, 5).map(h => {
+                  const tk = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
+                  const d = divData[tk] || {};
+                  return <div key={tk} style={{ marginTop: 4, padding: "4px 6px", background: "#fff", borderRadius: 4, border: "1px solid #eee" }}>
+                    <b>{tk}</b>: isPaying={String(d.isPaying)}, dividendRate={d.dividendRate}, ok={String(d.ok)}
+                  </div>;
+                })}
+                {allH.length > 5 && <div style={{ marginTop: 4, color: "#888" }}>…and {allH.length - 5} more (open browser console for full log)</div>}
+              </div>
+            </div>
+          </details>
+        )}
       </div>
     </div>
   );
