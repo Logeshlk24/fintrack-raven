@@ -4255,6 +4255,8 @@ function LiabilitiesTab({ data, update }) {
   });
   
   const [editLiability, setEditLiability] = useState(null);
+  const [amountMode, setAmountMode] = useState("monthly"); // "monthly" | "total"
+  const [totalAmountInput, setTotalAmountInput] = useState("");
 
   // Check and auto-create expenses based on payment dates
   useEffect(() => {
@@ -4443,12 +4445,56 @@ function LiabilitiesTab({ data, update }) {
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
-                <input type="number" value={editLiability.amount} onChange={e => setEditLiability(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    {editLiability._amountMode === "total" ? "Total Amount (₹)" : "Monthly Amount (₹)"}
+                  </label>
+                  <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+                    <button onClick={() => setEditLiability(p => ({ ...p, _amountMode: "monthly", _totalInput: "" }))}
+                      style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
+                        background: editLiability._amountMode !== "total" ? "#1a6b3c" : "transparent",
+                        color: editLiability._amountMode !== "total" ? "#fff" : "var(--color-text-secondary)" }}>Monthly</button>
+                    <button onClick={() => setEditLiability(p => ({ ...p, _amountMode: "total", _totalInput: String((parseFloat(p.amount)||0) * (parseFloat(p.totalMonths)||0) || "") }))}
+                      style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
+                        background: editLiability._amountMode === "total" ? "#1a6b3c" : "transparent",
+                        color: editLiability._amountMode === "total" ? "#fff" : "var(--color-text-secondary)" }}>Total</button>
+                  </div>
+                </div>
+                {editLiability._amountMode === "total" ? (
+                  <div>
+                    <input type="number" placeholder="e.g. 60000" value={editLiability._totalInput || ""}
+                      onChange={e => {
+                        const total = parseFloat(e.target.value) || 0;
+                        const months = parseFloat(editLiability.totalMonths) || 0;
+                        setEditLiability(p => ({
+                          ...p, _totalInput: e.target.value,
+                          amount: total > 0 && months > 0 ? (total / months).toFixed(2) : p.amount
+                        }));
+                      }}
+                      style={{ width: "100%", boxSizing: "border-box" }} />
+                    {editLiability._totalInput && editLiability.totalMonths && (
+                      <div style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
+                        = ₹{editLiability.amount ? Number(editLiability.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"} / month
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <input type="number" value={editLiability.amount} onChange={e => setEditLiability(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                )}
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Total Months</label>
-                <input type="number" value={editLiability.totalMonths} onChange={e => setEditLiability(p => ({ ...p, totalMonths: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <input type="number" value={editLiability.totalMonths}
+                  onChange={e => {
+                    const months = parseFloat(e.target.value) || 0;
+                    setEditLiability(p => ({
+                      ...p, totalMonths: e.target.value,
+                      amount: p._amountMode === "total" && p._totalInput && months > 0
+                        ? ((parseFloat(p._totalInput)||0) / months).toFixed(2)
+                        : p.amount
+                    }));
+                  }}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Payment Day</label>
@@ -4487,14 +4533,63 @@ function LiabilitiesTab({ data, update }) {
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Monthly Amount (₹)</label>
-            <input type="number" placeholder="e.g. 5000" value={liabilityForm.amount} onChange={e => setLiabilityForm(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            {/* Amount mode toggle */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                {amountMode === "monthly" ? "Monthly Amount (₹)" : "Total Amount (₹)"}
+              </label>
+              <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+                <button onClick={() => { setAmountMode("monthly"); setTotalAmountInput(""); }}
+                  style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
+                    background: amountMode === "monthly" ? "#1a6b3c" : "transparent",
+                    color: amountMode === "monthly" ? "#fff" : "var(--color-text-secondary)" }}>Monthly</button>
+                <button onClick={() => { setAmountMode("total"); setLiabilityForm(p => ({ ...p, amount: "" })); }}
+                  style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
+                    background: amountMode === "total" ? "#1a6b3c" : "transparent",
+                    color: amountMode === "total" ? "#fff" : "var(--color-text-secondary)" }}>Total</button>
+              </div>
+            </div>
+            {amountMode === "monthly" ? (
+              <input type="number" placeholder="e.g. 5000" value={liabilityForm.amount}
+                onChange={e => setLiabilityForm(p => ({ ...p, amount: e.target.value }))}
+                style={{ width: "100%", boxSizing: "border-box" }} />
+            ) : (
+              <div style={{ position: "relative" }}>
+                <input type="number" placeholder="e.g. 60000" value={totalAmountInput}
+                  onChange={e => {
+                    const total = parseFloat(e.target.value) || 0;
+                    const months = parseFloat(liabilityForm.totalMonths) || 0;
+                    setTotalAmountInput(e.target.value);
+                    if (total > 0 && months > 0) {
+                      setLiabilityForm(p => ({ ...p, amount: (total / months).toFixed(2) }));
+                    } else {
+                      setLiabilityForm(p => ({ ...p, amount: "" }));
+                    }
+                  }}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+                {totalAmountInput && liabilityForm.totalMonths && (
+                  <div style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
+                    = ₹{liabilityForm.amount ? Number(liabilityForm.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"} / month
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Total Months</label>
-            <input type="number" placeholder="e.g. 12" value={liabilityForm.totalMonths} onChange={e => setLiabilityForm(p => ({ ...p, totalMonths: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <input type="number" placeholder="e.g. 12" value={liabilityForm.totalMonths}
+              onChange={e => {
+                const months = parseFloat(e.target.value) || 0;
+                setLiabilityForm(p => ({ ...p, totalMonths: e.target.value }));
+                // Recalculate monthly if in total mode
+                if (amountMode === "total" && totalAmountInput) {
+                  const total = parseFloat(totalAmountInput) || 0;
+                  if (total > 0 && months > 0) setLiabilityForm(p => ({ ...p, totalMonths: e.target.value, amount: (total / months).toFixed(2) }));
+                }
+              }}
+              style={{ width: "100%", boxSizing: "border-box" }} />
           </div>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Payment Day</label>
