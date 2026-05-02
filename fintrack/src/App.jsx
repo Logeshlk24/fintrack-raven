@@ -8449,7 +8449,30 @@ function DividendView({ data }) {
     return s;
   }
 
-  // fetchDividends accepts holdings directly — no stale closure risk
+  // Fetch dividend data directly from browser — avoids Yahoo blocking server-side requests
+  async function fetchOneTicker(ticker) {
+    // Yahoo Finance v8 quote endpoint — works from browser (has cookies), blocked server-side
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
+    const url2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
+    for (const u of [url, url2]) {
+      try {
+        const r = await fetch(u, { headers: { "Accept": "application/json" } });
+        if (!r.ok) continue;
+        const j = await r.json();
+        const meta = j?.chart?.result?.[0]?.meta;
+        if (!meta) continue;
+        const divRate  = meta.trailingAnnualDividendRate ?? null;
+        const divYield = meta.trailingAnnualDividendYield ?? null;
+        const isPaying = divRate != null && divRate > 0;
+        return { ok: true, ticker, isPaying, dividendRate: divRate, dividendYield: divYield,
+          trailingDivRate: divRate, trailingDivYield: divYield,
+          exDividendDate: null, dividendDate: null, lastDividendValue: null,
+          payoutRatio: null, fiveYearAvgYield: null };
+      } catch (_) {}
+    }
+    return { ok: false, ticker, isPaying: false };
+  }
+
   async function fetchDividends(holdingsOverride) {
     const holdings = holdingsOverride ?? indHoldings;
     setLoading(true); setError(""); setLoaded(false);
@@ -8459,25 +8482,16 @@ function DividendView({ data }) {
     const tickers = [...new Set(allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
     setProgress({ done: 0, total: tickers.length });
 
-    // Fetch in batches of 6 so we don't hammer the API
-    const BATCH = 6;
+    // Fetch 4 at a time directly from browser
+    const BATCH = 4;
     const collected = {};
     for (let i = 0; i < tickers.length; i += BATCH) {
       const batch = tickers.slice(i, i + BATCH);
-      try {
-        const res = await fetch(`/api/stock-dividend?ticker=${batch.map(encodeURIComponent).join(",")}`);
-        if (res.ok) {
-          const json = await res.json();
-          Object.assign(collected, json);
-        }
-      } catch (_) {}
+      const results = await Promise.all(batch.map(t => fetchOneTicker(t)));
+      results.forEach((r, j) => { collected[batch[j]] = r; });
       setProgress({ done: Math.min(i + BATCH, tickers.length), total: tickers.length });
     }
 
-    console.log("[DividendDebug] tickers sent:", tickers);
-    console.log("[DividendDebug] raw API response:", collected);
-    const sampleKey = Object.keys(collected)[0];
-    if (sampleKey) console.log("[DividendDebug] sample entry:", sampleKey, collected[sampleKey]);
     setDivData(collected);
     setLoaded(true);
     setLoading(false);
@@ -8665,27 +8679,6 @@ function DividendView({ data }) {
           ⓘ Data from Yahoo Finance via <code style={{ background: "var(--color-background-secondary)", padding: "1px 4px", borderRadius: 3 }}>/api/stock-dividend</code> (quoteSummary). Shows Indian portfolio stocks only. Annual (₹) = div/share × qty. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
         </p>
 
-        {/* DEBUG PANEL — remove after fixing */}
-        {loaded && (
-          <details style={{ marginTop: 10, fontSize: 11, color: "#555", background: "#f9f9f9", borderRadius: 6, padding: "8px 12px", border: "1px solid #ddd" }}>
-            <summary style={{ cursor: "pointer", fontWeight: 600 }}>🔍 Debug: API Response ({Object.keys(divData).length} tickers fetched)</summary>
-            <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
-              <div><b>Holdings in portfolio:</b> {allH.length} | <b>Paying rows:</b> {payingRows.length}</div>
-              <div style={{ marginTop: 6 }}><b>Tickers looked up:</b> {allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)).join(", ")}</div>
-              <div style={{ marginTop: 6 }}><b>API keys returned:</b> {Object.keys(divData).join(", ") || "none"}</div>
-              <div style={{ marginTop: 6 }}>
-                {allH.slice(0, 5).map(h => {
-                  const tk = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
-                  const d = divData[tk] || {};
-                  return <div key={tk} style={{ marginTop: 4, padding: "4px 6px", background: "#fff", borderRadius: 4, border: "1px solid #eee" }}>
-                    <b>{tk}</b>: isPaying={String(d.isPaying)}, dividendRate={d.dividendRate}, ok={String(d.ok)}
-                  </div>;
-                })}
-                {allH.length > 5 && <div style={{ marginTop: 4, color: "#888" }}>…and {allH.length - 5} more (open browser console for full log)</div>}
-              </div>
-            </div>
-          </details>
-        )}
       </div>
     </div>
   );
