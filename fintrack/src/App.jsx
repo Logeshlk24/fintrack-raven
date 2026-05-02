@@ -787,16 +787,13 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
             return s + ltp * (h.qty || 0);
           }, 0);
 
-          // US stocks with live prices — convert USD→INR using stored rate
+          // US stocks with live prices
           const usHoldings = data.usHoldings || [];
           const usPrices = data["usHoldings_livePrices"] || {};
-          const usdinrRate = data.usdinrRate || 84;
           const usInvested = usHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
           const usCurrent  = usHoldings.reduce((s, h) => {
             const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
-            const ltpUsd = ticker && usPrices[ticker]?.ok ? usPrices[ticker].price : null;
-            // If we have a live USD price, convert to INR; else fall back to stored ₹ buyPrice
-            const ltp = ltpUsd != null ? ltpUsd * usdinrRate : (h.buyPrice || 0);
+            const ltp = ticker && usPrices[ticker]?.ok ? usPrices[ticker].price : h.buyPrice || 0;
             return s + ltp * (h.qty || 0);
           }, 0);
 
@@ -807,7 +804,29 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
           const totalInvested = indInvested + usInvested + mfInvested;
           const totalCurrent  = indCurrent  + usCurrent  + mfCurrent;
           const totalReturn   = totalCurrent - totalInvested;
-          const returnPct     = totalInvested > 0 ? ((totalReturn / totalInvested) * 100).toFixed(2) : "0.00";
+
+          // Weighted day change % across all holdings with live prices
+          let dayChangeNum = 0, dayChangeDen = 0;
+          indHoldings.forEach(h => {
+            const ticker = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+            const pd = ticker ? indPrices[ticker] : null;
+            if (pd?.ok && pd.changePct != null) {
+              const val = pd.price * (h.qty || 0);
+              dayChangeNum += pd.changePct * val;
+              dayChangeDen += val;
+            }
+          });
+          const usdinrOv = data.usdinrRate || 84;
+          usHoldings.forEach(h => {
+            const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+            const pd = ticker ? usPrices[ticker] : null;
+            if (pd?.ok && pd.changePct != null) {
+              const val = pd.price * usdinrOv * (h.qty || 0);
+              dayChangeNum += pd.changePct * val;
+              dayChangeDen += val;
+            }
+          });
+          const weightedDayChg = dayChangeDen > 0 ? (dayChangeNum / dayChangeDen) : null;
 
           return (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
@@ -820,7 +839,15 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   { label: "Invested",      val: fmtCur(totalInvested), color: "var(--color-text-primary)" },
                   { label: "Current Value", val: fmtCur(totalCurrent),  color: "#1a6b3c" },
                   { label: "Total Return",  val: fmtCur(totalReturn),   color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
-                  { label: "Return %",      val: returnPct + "%",       color: parseFloat(returnPct) >= 0 ? "#1a6b3c" : "#d44" },
+                  {
+                    label: "Day Change",
+                    val: weightedDayChg != null
+                      ? (weightedDayChg >= 0 ? "▲ +" : "▼ ") + weightedDayChg.toFixed(2) + "%"
+                      : "—",
+                    color: weightedDayChg == null
+                      ? "var(--color-text-secondary)"
+                      : weightedDayChg >= 0 ? "#1a6b3c" : "#d44"
+                  },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
@@ -7395,21 +7422,10 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
     setPriceError("");
     const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
 
-    // For US stocks, also fetch USDINR rate
-    const isUS = holdingsKey === "usHoldings";
-    const allTickers = isUS ? [...tickers, "USDINR=X"] : tickers;
-
     try {
-      const res = await fetch(`/api/stock-price?ticker=${allTickers.map(encodeURIComponent).join(",")}`);
+      const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
       if (!res.ok) throw new Error("API error " + res.status);
       const priceData = await res.json();
-
-      // Extract and save USDINR rate separately
-      if (isUS && priceData["USDINR=X"]?.ok) {
-        const rate = priceData["USDINR=X"].price;
-        update(p => ({ usdinrRate: rate }));
-        delete priceData["USDINR=X"];
-      }
 
       // For any still-failed tickers, also try .BO alternative automatically
       const retryMap = {};
@@ -7530,9 +7546,6 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
   function deleteHolding(id) { update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(h => h.id !== id) })); }
 
-  // USD→INR rate (fetched live alongside US stock prices, fallback to last known)
-  const usdinrRate = holdingsKey === "usHoldings" ? (data.usdinrRate || 84) : 1;
-
   // ── enriched rows using mergedHoldings ──────────────────────────────────────
   const rows = mergedHoldings.map(h => {
     const ticker = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
@@ -7544,18 +7557,12 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 : ticker.endsWith(".BO") ? ticker.replace(".BO", ".NS") : null;
       if (alt && prices[alt]?.ok) pd = prices[alt];
     }
-    // For US stocks: Yahoo returns price in USD — convert to INR
-    const fxRate = usdinrRate;
-    const curUsd  = pd.price ?? null;
-    const cur     = curUsd != null ? curUsd * fxRate : null;
-    const dayChangeUsd  = pd.change ?? null;
-    const dayChangePctRaw = pd.changePct ?? null;
-    const dayChange = dayChangeUsd != null ? dayChangeUsd * fxRate : null;
-    const invested  = h.buyPrice * h.qty;          // already in ₹ (user enters ₹)
-    const curVal    = cur  != null ? cur  * h.qty : null;
-    const pnl       = curVal != null ? curVal - invested : null;
-    const pnlPct    = pnl   != null ? (pnl / invested) * 100 : null;
-    return { ...h, ticker, cur, curUsd, invested, curVal, pnl, pnlPct, dayChange, dayChangePct: dayChangePctRaw, fetchFailed: pd.ok === false };
+    const cur    = pd.price ?? null;
+    const invested = h.buyPrice * h.qty;
+    const curVal   = cur != null ? cur * h.qty : null;
+    const pnl      = curVal != null ? curVal - invested : null;
+    const pnlPct   = pnl != null ? (pnl / invested) * 100 : null;
+    return { ...h, ticker, cur, invested, curVal, pnl, pnlPct, dayChange: pd.change ?? null, dayChangePct: pd.changePct ?? null, fetchFailed: pd.ok === false };
   });
 
   const sorted = [...rows].sort((a, b) => {
@@ -7579,13 +7586,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 24 }}>{title}</h2>
-          <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
             {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add your demat holdings to get started"}
-            {holdingsKey === "usHoldings" && data.usdinrRate && (
-              <span style={{ fontSize: 11, background: "#dbeafe", color: "#1d4ed8", borderRadius: 5, padding: "1px 7px", fontWeight: 500 }}>
-                1 USD = ₹{data.usdinrRate.toFixed(2)}
-              </span>
-            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -7799,15 +7801,13 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                   ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
                   : h.cur != null
                     ? <div>
-                        {/* For US stocks show USD + INR */}
                         {holdingsKey === "usHoldings" && h.curUsd != null
                           ? <div>
-                              <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
-                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>${h.curUsd.toFixed(2)} × ₹{Math.round(usdinrRate)}</div>
+                              <span style={{ fontWeight: 500 }}>${h.curUsd.toFixed(2)}</span>
+                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>= ₹{fmt(h.cur)}</div>
                             </div>
                           : <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
                         }
-                        {/* Show auto-fixed ticker badge */}
                         {prices[h.ticker]?._autoFixedTo && (
                           <div style={{ fontSize: 9, color: "#1d4ed8", background: "#dbeafe", borderRadius: 3, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>
                             ⚡ via {prices[h.ticker]._autoFixedTo}
