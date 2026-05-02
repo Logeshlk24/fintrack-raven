@@ -777,56 +777,57 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
         {portfolioOn && (() => {
           const mfs = data.mutualFunds || [];
 
-          // Indian stocks with live prices
+          // ── Live USD→INR rate (saved by Portfolio page auto-fetch) ──────────────
+          const usdInr = data.usdInrRate || 84;
+
+          // ── Indian stocks (prices in ₹) ───────────────────────────────────────
           const indHoldings = data.portfolioHoldings || [];
-          const indPrices = data["portfolioHoldings_livePrices"] || {};
+          const indPrices   = data["portfolioHoldings_livePrices"] || {};
           const indInvested = indHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
           const indCurrent  = indHoldings.reduce((s, h) => {
             const ticker = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
-            const ltp = ticker && indPrices[ticker]?.ok ? indPrices[ticker].price : h.buyPrice || 0;
+            const ltp = ticker && indPrices[ticker]?.ok ? indPrices[ticker].price : (h.buyPrice || 0);
             return s + ltp * (h.qty || 0);
           }, 0);
+          // Indian day change = sum of (change_per_share_₹ × qty)
+          const indDayChange = indHoldings.reduce((s, h) => {
+            const ticker = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+            const pd = ticker ? indPrices[ticker] : null;
+            if (pd?.ok && pd.change != null) return s + pd.change * (h.qty || 0);
+            return s;
+          }, 0);
 
-          // US stocks with live prices
+          // ── US stocks (Yahoo prices in USD → convert to ₹) ───────────────────
           const usHoldings = data.usHoldings || [];
-          const usPrices = data["usHoldings_livePrices"] || {};
+          const usPrices   = data["usHoldings_livePrices"] || {};
+          // buyPrice stored in ₹ (converted on save)
           const usInvested = usHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
           const usCurrent  = usHoldings.reduce((s, h) => {
             const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
-            const ltp = ticker && usPrices[ticker]?.ok ? usPrices[ticker].price : h.buyPrice || 0;
-            return s + ltp * (h.qty || 0);
+            const pd = ticker ? usPrices[ticker] : null;
+            // Yahoo price is USD → multiply by usdInr to get ₹
+            const ltpInr = pd?.ok ? pd.price * usdInr : (h.buyPrice || 0);
+            return s + ltpInr * (h.qty || 0);
           }, 0);
-
-          // Mutual funds
-          const mfInvested = mfs.reduce((s, m) => s + (m.investedAmount || 0), 0);
-          const mfCurrent  = mfs.reduce((s, m) => s + (m.units || 0) * (m.nav || 0), 0);
-
-          const totalInvested = indInvested + usInvested + mfInvested;
-          const totalCurrent  = indCurrent  + usCurrent  + mfCurrent;
-          const totalReturn   = totalCurrent - totalInvested;
-
-          // Weighted day change % across all holdings with live prices
-          let dayChangeNum = 0, dayChangeDen = 0;
-          indHoldings.forEach(h => {
-            const ticker = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
-            const pd = ticker ? indPrices[ticker] : null;
-            if (pd?.ok && pd.changePct != null) {
-              const val = pd.price * (h.qty || 0);
-              dayChangeNum += pd.changePct * val;
-              dayChangeDen += val;
-            }
-          });
-          const usdinrOv = data.usdinrRate || 84;
-          usHoldings.forEach(h => {
+          // US day change = sum of (change_per_share_USD × usdInr × qty)
+          const usDayChange = usHoldings.reduce((s, h) => {
             const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
             const pd = ticker ? usPrices[ticker] : null;
-            if (pd?.ok && pd.changePct != null) {
-              const val = pd.price * usdinrOv * (h.qty || 0);
-              dayChangeNum += pd.changePct * val;
-              dayChangeDen += val;
-            }
-          });
-          const weightedDayChg = dayChangeDen > 0 ? (dayChangeNum / dayChangeDen) : null;
+            if (pd?.ok && pd.change != null) return s + (pd.change * usdInr) * (h.qty || 0);
+            return s;
+          }, 0);
+
+          // ── Mutual Funds (all in ₹) ───────────────────────────────────────────
+          const mfInvested = mfs.reduce((s, m) => s + (m.investedAmount || 0), 0);
+          const mfCurrent  = mfs.reduce((s, m) => s + (m.units || 0) * (m.nav || 0), 0);
+          // MF has no intraday price feed — day change = 0
+          const mfDayChange = 0;
+
+          // ── Totals (all in ₹) ─────────────────────────────────────────────────
+          const totalInvested  = indInvested + usInvested  + mfInvested;
+          const totalCurrent   = indCurrent  + usCurrent   + mfCurrent;
+          const totalReturn    = totalCurrent - totalInvested;
+          const totalDayChange = indDayChange + usDayChange + mfDayChange;
 
           return (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
@@ -841,12 +842,12 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   { label: "Total Return",  val: fmtCur(totalReturn),   color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
                   {
                     label: "Day Change",
-                    val: weightedDayChg != null
-                      ? (weightedDayChg >= 0 ? "▲ +" : "▼ ") + weightedDayChg.toFixed(2) + "%"
+                    val: (indDayChange !== 0 || usDayChange !== 0)
+                      ? (totalDayChange >= 0 ? "▲ +" : "▼ ") + fmtCur(Math.abs(totalDayChange))
                       : "—",
-                    color: weightedDayChg == null
+                    color: (indDayChange === 0 && usDayChange === 0)
                       ? "var(--color-text-secondary)"
-                      : weightedDayChg >= 0 ? "#1a6b3c" : "#d44"
+                      : totalDayChange >= 0 ? "#1a6b3c" : "#d44"
                   },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
