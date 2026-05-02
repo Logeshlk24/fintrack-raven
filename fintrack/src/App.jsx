@@ -730,7 +730,6 @@ function ProfilePage({ data, update }) {
   const profile = data.userProfile || {};
   const [name, setName] = useState(profile.name || data.user?.name || "");
   const [dob, setDob] = useState(profile.dob || "");
-  const [headerText, setHeaderText] = useState(profile.headerText || "");
   const [widgetType, setWidgetType] = useState(profile.widgetType || "none");
   const [customWidget, setCustomWidget] = useState(profile.customWidget || "");
   const [saved, setSaved] = useState(false);
@@ -748,7 +747,7 @@ function ProfilePage({ data, update }) {
   const age = calcAge(dob);
 
   function save() {
-    update(() => ({ userProfile: { name, dob, headerText, widgetType, customWidget } }));
+    update(() => ({ userProfile: { name, dob, widgetType, customWidget } }));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -795,20 +794,7 @@ function ProfilePage({ data, update }) {
         )}
       </div>
 
-      {/* Overview Header Text */}
-      <div style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{ fontSize: 18 }}>📝</span>
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Overview Header Text</span>
-        </div>
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12 }}>This text appears on the right side of the Overview page header.</p>
-        <input
-          style={inputStyle}
-          value={headerText}
-          onChange={e => setHeaderText(e.target.value)}
-          placeholder="e.g. Welcome back! 🚀  or  My Financial Dashboard"
-        />
-      </div>
+
 
       {/* Overview Widget */}
       <div style={cardStyle}>
@@ -864,7 +850,6 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   useEffect(() => { const t = setInterval(() => setClockTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
   const userProfile = data.userProfile || {};
-  const headerText = userProfile.headerText || "";
   const widgetType = userProfile.widgetType || "none";
   const profileName = userProfile.name || data.user?.name || "";
 
@@ -980,12 +965,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
     <div>
       {/* Overview Header row: title on left, widget on right */}
       <div style={{ display: "flex", alignItems: "stretch", justifyContent: "space-between", gap: 20, marginBottom: 20 }}>
-        <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 }}>Overview</h1>
-          {headerText && (
-            <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 4 }}>{headerText}</div>
-          )}
-        </div>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0, alignSelf: "center" }}>Overview</h1>
         {widgetType !== "none" && (
           <div style={{ flex: "0 0 340px" }}>
             <OverviewWidget />
