@@ -8485,8 +8485,23 @@ const CAP_COLORS   = { Large:"#1a6b3c", Mid:"#4da6ff", Small:"#f59e0b", ETF:"#8b
 const SECTOR_COLORS = ["#1a6b3c","#4da6ff","#f59e0b","#ef4444","#8b5cf6","#10b981","#f97316","#ec4899","#14b8a6","#6366f1","#84cc16","#0ea5e9","#a78bfa","#fb923c","#34d399","#f43f5e","#06b6d4"];
 
 function PortfolioAnalysisView({ data }) {
-  const indHoldings = data.portfolioHoldings || [];
-  const usHoldings  = data.usHoldings || [];
+  // Merge duplicates same as PortfolioPage does
+  function computeMergedLocal(list) {
+    const map = new Map();
+    (list || []).forEach(h => {
+      const key = `${(h.symbol || "").trim().toUpperCase()}|${h.exchange || "NSE"}`;
+      if (!map.has(key)) map.set(key, { ...h });
+      else {
+        const ex = map.get(key);
+        const tq = ex.qty + h.qty;
+        map.set(key, { ...ex, qty: tq, buyPrice: ((ex.buyPrice*ex.qty)+(h.buyPrice*h.qty))/tq, yahooOverride: ex.yahooOverride || h.yahooOverride });
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  const indHoldings = computeMergedLocal(data.portfolioHoldings || []);
+  const usHoldings  = computeMergedLocal(data.usHoldings  || []);
   const allEmpty    = indHoldings.length === 0 && usHoldings.length === 0;
 
   // Live fundamentals state: { "INFY.NS": { pe, beta, sector, cap, marketCap, ... } }
@@ -8496,10 +8511,14 @@ function PortfolioAnalysisView({ data }) {
   const [sortCol,   setSortCol]   = React.useState("weight");
   const [sortAsc,   setSortAsc]   = React.useState(false);
 
+  // Use yahooOverride if set, otherwise auto-detect
   function toTicker(h) {
-    const s = h.symbol.trim().toUpperCase();
-    if ((h.exchange || "NSE") === "NSE") return s + ".NS";
-    if ((h.exchange || "") === "BSE")    return s + ".BO";
+    if (h.yahooOverride && h.yahooOverride.trim()) return h.yahooOverride.trim().toUpperCase();
+    const s = (h.symbol || "").trim().toUpperCase().replace(/&/g, "-");
+    const CORRECTIONS = { "ABCCAPITAL":"ABCAPITAL","M&M":"M-M","L&TFH":"L-TFH" };
+    const corrected = CORRECTIONS[s] || s;
+    if ((h.exchange || "NSE") === "NSE") return corrected + ".NS";
+    if ((h.exchange || "") === "BSE")    return corrected + ".BO";
     return s;
   }
 
@@ -8510,7 +8529,7 @@ function PortfolioAnalysisView({ data }) {
     const all = [...indHoldings, ...usHoldings];
     const tickers = [...new Set(all.map(toTicker))];
     try {
-      const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
+      const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}&fundamentals=1`);
       if (res.ok) {
         const d = await res.json();
         setFundMap(d);
@@ -8522,11 +8541,19 @@ function PortfolioAnalysisView({ data }) {
 
   React.useEffect(() => { fetchFundamentals(); }, [indHoldings.length, usHoldings.length]);
 
-  function holdingValue(h) { return (h.buyPrice || 0) * (h.qty || 0); }
-
-  const indTotal   = indHoldings.reduce((s, h) => s + holdingValue(h), 0);
-  const usTotal    = usHoldings.reduce((s, h)  => s + holdingValue(h), 0);
+  // grandTotal uses live prices when available (after fundMap loads), else invested
+  const liveIndTotal = indHoldings.reduce((s, h) => {
+    const fd = fundMap[toTicker(h)] || {};
+    return s + (fd.price != null ? fd.price * h.qty : h.buyPrice * h.qty);
+  }, 0);
+  const liveUsTotal = usHoldings.reduce((s, h) => {
+    const fd = fundMap[toTicker(h)] || {};
+    return s + (fd.price != null ? fd.price * h.qty : h.buyPrice * h.qty);
+  }, 0);
+  const indTotal   = liveIndTotal || indHoldings.reduce((s, h) => s + holdingValue(h), 0);
+  const usTotal    = liveUsTotal  || usHoldings.reduce((s, h)  => s + holdingValue(h), 0);
   const grandTotal = (indTotal + usTotal) || 1;
+  function holdingValue(h) { return (h.buyPrice || 0) * (h.qty || 0); }
 
   // Build enriched rows using live data from fundMap
   function buildRows() {
@@ -8536,17 +8563,27 @@ function PortfolioAnalysisView({ data }) {
     ].map(h => {
       const ticker = toTicker(h);
       const fd     = fundMap[ticker] || {};
-      const val    = holdingValue(h);
+      const livePrice = fd.price ?? null;
+      // Use live price for current value if available, else fall back to buy price
+      const curVal = livePrice != null ? livePrice * h.qty : h.buyPrice * h.qty;
+      const invested = h.buyPrice * h.qty;
+      const pnl    = livePrice != null ? curVal - invested : null;
+      const pnlPct = pnl != null && invested > 0 ? (pnl / invested) * 100 : null;
       return {
         ...h, ticker,
-        val,
-        weight:  (val / grandTotal) * 100,
+        val:     curVal,
+        invested,
+        pnl,
+        pnlPct,
+        livePrice,
+        weight:  (curVal / grandTotal) * 100,
         pe:      fd.pe     ?? null,
         beta:    fd.beta   ?? null,
         sector:  fd.sector ?? null,
         cap:     fd.cap    ?? null,
         marketCap: fd.marketCap ?? null,
         liveName:  fd.name  ?? null,
+        dayChangePct: fd.changePct ?? null,
       };
     });
     return rows;
@@ -8697,6 +8734,11 @@ function PortfolioAnalysisView({ data }) {
       {/* Refresh button + status */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
         {fundLoading && <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>⟳ Loading fundamentals…</span>}
+        {fundLoaded && !fundLoading && (
+          <span style={{fontSize:11,color:"var(--color-text-secondary)"}}>
+            ℹ PE & Beta not available for ETFs/Gold funds — only for individual stocks
+          </span>
+        )}
         {fundLoaded  && !fundLoading && <span style={{fontSize:12,color:"#1a6b3c"}}>✓ Live data loaded</span>}
         <button onClick={fetchFundamentals} disabled={fundLoading}
           style={{padding:"6px 14px",borderRadius:8,border:"0.5px solid var(--color-border-secondary)",
