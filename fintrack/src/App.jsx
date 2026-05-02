@@ -4410,6 +4410,7 @@ function LiabilitiesTab({ data, update }) {
   }
 
 
+  const activeLiabilities = liabilities.filter(e => e.active && e.paidMonths < e.totalMonths);
   const completedLiabilities = liabilities.filter(e => !e.active || e.paidMonths >= e.totalMonths);
 
   // Summary computations for the liability strip
