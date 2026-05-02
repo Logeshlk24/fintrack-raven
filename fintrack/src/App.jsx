@@ -8449,6 +8449,46 @@ function DividendView({ data }) {
     return s;
   }
 
+  // Fetch dividend data for one ticker via CORS proxy → Yahoo Finance v8 chart API
+  // Browser-side fetch through corsproxy bypasses Yahoo's server-side blocking
+  async function fetchOneTicker(ticker) {
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d&includePrePost=false`;
+    const yahooUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d&includePrePost=false`;
+
+    // Try direct first (works on some networks), then via CORS proxy
+    const attempts = [
+      yahooUrl,
+      yahooUrl2,
+      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    ];
+
+    for (const url of attempts) {
+      try {
+        const r = await fetch(url, {
+          headers: { "Accept": "application/json, text/plain, */*" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!r.ok) continue;
+        const j = await r.json();
+        const meta = j?.chart?.result?.[0]?.meta;
+        if (!meta) continue;
+
+        const divRate  = meta.trailingAnnualDividendRate ?? null;
+        const divYield = meta.trailingAnnualDividendYield ?? null;
+        const isPaying = divRate != null && divRate > 0;
+        return {
+          ok: true, ticker, isPaying,
+          dividendRate: divRate, dividendYield: divYield,
+          trailingDivRate: divRate, trailingDivYield: divYield,
+          exDividendDate: null, dividendDate: null,
+          lastDividendValue: null, payoutRatio: null, fiveYearAvgYield: null,
+        };
+      } catch (_) {}
+    }
+    return { ok: false, ticker, isPaying: false };
+  }
+
   async function fetchDividends(holdingsOverride) {
     const holdings = holdingsOverride ?? indHoldings;
     setLoading(true); setError(""); setLoaded(false);
@@ -8458,17 +8498,13 @@ function DividendView({ data }) {
     const tickers = [...new Set(allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
     setProgress({ done: 0, total: tickers.length });
 
-    const BATCH = 6;
+    // Fetch 3 at a time — CORS proxies have rate limits
+    const BATCH = 3;
     const collected = {};
     for (let i = 0; i < tickers.length; i += BATCH) {
       const batch = tickers.slice(i, i + BATCH);
-      try {
-        const res = await fetch(`/api/stock-dividend?ticker=${batch.map(encodeURIComponent).join(",")}`);
-        if (res.ok) {
-          const json = await res.json();
-          Object.assign(collected, json);
-        }
-      } catch (_) {}
+      const results = await Promise.all(batch.map(t => fetchOneTicker(t)));
+      results.forEach((r, j) => { collected[batch[j]] = r; });
       setProgress({ done: Math.min(i + BATCH, tickers.length), total: tickers.length });
     }
 
@@ -8656,7 +8692,7 @@ function DividendView({ data }) {
         )}
 
         <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
-          ⓘ Data from Yahoo Finance via <code style={{ background: "var(--color-background-secondary)", padding: "1px 4px", borderRadius: 3 }}>/api/stock-dividend</code> (quoteSummary). Shows Indian portfolio stocks only. Annual (₹) = div/share × qty. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
+          ⓘ Dividend data from Yahoo Finance (fetched live in browser). Shows Indian portfolio stocks only. Annual (₹) = div/share × qty. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
         </p>
 
       </div>
