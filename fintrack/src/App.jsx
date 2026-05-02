@@ -1015,7 +1015,7 @@ function MoneyPage({ data, update, tab, setTab }) {
   };
 
   const filtered = data.transactions.filter(t =>
-    filterPeriod(t) && t.type === (tab === "expenses" ? "expense" : "income")
+    filterPeriod(t) && t.type === (tab === "expenses" ? "expense" : "income") && !t.isTransfer
   );
 
   function addTx() {
@@ -1219,7 +1219,10 @@ function MoneyPage({ data, update, tab, setTab }) {
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
-      <TabBar tabs={["expenses", "income", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Scheduled", "Liabilities", "Analysis"]} />
+      <TabBar tabs={["expenses", "income", "transfer", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Transfer", "Scheduled", "Liabilities", "Analysis"]} />
+
+      {/* ── Transfer Tab ── */}
+      {tab === "transfer" && <TransferTab data={data} update={update} accounts={accounts} />}
 
       {/* ── Scheduled Payments Tab ── */}
       {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} />}
@@ -3060,6 +3063,192 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle }) {
           </div>
         </Card>
       ))}
+    </div>
+  );
+}
+
+// ─── Transfer Tab ─────────────────────────────────────────────────────────────
+function TransferTab({ data, update, accounts }) {
+  const [form, setForm] = useState({ fromId: "", toId: "", amount: "", note: "", date: today() });
+  const [error, setError] = useState("");
+
+  const transfers = (data.transactions || [])
+    .filter(t => t.isTransfer && t.transferRole === "out")
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  function getAcctName(id) {
+    const a = accounts.find(a => String(a.id) === String(id));
+    return a ? a.name : "—";
+  }
+  function getAcctType(id) {
+    return accounts.find(a => String(a.id) === String(id))?.type || "Bank";
+  }
+  function badgeStyle(id) {
+    const t = getAcctType(id);
+    if (t === "Credit Card") return { background: "#fff3e0", color: "#e65100" };
+    if (t === "Cash") return { background: "#f0fdf4", color: "#166534" };
+    return { background: "#e8f5ee", color: "#1a6b3c" };
+  }
+
+  function doTransfer() {
+    setError("");
+    const amt = parseFloat(form.amount);
+    if (!form.fromId) return setError("Select a source account.");
+    if (!form.toId)   return setError("Select a destination account.");
+    if (form.fromId === form.toId) return setError("Source and destination can't be the same.");
+    if (!amt || amt <= 0) return setError("Enter a valid amount.");
+    const pairId = "tf_" + Date.now();
+    const note   = form.note.trim() || "Account Transfer";
+    const date   = form.date || today();
+    update(p => ({
+      transactions: [
+        ...p.transactions,
+        { id: Date.now(),     type: "expense", amount: amt, category: "Transfer", note, date, bankId: form.fromId, isTransfer: true, transferRole: "out", transferPairId: pairId, transferToId: form.toId },
+        { id: Date.now() + 1, type: "income",  amount: amt, category: "Transfer", note, date, bankId: form.toId,   isTransfer: true, transferRole: "in",  transferPairId: pairId, transferFromId: form.fromId },
+      ]
+    }));
+    setForm(p => ({ ...p, amount: "", note: "" }));
+  }
+
+  function deleteTransfer(pairId) {
+    if (!window.confirm("Delete this transfer? Both debit and credit entries will be removed.")) return;
+    update(p => ({ transactions: p.transactions.filter(t => t.transferPairId !== pairId) }));
+  }
+
+  const acctGroups = [
+    { label: "🏦 Bank Accounts", list: accounts.filter(a => a.type === "Bank") },
+    { label: "💳 Credit Cards",  list: accounts.filter(a => a.type === "Credit Card") },
+    { label: "💵 Cash",          list: accounts.filter(a => a.type === "Cash") },
+  ].filter(g => g.list.length > 0);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, marginTop: 16 }}>
+
+      {/* Left: form */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>↔</span> Transfer Money
+        </div>
+
+        {accounts.length < 2 && (
+          <div style={{ background: "#fef9c3", border: "0.5px solid #fbbf24", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#92400e", marginBottom: 14 }}>
+            ⚠ You need at least 2 accounts to make a transfer.
+          </div>
+        )}
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>From Account *</label>
+          <select value={form.fromId} onChange={e => setForm(p => ({ ...p, fromId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+            <option value="">— Select source —</option>
+            {acctGroups.map(g => (
+              <optgroup key={g.label} label={g.label}>
+                {g.list.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ textAlign: "center", fontSize: 22, color: "#1a6b3c", margin: "2px 0 10px", fontWeight: 700 }}>↓</div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>To Account *</label>
+          <select value={form.toId} onChange={e => setForm(p => ({ ...p, toId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+            <option value="">— Select destination —</option>
+            {acctGroups.map(g => (
+              <optgroup key={g.label} label={g.label}>
+                {g.list.filter(a => String(a.id) !== String(form.fromId)).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Amount (₹) *</label>
+          <input type="number" placeholder="e.g. 5000" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Note (optional)</label>
+          <input type="text" placeholder="e.g. Savings transfer, Bill payment" value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+
+        {error && (
+          <div style={{ fontSize: 12, color: "#d44", marginBottom: 10, background: "#fdf0f0", borderRadius: 6, padding: "6px 10px" }}>⚠ {error}</div>
+        )}
+
+        {/* Live preview */}
+        {form.fromId && form.toId && parseFloat(form.amount) > 0 && (
+          <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#0369a1", marginBottom: 6 }}>📋 Preview</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ ...badgeStyle(form.fromId), borderRadius: 5, padding: "2px 8px", fontSize: 12, fontWeight: 500 }}>{getAcctName(form.fromId)}</span>
+              <span style={{ fontWeight: 700, color: "#0369a1", fontSize: 16 }}>→</span>
+              <span style={{ ...badgeStyle(form.toId), borderRadius: 5, padding: "2px 8px", fontSize: 12, fontWeight: 500 }}>{getAcctName(form.toId)}</span>
+              <span style={{ marginLeft: "auto", fontWeight: 700, color: "#0369a1", fontSize: 14 }}>₹{parseFloat(form.amount).toLocaleString("en-IN")}</span>
+            </div>
+            <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+              This will create an expense on <b>{getAcctName(form.fromId)}</b> and an income on <b>{getAcctName(form.toId)}</b>. Both are hidden from Expenses/Income tabs.
+            </div>
+          </div>
+        )}
+
+        <button onClick={doTransfer} disabled={accounts.length < 2}
+          style={{ width: "100%", background: accounts.length < 2 ? "#ccc" : "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", cursor: accounts.length < 2 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 600 }}>
+          ↔ Transfer
+        </button>
+      </div>
+
+      {/* Right: history */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>
+          Transfer History
+          <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)", marginLeft: 8 }}>{transfers.length} transfers</span>
+        </div>
+
+        {transfers.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "3.5rem 1rem", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>↔</div>
+            No transfers yet.<br/>Use the form to move money between accounts.
+          </div>
+        ) : (
+          <div>
+            {transfers.map(t => {
+              const toAcct = accounts.find(a => String(a.id) === String(t.transferToId));
+              return (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 4px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  {/* Icon */}
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>↔</div>
+                  {/* Details */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 3 }}>
+                      <span style={{ ...badgeStyle(t.bankId), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>{getAcctName(t.bankId)}</span>
+                      <span style={{ color: "#1a6b3c", fontWeight: 700 }}>→</span>
+                      <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : { color: "var(--color-text-secondary)" }), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
+                        {toAcct ? toAcct.name : "—"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
+                    </div>
+                  </div>
+                  {/* Amount */}
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#1a6b3c", flexShrink: 0 }}>
+                    ₹{Number(t.amount).toLocaleString("en-IN")}
+                  </div>
+                  {/* Delete */}
+                  <button onClick={() => deleteTransfer(t.transferPairId)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, opacity: 0.6, padding: "2px 4px", flexShrink: 0 }}>🗑</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
