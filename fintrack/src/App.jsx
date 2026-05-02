@@ -966,9 +966,9 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
   return (
     <div>
-      {/* Overview Header row: title + inline widget */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0, flexShrink: 0 }}>Overview</h1>
+      {/* Overview Header row: title left, widget pill right */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 }}>Overview</h1>
         {widgetType !== "none" && <OverviewWidget compact />}
       </div>
 
