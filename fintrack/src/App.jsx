@@ -7415,14 +7415,86 @@ const NSE_SEARCH = NSE_STOCKS.map(([symbol, name]) => ({ symbol, name, lower: sy
 // ═══════════════════════════════════════════════════════════════════════════════
 // PORTFOLIO PAGE — CORS-safe prices via corsproxy.io + stock autocomplete
 // ═══════════════════════════════════════════════════════════════════════════════
-// ─── Portfolio Hub — tabs: Indian Stocks / US Stocks / Mutual Funds ───────────
+// ─── Portfolio Hub — tabs: Overall / Indian Stocks / US Stocks / Mutual Funds ─
 function PortfolioHub({ data, update }) {
-  const [tab, setTab] = useState("indian");
+  const [tab, setTab] = useState("overall");
+
+  // ── Nifty50 live fetch ──────────────────────────────────────────────────────
+  const [niftyData, setNiftyData] = useState(null);
+  const [niftyLoading, setNiftyLoading] = useState(false);
+  const [niftyError, setNiftyError]   = useState("");
+  const [niftyUpdated, setNiftyUpdated] = useState(null);
+
+  async function fetchNifty() {
+    setNiftyLoading(true); setNiftyError("");
+    try {
+      const res = await fetch("/api/stock-price?ticker=%5ENSEI");
+      if (!res.ok) throw new Error("API error");
+      const json = await res.json();
+      const d = json["^NSEI"] || json["%5ENSEI"] || Object.values(json)[0];
+      if (d?.ok) {
+        setNiftyData(d);
+        setNiftyUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+      } else throw new Error("No data");
+    } catch(_) { setNiftyError("Could not fetch Nifty 50"); }
+    setNiftyLoading(false);
+  }
+
+  useEffect(() => { fetchNifty(); }, []); // eslint-disable-line
+
+  // ── Portfolio totals (same calculation as Overview) ─────────────────────────
+  const usdInr      = data.usdInrRate || 84;
+  const indHoldings = data.portfolioHoldings || [];
+  const indPrices   = data["portfolioHoldings_livePrices"] || {};
+  const usHoldings  = data.usHoldings || [];
+  const usPrices    = data["usHoldings_livePrices"] || {};
+  const mfs         = data.mutualFunds || [];
+
+  const indInvested  = indHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const indCurrent   = indHoldings.reduce((s,h) => {
+    const tk = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+    const ltp = tk && indPrices[tk]?.ok ? indPrices[tk].price : (h.buyPrice||0);
+    return s + ltp*(h.qty||0);
+  }, 0);
+  const indDayChange = indHoldings.reduce((s,h) => {
+    const tk = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? indPrices[tk] : null;
+    return pd?.ok && pd.change!=null ? s + pd.change*(h.qty||0) : s;
+  }, 0);
+
+  const usInvested  = usHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const usCurrent   = usHoldings.reduce((s,h) => {
+    const tk = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? usPrices[tk] : null;
+    const ltpInr = pd?.ok ? pd.price*usdInr : (h.buyPrice||0);
+    return s + ltpInr*(h.qty||0);
+  }, 0);
+  const usDayChange = usHoldings.reduce((s,h) => {
+    const tk = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? usPrices[tk] : null;
+    return pd?.ok && pd.change!=null ? s + (pd.change*usdInr)*(h.qty||0) : s;
+  }, 0);
+
+  const mfInvested  = mfs.reduce((s,m) => s + (m.investedAmount||0), 0);
+  const mfCurrent   = mfs.reduce((s,m) => s + (m.units||0)*(m.nav||0), 0);
+
+  const totalInvested  = indInvested + usInvested + mfInvested;
+  const totalCurrent   = indCurrent  + usCurrent  + mfCurrent;
+  const totalReturn    = totalCurrent - totalInvested;
+  const totalReturnPct = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0;
+  const totalDayChange = indDayChange + usDayChange;
+  const totalDayPct    = totalCurrent > 0 ? (totalDayChange / (totalCurrent - totalDayChange)) * 100 : 0;
+
+  const fmtCur = n => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const pnlColor = v => v >= 0 ? "#1a6b3c" : "#d44";
+
   const TABS = [
-    { id: "indian", label: "📈 Indian Stocks" },
-    { id: "us",     label: "🇺🇸 US Stocks"   },
-    { id: "mf",     label: "💼 Mutual Funds" },
+    { id: "overall", label: "🏠 Overall"        },
+    { id: "indian",  label: "📈 Indian Stocks"  },
+    { id: "us",      label: "🇺🇸 US Stocks"     },
+    { id: "mf",      label: "💼 Mutual Funds"   },
   ];
+
   return (
     <div>
       {/* Tab bar */}
@@ -7434,6 +7506,124 @@ function PortfolioHub({ data, update }) {
           </button>
         ))}
       </div>
+
+      {/* ── OVERALL TAB ── */}
+      {tab === "overall" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Assets summary card */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+              <span style={{ fontWeight: 600, fontSize: 16 }}>📈 Assets</span>
+              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                {Object.keys(indPrices).length > 0 ? "Live prices loaded" : "Open tabs below & click Refresh to load prices"}
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+              {[
+                { label: "Invested",      val: fmtCur(totalInvested),  color: "var(--color-text-primary)" },
+                { label: "Current Value", val: fmtCur(totalCurrent),   color: "#1a6b3c" },
+                {
+                  label: "Total Return",
+                  val: (totalReturn >= 0 ? "+" : "") + fmtCur(totalReturn),
+                  sub: (totalReturnPct >= 0 ? "+" : "") + totalReturnPct.toFixed(2) + "%",
+                  color: pnlColor(totalReturn),
+                },
+                {
+                  label: "Day Change",
+                  val: totalDayChange !== 0
+                    ? (totalDayChange >= 0 ? "▲ +" : "▼ ") + fmtCur(totalDayChange)
+                    : "—",
+                  sub: totalDayChange !== 0
+                    ? (totalDayPct >= 0 ? "+" : "") + totalDayPct.toFixed(2) + "%"
+                    : "",
+                  color: pnlColor(totalDayChange),
+                },
+              ].map(c => (
+                <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.val}</div>
+                  {c.sub && <div style={{ fontSize: 11, color: c.color, marginTop: 2, fontWeight: 500 }}>{c.sub}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Breakdown by category */}
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              {[
+                { label: "🇮🇳 Indian Stocks", invested: indInvested, current: indCurrent },
+                { label: "🇺🇸 US Stocks",     invested: usInvested,  current: usCurrent  },
+                { label: "💼 Mutual Funds",   invested: mfInvested,  current: mfCurrent  },
+              ].map(c => {
+                const ret = c.current - c.invested;
+                const pct = c.invested > 0 ? (ret / c.invested) * 100 : 0;
+                return (
+                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", cursor: "pointer" }}
+                    onClick={() => setTab(c.label.includes("Indian") ? "indian" : c.label.includes("US") ? "us" : "mf")}>
+                    <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtCur(c.current)}</div>
+                    <div style={{ fontSize: 11, color: pnlColor(ret), marginTop: 2 }}>
+                      {ret >= 0 ? "+" : ""}{fmtCur(ret)} ({pct >= 0 ? "+" : ""}{pct.toFixed(1)}%)
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Nifty 50 live card */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+              <span style={{ fontWeight: 600, fontSize: 16 }}>📊 Market Indices</span>
+              <button onClick={fetchNifty} disabled={niftyLoading}
+                style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 10px", cursor: "pointer", opacity: niftyLoading ? 0.5 : 1 }}>
+                {niftyLoading ? "↻ Loading…" : "↻ Refresh"}
+              </button>
+            </div>
+
+            {niftyError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 10 }}>⚠ {niftyError}</div>}
+
+            {niftyData ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                {/* Big value */}
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Nifty 50</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px" }}>
+                    {Number(niftyData.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+
+                {/* Day change */}
+                <div style={{ background: niftyData.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 130 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(niftyData.change) }}>
+                    {niftyData.change >= 0 ? "▲ +" : "▼ "}{Number(niftyData.change).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+
+                {/* Day change % */}
+                <div style={{ background: niftyData.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 110 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change %</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(niftyData.changePct) }}>
+                    {niftyData.changePct >= 0 ? "+" : ""}{Number(niftyData.changePct).toFixed(2)}%
+                  </div>
+                </div>
+
+                {niftyUpdated && (
+                  <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>
+                    Updated {niftyUpdated}<br/>15-min delayed
+                  </div>
+                )}
+              </div>
+            ) : niftyLoading ? (
+              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Fetching Nifty 50…</div>
+            ) : (
+              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Click Refresh to load market data.</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {tab === "indian" && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
       {tab === "us"     && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
       {tab === "mf"     && <MutualFundsPage data={data} update={update} />}
