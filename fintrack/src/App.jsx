@@ -7594,20 +7594,35 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
   // ── enriched rows using mergedHoldings ──────────────────────────────────────
   const rows = mergedHoldings.map(h => {
     const ticker = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
-    // Check direct match first, then check if price was stored under auto-retry ticker
     let pd = prices[ticker] || {};
     if (!pd.price) {
-      // Also check .BO alternative if ticker is .NS (and vice versa)
       const alt = ticker.endsWith(".NS") ? ticker.replace(".NS", ".BO")
                 : ticker.endsWith(".BO") ? ticker.replace(".BO", ".NS") : null;
       if (alt && prices[alt]?.ok) pd = prices[alt];
     }
-    const cur    = pd.price ?? null;
-    const invested = h.buyPrice * h.qty;
-    const curVal   = cur != null ? cur * h.qty : null;
-    const pnl      = curVal != null ? curVal - invested : null;
+
+    // For US stocks: Yahoo returns price in USD → convert to INR for all internal math
+    const priceRaw = pd.price ?? null;  // USD for US, ₹ for Indian
+    const curUsd   = isUS ? priceRaw : null;                         // USD value (US only)
+    const cur      = priceRaw != null
+                       ? (isUS ? priceRaw * usdRate : priceRaw)      // always in INR internally
+                       : null;
+
+    // buyPrice is stored in INR (both Indian stocks and US stocks after conversion on save)
+    const invested = h.buyPrice * h.qty;                             // INR
+    const curVal   = cur != null ? cur * h.qty : null;               // INR
+    const pnl      = curVal != null ? curVal - invested : null;       // INR
     const pnlPct   = pnl != null ? (pnl / invested) * 100 : null;
-    return { ...h, ticker, cur, invested, curVal, pnl, pnlPct, dayChange: pd.change ?? null, dayChangePct: pd.changePct ?? null, fetchFailed: pd.ok === false };
+
+    // Day change: Yahoo gives per-share $ change for US, ₹ for Indian
+    const dayChangePerShare = pd.change ?? null;                       // USD or ₹
+    const dayChangeInr = dayChangePerShare != null
+                           ? (isUS ? dayChangePerShare * usdRate : dayChangePerShare)
+                           : null;                                     // always INR
+
+    return { ...h, ticker, cur, curUsd, invested, curVal, pnl, pnlPct,
+             dayChange: dayChangeInr, dayChangePct: pd.changePct ?? null,
+             fetchFailed: pd.ok === false };
   });
 
   const sorted = [...rows].sort((a, b) => {
@@ -7617,11 +7632,11 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
     return a.symbol.localeCompare(b.symbol);
   });
 
-  const totalInvested = rows.reduce((s, r) => s + r.invested, 0);
-  const totalCurVal   = rows.filter(r => r.curVal != null).reduce((s, r) => s + r.curVal, 0);
-  const totalPnl      = rows.filter(r => r.pnl != null).reduce((s, r) => s + r.pnl, 0);
+  const totalInvested = rows.reduce((s, r) => s + r.invested, 0);          // INR
+  const totalCurVal   = rows.filter(r => r.curVal != null).reduce((s, r) => s + r.curVal, 0);  // INR
+  const totalPnl      = rows.filter(r => r.pnl != null).reduce((s, r) => s + r.pnl, 0);       // INR
   const totalPnlPct   = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
-  const dayPnl        = rows.filter(r => r.dayChange != null).reduce((s, r) => s + r.dayChange * r.qty, 0);
+  const dayPnl        = rows.filter(r => r.dayChange != null).reduce((s, r) => s + r.dayChange * r.qty, 0); // INR
 
   const pnlColor = (v) => v == null ? "var(--color-text-secondary)" : v >= 0 ? "#1a6b3c" : "#d44";
 
@@ -7878,7 +7893,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                   )}
                 </div>
                 {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
-                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + fmt(h.buyPrice)}</div>
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) + " (₹" + fmt(h.buyPrice) + ")" : "₹" + fmt(h.buyPrice)}</div>
               </div>
 
               {/* LTP — currency-aware */}
@@ -7889,8 +7904,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                     ? <div>
                         {isUS && showUSD
                           ? <div>
-                              <span style={{ fontWeight: 500 }}>${(h.cur / usdRate).toFixed(2)}</span>
-                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>= ₹{fmt(h.cur)}</div>
+                              <span style={{ fontWeight: 500 }}>${h.curUsd != null ? h.curUsd.toFixed(2) : (h.cur / usdRate).toFixed(2)}</span>
+                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>≈ ₹{fmt(h.cur)}</div>
                             </div>
                           : <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
                         }
