@@ -816,7 +816,29 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                 {[
                   { label: "Invested",      val: fmtCur(totalInvested), color: "var(--color-text-primary)" },
                   { label: "Current Value", val: fmtCur(totalCurrent),  color: "#1a6b3c" },
-                  { label: "Total Return",  val: fmtCur(totalReturn),   color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
+                  { label: "Day's Change",  val: ((() => {
+                      const indHoldings2 = data.portfolioHoldings || [];
+                      const indPrices2 = data["portfolioHoldings_livePrices"] || {};
+                      const usHoldings2 = data.usHoldings || [];
+                      const usPrices2 = data["usHoldings_livePrices"] || {};
+                      const indDay = indHoldings2.reduce((s, h) => {
+                        const t = Object.keys(indPrices2).find(k => k.startsWith(h.symbol));
+                        return s + (t && indPrices2[t]?.ok ? (indPrices2[t].change || 0) * (h.qty || 0) : 0);
+                      }, 0);
+                      const usDay = usHoldings2.reduce((s, h) => {
+                        const t = Object.keys(usPrices2).find(k => k.startsWith(h.symbol));
+                        return s + (t && usPrices2[t]?.ok ? (usPrices2[t].change || 0) * (h.qty || 0) : 0);
+                      }, 0);
+                      const d = indDay + usDay;
+                      return (d >= 0 ? "+" : "") + fmtCur(d);
+                    })()),
+                    color: (() => {
+                      const indHoldings2 = data.portfolioHoldings || [];
+                      const indPrices2 = data["portfolioHoldings_livePrices"] || {};
+                      const d = indHoldings2.reduce((s, h) => { const t = Object.keys(indPrices2).find(k => k.startsWith(h.symbol)); return s + (t && indPrices2[t]?.ok ? (indPrices2[t].change || 0) * (h.qty || 0) : 0); }, 0);
+                      return d >= 0 ? "#1a6b3c" : "#d44";
+                    })()
+                  },
                   { label: "Return %",      val: returnPct + "%",       color: parseFloat(returnPct) >= 0 ? "#1a6b3c" : "#d44" },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
@@ -5414,6 +5436,63 @@ function BusinessPage({ data, update }) {
     </div>
   );
 }
+      {/* ── Percentage Calculator ── */}
+      <PercentageCalculator />
+    </div>
+  );
+}
+
+// ─── Percentage Calculator ────────────────────────────────────────────────────
+function PercentageCalculator() {
+  const [amount, setAmount] = useState("");
+  const [pct,    setPct]    = useState("");
+
+  const result   = amount && pct ? ((parseFloat(amount) * parseFloat(pct)) / 100) : null;
+  const after    = result !== null ? parseFloat(amount) + result : null;
+  const fmt      = n => "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginTop: 20 }}>
+      <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>🔢 Percentage Calculator</div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Amount (₹)</label>
+          <input type="number" placeholder="e.g. 50000" value={amount} onChange={e => setAmount(e.target.value)}
+            style={{ width: 140, padding: "7px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", fontSize: 14, outline: "none", fontFamily: "inherit" }} />
+        </div>
+        <div style={{ fontSize: 18, color: "var(--color-text-secondary)", alignSelf: "flex-end", marginBottom: 4 }}>×</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Percentage (%)</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <input type="number" placeholder="e.g. 18" value={pct} onChange={e => setPct(e.target.value)}
+              style={{ width: 100, padding: "7px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", fontSize: 14, outline: "none", fontFamily: "inherit" }} />
+            <span style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>%</span>
+          </div>
+        </div>
+        <div style={{ alignSelf: "flex-end", marginBottom: 2, fontSize: 18, color: "var(--color-text-secondary)" }}>=</div>
+        {result !== null ? (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignSelf: "flex-end" }}>
+            <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "7px 14px" }}>
+              <div style={{ fontSize: 10, color: "#1a6b3c", marginBottom: 1 }}>{pct}% of {fmt(parseFloat(amount))}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#1a6b3c" }}>{fmt(result)}</div>
+            </div>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "7px 14px" }}>
+              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 1 }}>Amount + {pct}%</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--color-text-primary)" }}>{fmt(after)}</div>
+            </div>
+            <div style={{ background: "#fdf0f0", borderRadius: 10, padding: "7px 14px" }}>
+              <div style={{ fontSize: 10, color: "#d44", marginBottom: 1 }}>Amount − {pct}%</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#d44" }}>{fmt(parseFloat(amount) - result)}</div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ alignSelf: "flex-end", fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 6 }}>Enter amount & % to calculate</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Projects Page ───────────────────────────────────────────────────────────
 const DEFAULT_TASK_TYPES = ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
 
@@ -7119,11 +7198,13 @@ function MutualFundsPage({ data, update }) {
   const [showForm, setShowForm] = useState(false);
 
   // SIP Calculator state
-  const [monthly, setMonthly]   = useState(5000);
-  const [stepUp, setStepUp]     = useState(10);
-  const [rate, setRate]         = useState(12);
-  const [years, setYears]       = useState(10);
-  const [inflation, setInflation] = useState(6);
+  const [monthly, setMonthly]         = useState(5000);
+  const [stepUp, setStepUp]           = useState(10);
+  const [stepUpOn, setStepUpOn]       = useState(true);
+  const [rate, setRate]               = useState(12);
+  const [years, setYears]             = useState(10);
+  const [inflation, setInflation]     = useState(6);
+  const [inflationOn, setInflationOn] = useState(true);
 
   function addMF() {
     if (!form.name.trim() || !form.nav) return;
@@ -7140,9 +7221,9 @@ function MutualFundsPage({ data, update }) {
         corpus = (corpus + sip) * (1 + rate / 100 / 12);
         invested += sip;
       }
-      sip = sip * (1 + stepUp / 100);
+      if (stepUpOn) sip = sip * (1 + stepUp / 100);
     }
-    const realCorpus = corpus / Math.pow(1 + inflation / 100, years);
+    const realCorpus = inflationOn ? corpus / Math.pow(1 + inflation / 100, years) : corpus;
     return { invested, corpus, returns: corpus - invested, realCorpus };
   }
   const sip = calcSIP();
@@ -7237,39 +7318,64 @@ function MutualFundsPage({ data, update }) {
       {/* ── SIP CALCULATOR TAB ── */}
       {tab === "sip" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
-          {/* Sliders */}
+          {/* Left — Inputs */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem" }}>
             <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 20 }}>🧮 Step-Up SIP Calculator</h3>
+
+            {/* Helper to render a slider row with editable input */}
             {[
-              { label: "Monthly Investment", val: monthly, set: setMonthly, min: 500, max: 200000, step: 500, suffix: "₹", prefix: true },
-              { label: "Annual Step-Up %",   val: stepUp,  set: setStepUp,  min: 0,   max: 30,     step: 1,   suffix: "%" },
-              { label: "Expected Return (p.a.)", val: rate, set: setRate,   min: 1,   max: 30,     step: 0.5, suffix: "%" },
-              { label: "Time Period",         val: years,  set: setYears,   min: 1,   max: 40,     step: 1,   suffix: " Yr" },
-              { label: "Inflation Rate (p.a.)", val: inflation, set: setInflation, min: 0, max: 15, step: 0.5, suffix: "%" },
-            ].map(s => (
-              <div key={s.label} style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{s.label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 10px" }}>
-                    {s.prefix ? "₹" : ""}{s.val.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}
-                  </span>
+              { label: "Monthly Investment", val: monthly, set: setMonthly, min: 500,  max: 200000, step: 500,  prefix: "₹", suffix: "",    toggle: null },
+              { label: "Annual Step-Up %",   val: stepUp,  set: setStepUp,  min: 0,    max: 30,     step: 1,    prefix: "",  suffix: "%",   toggle: { on: stepUpOn,   setOn: setStepUpOn } },
+              { label: "Expected Return (p.a.)", val: rate, set: setRate,   min: 1,    max: 30,     step: 0.5,  prefix: "",  suffix: "%",   toggle: null },
+              { label: "Time Period",         val: years,  set: setYears,   min: 1,    max: 40,     step: 1,    prefix: "",  suffix: " Yr", toggle: null },
+              { label: "Inflation Rate (p.a.)", val: inflation, set: setInflation, min: 0, max: 15, step: 0.5,  prefix: "",  suffix: "%",   toggle: { on: inflationOn, setOn: setInflationOn } },
+            ].map(s => {
+              const disabled = s.toggle && !s.toggle.on;
+              return (
+                <div key={s.label} style={{ marginBottom: 18, opacity: disabled ? 0.45 : 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7, gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {s.toggle && (
+                        <button onClick={() => s.toggle.setOn(v => !v)}
+                          style={{ width: 36, height: 20, borderRadius: 10, border: "none", cursor: "pointer", background: s.toggle.on ? "#1a6b3c" : "#d1d5db", position: "relative", flexShrink: 0, padding: 0 }}>
+                          <span style={{ position: "absolute", top: 2, left: s.toggle.on ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.15s", display: "block", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                        </button>
+                      )}
+                      <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{s.label}</span>
+                    </div>
+                    {/* Editable number input */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 2, background: "#e8f5ee", borderRadius: 6, padding: "1px 6px" }}>
+                      {s.prefix && <span style={{ fontSize: 12, color: "#1a6b3c", fontWeight: 600 }}>{s.prefix}</span>}
+                      <input
+                        type="number"
+                        value={s.val}
+                        min={s.min} max={s.max} step={s.step}
+                        disabled={disabled}
+                        onChange={e => { const v = Number(e.target.value); if (v >= s.min && v <= s.max) s.set(v); }}
+                        style={{ width: s.prefix === "₹" ? 70 : 42, border: "none", background: "transparent", fontSize: 13, fontWeight: 600, color: "#1a6b3c", outline: "none", textAlign: "right", fontFamily: "inherit", padding: 0 }}
+                      />
+                      {s.suffix && <span style={{ fontSize: 12, color: "#1a6b3c", fontWeight: 600 }}>{s.suffix}</span>}
+                    </div>
+                  </div>
+                  <input type="range" min={s.min} max={s.max} step={s.step} value={s.val}
+                    disabled={disabled}
+                    onChange={e => s.set(Number(e.target.value))}
+                    style={{ width: "100%", accentColor: "#1a6b3c", cursor: disabled ? "not-allowed" : "pointer" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                    <span>{s.prefix}{s.min.toLocaleString("en-IN")}{s.suffix}</span>
+                    <span>{s.prefix}{s.max.toLocaleString("en-IN")}{s.suffix}</span>
+                  </div>
                 </div>
-                <input type="range" min={s.min} max={s.max} step={s.step} value={s.val} onChange={e => s.set(Number(e.target.value))}
-                  style={{ width: "100%", accentColor: "#1a6b3c", cursor: "pointer" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                  <span>{s.prefix ? "₹" : ""}{s.min.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}</span>
-                  <span>{s.prefix ? "₹" : ""}{s.max.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          {/* Results */}
+          {/* Right — Results */}
           <div>
             <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem", marginBottom: 12 }}>
               <h4 style={{ margin: "0 0 16px", fontSize: 14, color: "var(--color-text-secondary)", fontWeight: 500 }}>Projection after {years} years</h4>
-              {/* Donut chart */}
-              <div style={{ position: "relative", width: 160, height: 160, margin: "0 auto 20px" }}>
+              {/* Donut */}
+              <div style={{ position: "relative", width: 150, height: 150, margin: "0 auto 16px" }}>
                 <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
                   <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e8f5ee" strokeWidth="3.5" />
                   <circle cx="18" cy="18" r="15.9" fill="none" stroke="#1a6b3c" strokeWidth="3.5"
@@ -7279,13 +7385,13 @@ function MutualFundsPage({ data, update }) {
                     strokeDashoffset={`${-(sip.invested / sip.corpus * 100).toFixed(1)}`} />
                 </svg>
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Total</div>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(sip.corpus)}</div>
+                  <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Total</div>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{fmt(sip.corpus)}</div>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 20, fontSize: 11 }}>
-                <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#1a6b3c", marginRight: 4 }} />Invested</span>
-                <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#4da6ff", marginRight: 4 }} />Returns</span>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 14, fontSize: 11 }}>
+                <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: "#1a6b3c", marginRight: 4 }} />Invested</span>
+                <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: "#4da6ff", marginRight: 4 }} />Returns</span>
               </div>
               {[
                 { label: "Invested Amount", val: fmt(sip.invested), color: "#1a6b3c" },
@@ -7298,12 +7404,14 @@ function MutualFundsPage({ data, update }) {
                 </div>
               ))}
             </div>
-            {/* Inflation-adjusted */}
-            <div style={{ background: "#fef9c3", borderRadius: 12, border: "0.5px solid #fbbf24", padding: "1rem 1.1rem" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 6 }}>📉 Inflation-Adjusted Value ({inflation}% p.a.)</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: "#78350f" }}>{fmt(sip.realCorpus)}</div>
-              <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}>Real purchasing power after {years} years at {inflation}% inflation</div>
-            </div>
+            {/* Inflation adjusted — shown only when on */}
+            {inflationOn && (
+              <div style={{ background: "#fef9c3", borderRadius: 12, border: "0.5px solid #fbbf24", padding: "1rem 1.1rem" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 6 }}>📉 Inflation-Adjusted Value ({inflation}% p.a.)</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#78350f" }}>{fmt(sip.realCorpus)}</div>
+                <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}>Real purchasing power after {years} yrs at {inflation}% inflation</div>
+              </div>
+            )}
           </div>
         </div>
       )}
