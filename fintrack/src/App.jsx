@@ -8985,33 +8985,19 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
           </div>
 
           {/* Column headers */}
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 0.9fr 0.9fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
             <span>STOCK</span>
             <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>DAY CHG</span>
             <span style={{ textAlign: "right" }}>INVESTED {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>CUR VALUE {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>P&amp;L {isUS ? `(${curSymbol})` : "(₹)"}</span>
-            <span style={{ textAlign: "right" }} title="Compound Annual Growth Rate">CAGR</span>
-            <span style={{ textAlign: "right" }} title="Extended Internal Rate of Return">XIRR</span>
             <span />
           </div>
 
           {/* Rows */}
-          {sorted.map(h => {
-            // Per-holding CAGR
-            const hCAGR = h.buyDate && h.curVal != null
-              ? calcCAGR(h.invested, h.curVal, h.buyDate) : null;
-            // Per-holding XIRR (single investment = same as CAGR, but computed via solver for accuracy)
-            const hXIRR = h.buyDate && h.curVal != null && h.invested > 0
-              ? calcXIRR([
-                  { amount: -h.invested, date: new Date(h.buyDate) },
-                  { amount: h.curVal,    date: new Date() },
-                ])
-              : null;
-            const rateColor = (r) => r == null ? "var(--color-text-secondary)" : r >= 0 ? "#1a6b3c" : "#d44";
-            return (
-            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 0.9fr 0.9fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
+          {sorted.map(h => (
+            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
               <div>
                 <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {h.symbol.replace(/\.(NS|BO)$/i, "")}
@@ -9084,30 +9070,6 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
               </div>
 
-              {/* CAGR */}
-              <div style={{ textAlign: "right" }}>
-                {hCAGR != null ? (
-                  <div>
-                    <div style={{ color: rateColor(hCAGR), fontWeight: 600, fontSize: 12 }}>{fmtRate(hCAGR)}</div>
-                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>p.a.</div>
-                  </div>
-                ) : (
-                  <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add buy date to see CAGR">—</span>
-                )}
-              </div>
-
-              {/* XIRR */}
-              <div style={{ textAlign: "right" }}>
-                {hXIRR != null ? (
-                  <div>
-                    <div style={{ color: rateColor(hXIRR), fontWeight: 600, fontSize: 12 }}>{fmtRate(hXIRR)}</div>
-                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>p.a.</div>
-                  </div>
-                ) : (
-                  <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add buy date to see XIRR">—</span>
-                )}
-              </div>
-
               <div style={{ textAlign: "right" }}>
                 <ThreeDotMenu
                   onEdit={() => {
@@ -9130,8 +9092,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 />
               </div>
             </div>
-            );
-          })}
+          ))}
 
           {/* Footer */}
           <div style={{ padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
