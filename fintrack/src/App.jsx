@@ -7427,6 +7427,38 @@ function PortfolioHub({ data, update }) {
   const [niftyError, setNiftyError]   = useState("");
   const [niftyUpdated, setNiftyUpdated] = useState(null);
 
+  // ── Gold Price live fetch ────────────────────────────────────────────────────
+  const [goldData, setGoldData]       = useState(null);
+  const [goldLoading, setGoldLoading] = useState(false);
+  const [goldError, setGoldError]     = useState("");
+  const [goldUpdated, setGoldUpdated] = useState(null);
+
+  async function fetchGold() {
+    setGoldLoading(true); setGoldError("");
+    try {
+      // Uses the same Yahoo Finance proxy — XAU/INR = Gold spot price in INR per troy oz
+      const res = await fetch("/api/stock-price?ticker=GC%3DF");
+      if (!res.ok) throw new Error("API error");
+      const json = await res.json();
+      const d = json["GC=F"] || Object.values(json)[0];
+      if (d?.ok) {
+        // GC=F is in USD per troy oz — convert to INR per gram
+        // 1 troy oz = 31.1035 grams
+        const usdInrRate = data.usdInrRate || 84;
+        const priceInrPerOz  = d.price * usdInrRate;
+        const priceInrPerGram = priceInrPerOz / 31.1035;
+        const price24k = priceInrPerGram;              // 24K = 99.9% pure
+        const price22k = priceInrPerGram * (22 / 24);  // 22K = 91.67% pure
+        const changeInrPerGram = (d.change * usdInrRate) / 31.1035;
+        setGoldData({ price24k, price22k, change: changeInrPerGram, changePct: d.changePct });
+        setGoldUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+      } else throw new Error("No data");
+    } catch (_) { setGoldError("Could not fetch Gold price"); }
+    setGoldLoading(false);
+  }
+
+  useEffect(() => { fetchGold(); }, []); // eslint-disable-line
+
   async function fetchNifty() {
     setNiftyLoading(true); setNiftyError("");
     try {
@@ -7491,11 +7523,12 @@ function PortfolioHub({ data, update }) {
   const pnlColor = v => v >= 0 ? "#1a6b3c" : "#d44";
 
   const TABS = [
-    { id: "overall",   label: "🏠 Overall"        },
-    { id: "indian",    label: "📈 Indian Stocks"  },
-    { id: "us",        label: "🇺🇸 US Stocks"     },
-    { id: "mf",        label: "💼 Mutual Funds"   },
-    { id: "analysis",  label: "📊 Analysis"       },
+    { id: "overall",   label: "🏠 Overall"               },
+    { id: "indian",    label: "📈 Indian Stocks"         },
+    { id: "us",        label: "🇺🇸 US Stocks"            },
+    { id: "mf",        label: "💼 Mutual Funds"          },
+    { id: "analysis",  label: "📊 Analysis"              },
+    { id: "compare",   label: "🔍 Comparative Analysis"  },
   ];
 
   return (
@@ -7578,9 +7611,9 @@ function PortfolioHub({ data, update }) {
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
               <span style={{ fontWeight: 600, fontSize: 16 }}>📊 Market Indices</span>
-              <button onClick={fetchNifty} disabled={niftyLoading}
-                style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 10px", cursor: "pointer", opacity: niftyLoading ? 0.5 : 1 }}>
-                {niftyLoading ? "↻ Loading…" : "↻ Refresh"}
+              <button onClick={() => { fetchNifty(); fetchGold(); }} disabled={niftyLoading && goldLoading}
+                style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 10px", cursor: "pointer", opacity: (niftyLoading && goldLoading) ? 0.5 : 1 }}>
+                {(niftyLoading || goldLoading) ? "↻ Loading…" : "↻ Refresh"}
               </button>
             </div>
 
@@ -7623,6 +7656,54 @@ function PortfolioHub({ data, update }) {
             ) : (
               <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Click Refresh to load market data.</div>
             )}
+
+            {/* ── Gold Price separator ── */}
+            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 16, paddingTop: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                🥇 Gold Price <span style={{ fontSize: 10, fontWeight: 400 }}>(per gram · INR)</span>
+              </div>
+              {goldError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {goldError}</div>}
+              {goldData ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                  {/* 24K */}
+                  <div>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 2 }}>24K (999 fine)</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", color: "#b8860b" }}>
+                      {goldData.price24k.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  {/* 22K */}
+                  <div>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 2 }}>22K (916 hallmark)</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", color: "#b8860b" }}>
+                      {goldData.price22k.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  {/* Day Change */}
+                  <div style={{ background: goldData.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 120 }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: goldData.change >= 0 ? "#1a6b3c" : "#d44" }}>
+                      {goldData.change >= 0 ? "▲ +" : "▼ "}{Math.abs(goldData.change).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div style={{ background: goldData.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 100 }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change %</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: goldData.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
+                      {goldData.changePct >= 0 ? "+" : ""}{Number(goldData.changePct).toFixed(2)}%
+                    </div>
+                  </div>
+                  {goldUpdated && (
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>
+                      Updated {goldUpdated}<br/>15-min delayed
+                    </div>
+                  )}
+                </div>
+              ) : goldLoading ? (
+                <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Fetching gold prices…</div>
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Click Refresh to load gold prices.</div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -7631,6 +7712,270 @@ function PortfolioHub({ data, update }) {
       {tab === "us"       && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
       {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
       {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
+      {tab === "compare"  && <ComparativeAnalysisView data={data} />}
+    </div>
+  );
+}
+
+// ─── Comparative Analysis View ────────────────────────────────────────────────
+function ComparativeAnalysisView({ data }) {
+  const usdInrRate = data.usdInrRate || 84;
+
+  // ── Compute values for each category ────────────────────────────────────────
+  const indHoldings = data.portfolioHoldings || [];
+  const indPrices   = data["portfolioHoldings_livePrices"] || {};
+  const usHoldings  = data.usHoldings || [];
+  const usPrices    = data["usHoldings_livePrices"] || {};
+  const mfs         = data.mutualFunds || [];
+
+  const indInvested = indHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const indCurrent  = indHoldings.reduce((s,h) => {
+    const tk = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+    const ltp = tk && indPrices[tk]?.ok ? indPrices[tk].price : (h.buyPrice||0);
+    return s + ltp*(h.qty||0);
+  }, 0);
+
+  const usInvested = usHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const usCurrent  = usHoldings.reduce((s,h) => {
+    const tk = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? usPrices[tk] : null;
+    const ltpInr = pd?.ok ? pd.price*usdInrRate : (h.buyPrice||0);
+    return s + ltpInr*(h.qty||0);
+  }, 0);
+
+  const mfInvested = mfs.reduce((s,m) => s + (m.investedAmount||0), 0);
+  const mfCurrent  = mfs.reduce((s,m) => s + (m.units||0)*(m.nav||0), 0);
+
+  const totalInvested = indInvested + usInvested + mfInvested;
+  const totalCurrent  = indCurrent  + usCurrent  + mfCurrent;
+  const totalReturn   = totalCurrent - totalInvested;
+
+  const fmtC = n => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const pColor = v => v >= 0 ? "#1a6b3c" : "#d44";
+
+  const categories = [
+    { label: "🇮🇳 Indian Stocks", flag: "🇮🇳", invested: indInvested, current: indCurrent,  count: indHoldings.length, color: "#1a6b3c" },
+    { label: "🇺🇸 US Stocks",     flag: "🇺🇸", invested: usInvested,  current: usCurrent,   count: usHoldings.length,  color: "#4da6ff" },
+    { label: "💼 Mutual Funds",   flag: "💼", invested: mfInvested,  current: mfCurrent,   count: mfs.length,          color: "#9b59b6" },
+  ];
+
+  const [sortKey, setSortKey] = useState("current");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortAsc(a => !a);
+    else { setSortKey(key); setSortAsc(false); }
+  }
+
+  const sorted = [...categories].sort((a, b) => {
+    let av, bv;
+    if (sortKey === "label")      { av = a.label; bv = b.label; }
+    else if (sortKey === "invested") { av = a.invested; bv = b.invested; }
+    else if (sortKey === "current")  { av = a.current;  bv = b.current;  }
+    else if (sortKey === "return")   { av = a.current - a.invested; bv = b.current - b.invested; }
+    else if (sortKey === "pct")      { av = a.invested > 0 ? (a.current-a.invested)/a.invested : 0; bv = b.invested > 0 ? (b.current-b.invested)/b.invested : 0; }
+    else if (sortKey === "alloc")    { av = totalCurrent > 0 ? a.current/totalCurrent : 0; bv = totalCurrent > 0 ? b.current/totalCurrent : 0; }
+    else                             { av = a.count; bv = b.count; }
+    if (typeof av === "string") return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  function Th({ col, label, right }) {
+    const active = sortKey === col;
+    return (
+      <th onClick={() => toggleSort(col)} style={{ padding: "8px 12px", textAlign: right ? "right" : "left", fontSize: 11, fontWeight: 600, color: active ? "#1a6b3c" : "var(--color-text-secondary)", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap", userSelect: "none" }}>
+        {label} {active ? (sortAsc ? "↑" : "↓") : ""}
+      </th>
+    );
+  }
+
+  const BAR_MAX = Math.max(...categories.map(c => c.current), 1);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
+
+      {/* ── Summary KPI cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+        {[
+          { label: "Total Invested",   val: fmtC(totalInvested), color: "var(--color-text-primary)" },
+          { label: "Total Current",    val: fmtC(totalCurrent),  color: "#1a6b3c" },
+          { label: "Total Return",     val: (totalReturn >= 0 ? "+" : "") + fmtC(totalReturn),
+            sub: totalInvested > 0 ? (totalReturn >= 0 ? "+" : "") + (totalReturn/totalInvested*100).toFixed(2) + "%" : "—",
+            color: pColor(totalReturn) },
+          { label: "Holdings",         val: (indHoldings.length + usHoldings.length + mfs.length) + " assets", color: "var(--color-text-primary)" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: c.color }}>{c.val}</div>
+            {c.sub && <div style={{ fontSize: 11, color: c.color, marginTop: 2, fontWeight: 500 }}>{c.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Bar chart visual comparison ── */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14 }}>📊 Current Value Comparison</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {categories.map(c => {
+            const ret = c.current - c.invested;
+            const pct = c.invested > 0 ? (ret / c.invested * 100) : 0;
+            const barW = BAR_MAX > 0 ? (c.current / BAR_MAX * 100) : 0;
+            const invBarW = BAR_MAX > 0 ? (c.invested / BAR_MAX * 100) : 0;
+            return (
+              <div key={c.label}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{c.label}</span>
+                  <span style={{ fontSize: 12, color: pColor(ret), fontWeight: 600 }}>
+                    {fmtC(c.current)} ({ret >= 0 ? "+" : ""}{pct.toFixed(1)}%)
+                  </span>
+                </div>
+                {/* Invested bar */}
+                <div style={{ position: "relative", height: 8, background: "var(--color-background-tertiary)", borderRadius: 4, marginBottom: 3, overflow: "hidden" }}>
+                  <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: invBarW + "%", background: "var(--color-border-primary)", borderRadius: 4, opacity: 0.6 }} />
+                </div>
+                {/* Current bar */}
+                <div style={{ position: "relative", height: 10, background: "var(--color-background-tertiary)", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: barW + "%", background: c.color, borderRadius: 4, transition: "width 0.4s ease" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+                  <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Invested: {fmtC(c.invested)}</span>
+                  <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{c.count} holding{c.count !== 1 ? "s" : ""}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Allocation donut + breakdown ── */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14 }}>🥧 Portfolio Allocation</div>
+        <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
+          {/* Simple SVG donut */}
+          {totalCurrent > 0 ? (() => {
+            const R = 54, r = 34, cx = 70, cy = 70;
+            let cumPct = 0;
+            const slices = categories.filter(c => c.current > 0).map(c => {
+              const pct = c.current / totalCurrent;
+              const start = cumPct;
+              cumPct += pct;
+              return { ...c, pct, start };
+            });
+            function polarToCart(pct) {
+              const angle = pct * 2 * Math.PI - Math.PI / 2;
+              return [cx + R * Math.cos(angle), cy + R * Math.sin(angle)];
+            }
+            function innerCart(pct) {
+              const angle = pct * 2 * Math.PI - Math.PI / 2;
+              return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+            }
+            return (
+              <svg width={140} height={140} viewBox="0 0 140 140">
+                {slices.map((s, i) => {
+                  const [x1, y1] = polarToCart(s.start);
+                  const [x2, y2] = polarToCart(s.start + s.pct);
+                  const [ix1, iy1] = innerCart(s.start);
+                  const [ix2, iy2] = innerCart(s.start + s.pct);
+                  const large = s.pct > 0.5 ? 1 : 0;
+                  const path = `M ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${r} ${r} 0 ${large} 0 ${ix1} ${iy1} Z`;
+                  return <path key={i} d={path} fill={s.color} stroke="white" strokeWidth={2} />;
+                })}
+                <text x={cx} y={cy - 6} textAnchor="middle" fontSize={10} fill="var(--color-text-secondary)">Total</text>
+                <text x={cx} y={cy + 9} textAnchor="middle" fontSize={9} fontWeight="600" fill="var(--color-text-primary)">
+                  {fmtC(totalCurrent)}
+                </text>
+              </svg>
+            );
+          })() : <div style={{ width: 140, height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 12 }}>No data</div>}
+
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+            {categories.map(c => {
+              const allocPct = totalCurrent > 0 ? (c.current / totalCurrent * 100) : 0;
+              return (
+                <div key={c.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: c.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, flex: 1 }}>{c.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: c.color }}>{allocPct.toFixed(1)}%</span>
+                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)", minWidth: 90, textAlign: "right" }}>{fmtC(c.current)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Detailed comparison table ── */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
+          📋 Side-by-Side Comparison
+          <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)", marginLeft: 8 }}>Click headers to sort</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "var(--color-background-secondary)" }}>
+                <Th col="label"    label="Category" />
+                <Th col="count"    label="Holdings" right />
+                <Th col="invested" label="Invested"  right />
+                <Th col="current"  label="Current"   right />
+                <Th col="return"   label="Gain/Loss" right />
+                <Th col="pct"      label="Return %"  right />
+                <Th col="alloc"    label="Allocation" right />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((c, i) => {
+                const ret = c.current - c.invested;
+                const pct = c.invested > 0 ? (ret / c.invested * 100) : 0;
+                const alloc = totalCurrent > 0 ? (c.current / totalCurrent * 100) : 0;
+                return (
+                  <tr key={i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "10px 12px", fontWeight: 500 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
+                        {c.label}
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{c.count}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right" }}>{fmtC(c.invested)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>{fmtC(c.current)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: pColor(ret) }}>
+                      {ret >= 0 ? "+" : ""}{fmtC(ret)}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: pColor(pct) }}>
+                      {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                        <div style={{ width: 60, height: 5, borderRadius: 3, background: "var(--color-border-tertiary)", overflow: "hidden" }}>
+                          <div style={{ width: alloc + "%", height: "100%", background: c.color, borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontSize: 12, minWidth: 40, textAlign: "right" }}>{alloc.toFixed(1)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Totals row */}
+              <tr style={{ borderTop: "1.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", fontWeight: 700 }}>
+                <td style={{ padding: "10px 12px" }}>📊 Total Portfolio</td>
+                <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{indHoldings.length + usHoldings.length + mfs.length}</td>
+                <td style={{ padding: "10px 12px", textAlign: "right" }}>{fmtC(totalInvested)}</td>
+                <td style={{ padding: "10px 12px", textAlign: "right" }}>{fmtC(totalCurrent)}</td>
+                <td style={{ padding: "10px 12px", textAlign: "right", color: pColor(totalReturn) }}>
+                  {totalReturn >= 0 ? "+" : ""}{fmtC(totalReturn)}
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right", color: pColor(totalReturn) }}>
+                  {totalInvested > 0 ? ((totalReturn >= 0 ? "+" : "") + (totalReturn/totalInvested*100).toFixed(2) + "%") : "—"}
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right" }}>100%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
