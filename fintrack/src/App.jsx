@@ -5175,19 +5175,7 @@ function PercentageCalculator() {
         </div>
       )}
 
-      {/* Quick examples */}
-      <div style={{ marginTop: 14, display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, color: "var(--color-text-secondary)", alignSelf: "center" }}>Quick:</span>
-        {[
-          { label: "GST 18%", mode: "pct_of", a: "10000", b: "18" },
-          { label: "TDS 10%", mode: "pct_of", a: "50000", b: "10" },
-        ].map(q => (
-          <button key={q.label} onClick={() => { setMode(q.mode); setA(q.a); setB(q.b); }}
-            style={{ fontSize: 11, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", color: "var(--color-text-secondary)" }}>
-            {q.label}
-          </button>
-        ))}
-      </div>
+
     </div>
   );
 }
