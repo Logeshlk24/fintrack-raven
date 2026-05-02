@@ -7764,10 +7764,12 @@ function ComparativeAnalysisView({ data }) {
   const [sortAsc, setSortAsc] = useState(false);
 
   // ── Benchmark chart state ─────────────────────────────────────────────────
+  // Correct Yahoo Finance tickers for Indian indices:
+  // Nifty 50: ^NSEI  |  Nifty Midcap 150: ^NSEMDCP50  |  Nifty Smallcap 250: ^CNXSC
   const BENCHMARKS = [
-    { id: "nifty50",    label: "Nifty 50",         ticker: "%5ENSEI",   color: "#f59e0b" },
-    { id: "midcap",     label: "Nifty Midcap 150",  ticker: "NIFTY_MID_SELECT.NS", color: "#8b5cf6" },
-    { id: "smallcap",   label: "Nifty Smallcap 250",ticker: "%5ENSMIDCP",color: "#ef4444" },
+    { id: "nifty50",  label: "Nifty 50",          ticker: "%5ENSEI",    color: "#f59e0b" },
+    { id: "midcap",   label: "Nifty Midcap 150",   ticker: "%5ENSEMDCP50", color: "#8b5cf6" },
+    { id: "smallcap", label: "Nifty Smallcap 250",  ticker: "%5ECNXSC",  color: "#ef4444" },
   ];
   const [activeBenchmarks, setActiveBenchmarks] = useState(["nifty50", "midcap", "smallcap"]);
   const [showPortfolio,    setShowPortfolio]     = useState(true);
@@ -7775,9 +7777,24 @@ function ComparativeAnalysisView({ data }) {
   const [benchLoading,setBenchLoading]= useState(false);
   const [benchError,  setBenchError]  = useState("");
   const [benchUpdated,setBenchUpdated]= useState(null);
-  const [period,      setPeriod]      = useState("10y"); // 1y 3y 5y 10y
+  const [period,      setPeriod]      = useState("10y");
+  const autoRefreshRef = useRef(null);
+
+  // Period → { range, interval } for Yahoo Finance API
+  const PERIOD_CONFIG = {
+    "1d":  { range: "1d",  interval: "5m"  },
+    "1mo": { range: "1mo", interval: "1d"  },
+    "6mo": { range: "6mo", interval: "1wk" },
+    "1y":  { range: "1y",  interval: "1mo" },
+    "3y":  { range: "3y",  interval: "1mo" },
+    "5y":  { range: "5y",  interval: "1mo" },
+    "10y": { range: "10y", interval: "1mo" },
+  };
 
   const PERIOD_OPTIONS = [
+    { id: "1d",  label: "1D"  },
+    { id: "1mo", label: "1M"  },
+    { id: "6mo", label: "6M"  },
     { id: "1y",  label: "1Y"  },
     { id: "3y",  label: "3Y"  },
     { id: "5y",  label: "5Y"  },
@@ -7787,33 +7804,42 @@ function ComparativeAnalysisView({ data }) {
   async function fetchBenchmarks() {
     setBenchLoading(true); setBenchError("");
     try {
-      const tickers = BENCHMARKS.map(b => b.ticker);
-      // Use your existing /api/stock-price proxy. For history we need chart data.
-      // Fetch each index history via Yahoo Finance chart API through proxy
+      const cfg = PERIOD_CONFIG[period] || PERIOD_CONFIG["10y"];
       const results = {};
       await Promise.all(BENCHMARKS.map(async b => {
         try {
-          // Map period to Yahoo interval/range
-          const rangeMap = { "1y": "1y", "3y": "3y", "5y": "5y", "10y": "10y" };
-          const res = await fetch(`/api/stock-history?ticker=${b.ticker}&range=${rangeMap[period]}&interval=1mo`);
+          const res = await fetch(`/api/stock-history?ticker=${b.ticker}&range=${cfg.range}&interval=${cfg.interval}`);
           if (res.ok) {
             const d = await res.json();
             if (d.prices && d.prices.length > 0) {
-              results[b.id] = d.prices; // [{date, close}, ...]
+              results[b.id] = d.prices;
             }
           }
         } catch (_) {}
       }));
       setBenchData(results);
       setBenchUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
-      if (Object.keys(results).length === 0) setBenchError("Could not load benchmark data. Make sure /api/stock-history is deployed.");
+      if (Object.keys(results).length === 0) {
+        setBenchError("Could not load benchmark data — the /api/stock-history endpoint may not be deployed yet.");
+      } else {
+        setBenchError("");
+      }
     } catch (e) {
       setBenchError("Failed to load benchmark data.");
     }
     setBenchLoading(false);
   }
 
+  // Fetch on period change
   useEffect(() => { fetchBenchmarks(); }, [period]); // eslint-disable-line
+
+  // Auto-refresh every 5 minutes for intraday, 15 min otherwise
+  useEffect(() => {
+    if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    const ms = period === "1d" ? 5 * 60 * 1000 : 15 * 60 * 1000;
+    autoRefreshRef.current = setInterval(() => { fetchBenchmarks(); }, ms);
+    return () => { if (autoRefreshRef.current) clearInterval(autoRefreshRef.current); };
+  }, [period]); // eslint-disable-line
 
   // ── Normalise series to 100 at start ──────────────────────────────────────
   function normalise(prices) {
