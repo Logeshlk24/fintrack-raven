@@ -870,45 +870,48 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   ];
   const dailyQuote = QUOTES[new Date().getDate() % QUOTES.length];
 
-  function OverviewWidget() {
+  function OverviewWidget({ compact }) {
     if (widgetType === "none") return null;
-    const box = { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" };
+    const box = compact
+      ? { background: "var(--color-background-primary)", borderRadius: 10, border: "0.5px solid var(--color-border-tertiary)", padding: "0.5rem 1rem", display: "flex", alignItems: "center", gap: 10 }
+      : { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem", display: "flex", flexDirection: "column", justifyContent: "center" };
     if (widgetType === "clock") return (
       <div style={box}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>🕐 Current Time</div>
-        <div style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "var(--color-text-primary)", letterSpacing: 1 }}>
-          {clockTime.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-        </div>
-        <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>
-          {clockTime.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+        <span style={{ fontSize: 18 }}>🕐</span>
+        <div>
+          <div style={{ fontSize: compact ? 16 : 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "var(--color-text-primary)", letterSpacing: 1 }}>
+            {clockTime.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          </div>
+          {!compact && <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>{clockTime.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</div>}
+          {compact && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{clockTime.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</div>}
         </div>
       </div>
     );
     if (widgetType === "greeting") return (
       <div style={box}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 8 }}>
-          {todayStr} · Have a great day!
-        </div>
+        <div style={{ fontSize: compact ? 15 : 22, fontWeight: 700, color: "#1a6b3c", whiteSpace: "nowrap" }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
+        {!compact && <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 8 }}>{todayStr} · Have a great day!</div>}
+        {compact && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>{todayStr}</div>}
       </div>
     );
     if (widgetType === "quote") return (
       <div style={box}>
-        <div style={{ fontSize: 18, marginBottom: 8 }}>💬</div>
-        <div style={{ fontSize: 13, fontStyle: "italic", color: "var(--color-text-primary)", lineHeight: 1.6 }}>"{dailyQuote}"</div>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 8 }}>— Daily Quote</div>
+        <span style={{ fontSize: 16, flexShrink: 0 }}>💬</span>
+        <div style={{ fontSize: compact ? 12 : 13, fontStyle: "italic", color: "var(--color-text-primary)", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: compact ? 2 : 10, WebkitBoxOrient: "vertical" }}>"{dailyQuote}"</div>
       </div>
     );
     if (widgetType === "networth") return (
       <div style={box}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>📊 Net Worth Snapshot</div>
-        <div style={{ fontSize: 26, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(netWorth)}</div>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4 }}>as of {todayStr}</div>
+        <span style={{ fontSize: 16 }}>📊</span>
+        <div>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Net Worth</div>
+          <div style={{ fontSize: compact ? 16 : 26, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(netWorth)}</div>
+        </div>
       </div>
     );
     if (widgetType === "custom") return (
       <div style={box}>
-        <div style={{ fontSize: 14, color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{userProfile.customWidget || "No custom content set yet. Edit in Profile → Overview Widget."}</div>
+        <div style={{ fontSize: compact ? 13 : 14, color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: compact ? 2 : 10, WebkitBoxOrient: "vertical" }}>{userProfile.customWidget || "No custom content set. Edit in Settings → Profile."}</div>
       </div>
     );
     return null;
@@ -963,12 +966,12 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
   return (
     <div>
-      {/* Overview Header row: title on left, widget on right */}
-      <div style={{ display: "flex", alignItems: "stretch", justifyContent: "space-between", gap: 20, marginBottom: 20 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0, alignSelf: "center" }}>Overview</h1>
+      {/* Overview Header row: title + inline widget */}
+      <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0, flexShrink: 0 }}>Overview</h1>
         {widgetType !== "none" && (
-          <div style={{ flex: "0 0 340px" }}>
-            <OverviewWidget />
+          <div style={{ flex: 1, minWidth: 220, maxWidth: 420 }}>
+            <OverviewWidget compact />
           </div>
         )}
       </div>
