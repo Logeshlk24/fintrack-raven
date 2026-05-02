@@ -889,7 +889,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
     );
     if (widgetType === "greeting") return (
       <div style={box}>
-        <div style={{ fontSize: 32, fontWeight: 400, fontFamily: "'DM Serif Display', serif", color: "#1a6b3c", whiteSpace: "nowrap" }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
+        <div style={{ fontSize: 28, fontWeight: 400, fontFamily: "'DM Serif Display', serif", color: "#1a6b3c", whiteSpace: "nowrap" }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
       </div>
     );
     if (widgetType === "quote") return (
