@@ -8449,30 +8449,6 @@ function DividendView({ data }) {
     return s;
   }
 
-  // Fetch dividend data directly from browser — avoids Yahoo blocking server-side requests
-  async function fetchOneTicker(ticker) {
-    // Yahoo Finance v8 quote endpoint — works from browser (has cookies), blocked server-side
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
-    const url2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=false`;
-    for (const u of [url, url2]) {
-      try {
-        const r = await fetch(u, { headers: { "Accept": "application/json" } });
-        if (!r.ok) continue;
-        const j = await r.json();
-        const meta = j?.chart?.result?.[0]?.meta;
-        if (!meta) continue;
-        const divRate  = meta.trailingAnnualDividendRate ?? null;
-        const divYield = meta.trailingAnnualDividendYield ?? null;
-        const isPaying = divRate != null && divRate > 0;
-        return { ok: true, ticker, isPaying, dividendRate: divRate, dividendYield: divYield,
-          trailingDivRate: divRate, trailingDivYield: divYield,
-          exDividendDate: null, dividendDate: null, lastDividendValue: null,
-          payoutRatio: null, fiveYearAvgYield: null };
-      } catch (_) {}
-    }
-    return { ok: false, ticker, isPaying: false };
-  }
-
   async function fetchDividends(holdingsOverride) {
     const holdings = holdingsOverride ?? indHoldings;
     setLoading(true); setError(""); setLoaded(false);
@@ -8482,13 +8458,17 @@ function DividendView({ data }) {
     const tickers = [...new Set(allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
     setProgress({ done: 0, total: tickers.length });
 
-    // Fetch 4 at a time directly from browser
-    const BATCH = 4;
+    const BATCH = 6;
     const collected = {};
     for (let i = 0; i < tickers.length; i += BATCH) {
       const batch = tickers.slice(i, i + BATCH);
-      const results = await Promise.all(batch.map(t => fetchOneTicker(t)));
-      results.forEach((r, j) => { collected[batch[j]] = r; });
+      try {
+        const res = await fetch(`/api/stock-dividend?ticker=${batch.map(encodeURIComponent).join(",")}`);
+        if (res.ok) {
+          const json = await res.json();
+          Object.assign(collected, json);
+        }
+      } catch (_) {}
       setProgress({ done: Math.min(i + BATCH, tickers.length), total: tickers.length });
     }
 
