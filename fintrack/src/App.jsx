@@ -8532,7 +8532,7 @@ function PortfolioAnalysisView({ data }) {
     const all = [...indHoldings, ...usHoldings];
     const tickers = [...new Set(all.map(toTicker))];
     try {
-      const res = await fetch(`/api/stock-price?mode=fundamentals&ticker=${tickers.map(encodeURIComponent).join(",")}`);
+      const res = await fetch(`/api/stock-fundamentals?ticker=${tickers.map(encodeURIComponent).join(",")}`);
       if (res.ok) {
         const d = await res.json();
         setFundMap(d);
