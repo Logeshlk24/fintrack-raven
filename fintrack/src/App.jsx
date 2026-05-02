@@ -4389,7 +4389,27 @@ function LiabilitiesTab({ data, update }) {
     }));
   }
 
-  const activeLiabilities = liabilities.filter(e => e.active && e.paidMonths < e.totalMonths);
+  function markCapitalPaid(liability) {
+    if (liability.capitalPaid) return;
+    const capitalAmt = parseFloat(liability.capitalAmount) || 0;
+    if (!capitalAmt) return;
+    const newTransaction = {
+      id: Date.now(),
+      type: "expense",
+      amount: capitalAmt,
+      category: "EMI",
+      note: `${liability.name} - Capital payment`,
+      date: today(),
+      bankId: liability.accountId,
+      emiId: liability.id
+    };
+    update(p => ({
+      emis: p.emis.map(e => e.id === liability.id ? { ...e, capitalPaid: true } : e),
+      transactions: [...p.transactions, newTransaction]
+    }));
+  }
+
+
   const completedLiabilities = liabilities.filter(e => !e.active || e.paidMonths >= e.totalMonths);
 
   // Summary computations for the liability strip
@@ -4577,13 +4597,39 @@ function LiabilitiesTab({ data, update }) {
                 )}
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Payment Day</label>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>
+                  {editLiability._paymentMode === "interestOnly" ? "🗓 Interest Due Day" : "Payment Day"}
+                </label>
                 <input type="number" min="1" max="31" value={editLiability.paymentDay} onChange={e => setEditLiability(p => ({ ...p, paymentDay: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Start Date</label>
                 <input type="date" value={editLiability.startDate || ""} onChange={e => setEditLiability(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
               </div>
+              {editLiability._paymentMode === "interestOnly" && (
+                <div style={{ gridColumn: "span 2", background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 8 }}>💰 Capital Payment Settings</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Due Day</label>
+                      <input type="number" min="1" max="31" placeholder="e.g. 10"
+                        value={editLiability.capitalPaymentDay || ""}
+                        onChange={e => setEditLiability(p => ({ ...p, capitalPaymentDay: e.target.value }))}
+                        style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Amount (₹)</label>
+                      <input type="number" placeholder="e.g. 30000"
+                        value={editLiability.capitalAmount || editLiability._totalInput || ""}
+                        onChange={e => setEditLiability(p => ({ ...p, capitalAmount: e.target.value }))}
+                        style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#92400e", marginTop: 6 }}>
+                    ⓘ Interest paid monthly on day {editLiability.paymentDay || "—"} · Capital paid on day {editLiability.capitalPaymentDay || "—"}
+                  </div>
+                </div>
+              )}
               <div style={{ gridColumn: "span 2" }}>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes</label>
                 <input value={editLiability.notes || ""} onChange={e => setEditLiability(p => ({ ...p, notes: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -4764,7 +4810,10 @@ function LiabilitiesTab({ data, update }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{liability.name}</div>
                       <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                        {liability.type} · {fmtCur(liability.amount)}/month · Due on {liability.paymentDay}{liability.paymentDay === 1 ? 'st' : liability.paymentDay === 2 ? 'nd' : liability.paymentDay === 3 ? 'rd' : 'th'}
+                        {liability.type} · {liability._paymentMode === "interestOnly"
+                          ? <>Interest {fmtCur(liability.amount)}/month (day {liability.paymentDay}{liability.paymentDay==1?'st':liability.paymentDay==2?'nd':liability.paymentDay==3?'rd':'th'}) · Capital {fmtCur(liability.capitalAmount || 0)} (day {liability.capitalPaymentDay || "—"})</>
+                          : <>{fmtCur(liability.amount)}/month · Due on {liability.paymentDay}{liability.paymentDay === 1 ? 'st' : liability.paymentDay === 2 ? 'nd' : liability.paymentDay === 3 ? 'rd' : 'th'}</>
+                        }
                       </div>
                       {account && (
                         <div style={{ marginTop: 4, fontSize: 11 }}>
@@ -4823,7 +4872,7 @@ function LiabilitiesTab({ data, update }) {
                         fontWeight: 500 
                       }}
                     >
-                      {liability.paidMonths >= liability.totalMonths ? "✓ Completed" : "💳 Mark Payment Made"}
+                      {liability.paidMonths >= liability.totalMonths ? "✓ Completed" : liability._paymentMode === "interestOnly" ? "💳 Mark Interest Paid" : "💳 Mark Payment Made"}
                     </button>
                     <button 
                       onClick={() => toggleLiabilityActive(liability.id)}
@@ -4840,6 +4889,22 @@ function LiabilitiesTab({ data, update }) {
                       Pause
                     </button>
                   </div>
+                  {liability._paymentMode === "interestOnly" && liability.capitalAmount && (
+                    <button
+                      onClick={() => markCapitalPaid(liability)}
+                      disabled={!!liability.capitalPaid}
+                      style={{
+                        width: "100%", marginTop: 8,
+                        background: liability.capitalPaid ? "var(--color-background-secondary)" : "#fffbeb",
+                        color: liability.capitalPaid ? "var(--color-text-secondary)" : "#92400e",
+                        border: `0.5px solid ${liability.capitalPaid ? "var(--color-border-secondary)" : "#f59e0b"}`,
+                        borderRadius: 8, padding: "7px", cursor: liability.capitalPaid ? "not-allowed" : "pointer",
+                        fontSize: 13, fontWeight: 500
+                      }}
+                    >
+                      {liability.capitalPaid ? "✓ Capital Paid" : `💰 Mark Capital Paid (${fmtCur(liability.capitalAmount)})`}
+                    </button>
+                  )}
                   
                   {liability.notes && (
                     <div style={{ marginTop: 10, padding: "8px", background: "var(--color-background-secondary)", borderRadius: 6, fontSize: 12, color: "var(--color-text-secondary)" }}>
