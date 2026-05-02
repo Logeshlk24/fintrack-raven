@@ -7828,7 +7828,7 @@ function ComparativeAnalysisView({ data }) {
   const [benchLoading,setBenchLoading]= useState(false);
   const [benchError,  setBenchError]  = useState("");
   const [benchUpdated,setBenchUpdated]= useState(null);
-  const [period,      setPeriod]      = useState("10y");
+  const [period,      setPeriod]      = useState("5y");
   const autoRefreshRef = useRef(null);
 
   // ── Live index prices for legend display ─────────────────────────────────
@@ -7868,7 +7868,6 @@ function ComparativeAnalysisView({ data }) {
     "1y":  { range: "1y",  interval: "1mo" },
     "3y":  { range: "3y",  interval: "1mo" },
     "5y":  { range: "5y",  interval: "1mo" },
-    "10y": { range: "10y", interval: "1mo" },
   };
 
   const PERIOD_OPTIONS = [
@@ -7878,13 +7877,12 @@ function ComparativeAnalysisView({ data }) {
     { id: "1y",  label: "1Y"  },
     { id: "3y",  label: "3Y"  },
     { id: "5y",  label: "5Y"  },
-    { id: "10y", label: "10Y" },
   ];
 
   async function fetchBenchmarks() {
     setBenchLoading(true); setBenchError("");
     try {
-      const cfg = PERIOD_CONFIG[period] || PERIOD_CONFIG["10y"];
+      const cfg = PERIOD_CONFIG[period] || PERIOD_CONFIG["5y"];
       const results = {};
       await Promise.all(BENCHMARKS.map(async b => {
         try {
@@ -8122,7 +8120,7 @@ function ComparativeAnalysisView({ data }) {
             ? (Date.now() / 1000 - avgBuyTimestamp) / (365.25 * 24 * 3600)
             : null;
 
-          const periodDays = { "1d": 1, "1mo": 30, "6mo": 180, "1y": 365, "3y": 1095, "5y": 1825, "10y": 3650 };
+          const periodDays = { "1d": 1, "1mo": 30, "6mo": 180, "1y": 365, "3y": 1095, "5y": 1825 };
           const selectedDays = periodDays[period] || 3650;
           const holdingDays = holdingYears ? holdingYears * 365.25 : null;
 
