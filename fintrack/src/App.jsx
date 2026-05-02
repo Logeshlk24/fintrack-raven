@@ -8449,12 +8449,9 @@ function DividendView({ data }) {
     return s;
   }
 
-  // Keep a ref so fetchDividends always sees the latest indHoldings (avoids stale closure on mount)
-  const indHoldingsRef = useRef(indHoldings);
-  useEffect(() => { indHoldingsRef.current = indHoldings; }, [indHoldings]);
-
-  async function fetchDividends() {
-    const holdings = indHoldingsRef.current;
+  // fetchDividends accepts holdings directly — no stale closure risk
+  async function fetchDividends(holdingsOverride) {
+    const holdings = holdingsOverride ?? indHoldings;
     setLoading(true); setError(""); setLoaded(false);
     const allH = holdings.map(h => ({ ...h, region: "IN" }));
     if (!allH.length) { setLoading(false); setLoaded(true); return; }
@@ -8483,16 +8480,14 @@ function DividendView({ data }) {
     setLastUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
   }
 
-  // Auto-fetch once indHoldings actually has data (Firestore loads async, so [] on first render)
-  const prevLenRef = useRef(0);
+  // Auto-fetch whenever indHoldings populates (Firestore is async — could be [] on first render)
+  const hasFetchedRef = useRef(false);
   useEffect(() => {
-    if (indHoldings.length > 0 && prevLenRef.current === 0) {
-      prevLenRef.current = indHoldings.length;
-      fetchDividends();
-    } else if (indHoldings.length === 0 && !loaded) {
-      setLoaded(true); // truly empty portfolio
+    if (indHoldings.length > 0 && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchDividends(indHoldings); // pass directly — avoids any closure staleness
     }
-  }, [indHoldings.length]); // eslint-disable-line
+  }, [indHoldings]); // eslint-disable-line
 
   // Build rows — Indian stocks only for Dividend view
   const allH = [
@@ -8572,7 +8567,7 @@ function DividendView({ data }) {
             {lastUpdated && !loading && (
               <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Updated {lastUpdated}</span>
             )}
-            <button onClick={fetchDividends} disabled={loading}
+            <button onClick={() => fetchDividends(indHoldings)} disabled={loading}
               style={{ padding: "5px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", opacity: loading ? 0.6 : 1 }}>
               {loading ? "⟳ Loading…" : "↻ Refresh"}
             </button>
