@@ -302,6 +302,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navDragIdx = useRef(null);
   const [navDragOver, setNavDragOver] = useState(null);
+  const [navEditMode, setNavEditMode] = useState(false);
 
   // Debounce timer ref — avoids hammering Firestore on every keystroke
   const saveTimer = useRef(null);
@@ -476,25 +477,36 @@ export default function App() {
           {!sidebarCollapsed && "Overview"}
         </button>
 
+        {/* Categories header */}
+        {!sidebarCollapsed && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 1rem 0.25rem", marginTop: 4 }}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", letterSpacing: "0.07em", textTransform: "uppercase" }}>Categories</span>
+            <button
+              onClick={() => { setNavEditMode(m => !m); setNavDragOver(null); navDragIdx.current = null; }}
+              style={{ background: navEditMode ? "#1a6b3c" : "none", border: navEditMode ? "none" : "0.5px solid var(--color-border-secondary)", borderRadius: 4, padding: "1px 7px", cursor: "pointer", fontSize: 10, color: navEditMode ? "#fff" : "var(--color-text-secondary)", fontWeight: 500 }}
+            >{navEditMode ? "Done" : "Edit"}</button>
+          </div>
+        )}
+
         {/* Draggable nav items */}
         {navItems.map((item, i) => (
           <div key={item.id}
-            draggable={!sidebarCollapsed}
-            onDragStart={e => onNavDragStart(e, i)}
-            onDragOver={e => onNavDragOver(e, i)}
-            onDrop={e => onNavDrop(e, i)}
-            onDragEnd={() => { navDragIdx.current = null; setNavDragOver(null); }}
+            draggable={navEditMode && !sidebarCollapsed}
+            onDragStart={navEditMode ? e => onNavDragStart(e, i) : undefined}
+            onDragOver={navEditMode ? e => onNavDragOver(e, i) : undefined}
+            onDrop={navEditMode ? e => onNavDrop(e, i) : undefined}
+            onDragEnd={navEditMode ? () => { navDragIdx.current = null; setNavDragOver(null); } : undefined}
             style={{ display: "flex", alignItems: "center", borderLeft: navDragOver === i ? "2px solid #1a6b3c" : page === item.id ? "2px solid #1a6b3c" : "2px solid transparent", background: navDragOver === i ? "#e8f5ee" : page === item.id ? "var(--color-background-secondary)" : "transparent" }}
           >
-            {!sidebarCollapsed && (
+            {!sidebarCollapsed && navEditMode && (
               <span style={{ paddingLeft: 6, color: "var(--color-border-primary)", cursor: "grab", fontSize: 13, userSelect: "none" }}>⠿</span>
             )}
-            <button onClick={() => setPage(item.id)} title={sidebarCollapsed ? item.label : undefined} style={{
+            <button onClick={() => { if (!navEditMode) setPage(item.id); }} title={sidebarCollapsed ? item.label : undefined} style={{
               flex: 1, display: "flex", alignItems: "center",
               gap: sidebarCollapsed ? 0 : 8,
               justifyContent: sidebarCollapsed ? "center" : "flex-start",
               padding: sidebarCollapsed ? "0.6rem 0" : "0.6rem 0.6rem 0.6rem 4px",
-              background: "transparent", border: "none", cursor: "pointer",
+              background: "transparent", border: "none", cursor: navEditMode ? "grab" : "pointer",
               color: page === item.id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
               fontWeight: page === item.id ? 500 : 400, fontSize: 14,
               width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
