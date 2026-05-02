@@ -7816,10 +7816,11 @@ function ComparativeAnalysisView({ data }) {
   // ── Benchmark chart state ─────────────────────────────────────────────────
   // Correct Yahoo Finance tickers for Indian indices:
   // Nifty 50: ^NSEI  |  Nifty Midcap 150: ^NSEMDCP50  |  Nifty Smallcap 250: ^CNXSC
+  // Note: ^CNXSC = Nifty Smallcap 100; correct 250 ticker is ^NIFTYSC but use ^CNX200 as fallback
   const BENCHMARKS = [
-    { id: "nifty50",  label: "Nifty 50",          ticker: "%5ENSEI",    color: "#f59e0b" },
+    { id: "nifty50",  label: "Nifty 50",          ticker: "%5ENSEI",       color: "#f59e0b" },
     { id: "midcap",   label: "Nifty Midcap 150",   ticker: "%5ENSEMDCP50", color: "#8b5cf6" },
-    { id: "smallcap", label: "Nifty Smallcap 250",  ticker: "%5ECNXSC",  color: "#ef4444" },
+    { id: "smallcap", label: "Nifty Smallcap 250",  ticker: "%5ECNX200",   color: "#ef4444" },
   ];
   const [activeBenchmarks, setActiveBenchmarks] = useState(["nifty50", "midcap", "smallcap"]);
   const [showPortfolio,    setShowPortfolio]     = useState(true);
@@ -7831,8 +7832,10 @@ function ComparativeAnalysisView({ data }) {
   const autoRefreshRef = useRef(null);
 
   // Period → { range, interval } for Yahoo Finance API
+  // Note: 1D intraday (5m) is unreliable for NSE indices via Yahoo Finance public API
+  // We use range=5d + interval=1h to get recent hourly bars as a workaround
   const PERIOD_CONFIG = {
-    "1d":  { range: "1d",  interval: "5m"  },
+    "1d":  { range: "5d",  interval: "1h"  },   // 5-day hourly → most recent bars
     "1mo": { range: "1mo", interval: "1d"  },
     "6mo": { range: "6mo", interval: "1wk" },
     "1y":  { range: "1y",  interval: "1mo" },
@@ -7862,7 +7865,17 @@ function ComparativeAnalysisView({ data }) {
           if (res.ok) {
             const d = await res.json();
             if (d.prices && d.prices.length > 0) {
-              results[b.id] = d.prices;
+              // For 1D: filter to only today's bars (IST = UTC+5:30)
+              let prices = d.prices;
+              if (period === "1d") {
+                const nowTs   = Math.floor(Date.now() / 1000);
+                const todayIST = new Date(); todayIST.setHours(0,0,0,0);
+                const todayStart = Math.floor((todayIST.getTime() - 5.5 * 3600 * 1000) / 1000);
+                const todayPrices = prices.filter(p => p.date >= todayStart && p.date <= nowTs);
+                // If market not yet open / no intraday bars, show last 2 available bars as fallback
+                prices = todayPrices.length >= 2 ? todayPrices : prices.slice(-8);
+              }
+              if (prices.length > 0) results[b.id] = prices;
             }
           }
         } catch (_) {}
@@ -7883,7 +7896,7 @@ function ComparativeAnalysisView({ data }) {
   // Fetch on period change
   useEffect(() => { fetchBenchmarks(); }, [period]); // eslint-disable-line
 
-  // Auto-refresh every 5 minutes for intraday, 15 min otherwise
+  // Auto-refresh: every 5 minutes for intraday, 15 min otherwise
   useEffect(() => {
     if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
     const ms = period === "1d" ? 5 * 60 * 1000 : 15 * 60 * 1000;
@@ -7945,12 +7958,38 @@ function ComparativeAnalysisView({ data }) {
     const step = Math.ceil((maxV - minV) / 5 / 10) * 10;
     for (let y = Math.ceil(minV / step) * step; y <= maxV; y += step) yTicks.push(y);
 
-    // X labels — show year markers
-    const xLabels = allDates.reduce((acc, d, i) => {
-      const yr = new Date(d * 1000).getFullYear();
-      if (acc.length === 0 || new Date(allDates[acc[acc.length-1].i] * 1000).getFullYear() !== yr) acc.push({ i, yr });
-      return acc;
-    }, []);
+    // X labels — show time (HH:MM) for 1D intraday, date for 1M, year for longer
+    const xLabels = (() => {
+      if (period === "1d") {
+        // Show time labels every ~2 bars
+        return allDates.reduce((acc, d, i) => {
+          if (i === 0 || i === allDates.length - 1 || i % Math.max(1, Math.floor(allDates.length / 6)) === 0) {
+            const t = new Date(d * 1000);
+            const hh = t.getHours().toString().padStart(2, "0");
+            const mm = t.getMinutes().toString().padStart(2, "0");
+            acc.push({ i, label: `${hh}:${mm}` });
+          }
+          return acc;
+        }, []);
+      } else if (period === "1mo") {
+        // Show day labels
+        return allDates.reduce((acc, d, i) => {
+          const dt = new Date(d * 1000);
+          const dayStr = dt.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+          if (acc.length === 0 || i % Math.max(1, Math.floor(allDates.length / 6)) === 0) {
+            acc.push({ i, label: dayStr });
+          }
+          return acc;
+        }, []);
+      } else {
+        // Show year labels (original logic)
+        return allDates.reduce((acc, d, i) => {
+          const yr = new Date(d * 1000).getFullYear();
+          if (acc.length === 0 || new Date(allDates[acc[acc.length-1].i] * 1000).getFullYear() !== yr) acc.push({ i, label: String(yr) });
+          return acc;
+        }, []);
+      }
+    })();
 
     return (
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
@@ -7995,8 +8034,8 @@ function ComparativeAnalysisView({ data }) {
         )}
 
         {/* X-axis labels */}
-        {xLabels.map(({ i, yr }) => (
-          <text key={yr} x={xScale(i)} y={H - 8} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)">{yr}</text>
+        {xLabels.map(({ i, label }) => (
+          <text key={i} x={xScale(i)} y={H - 8} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)">{label}</text>
         ))}
 
         {/* Y-axis label */}
@@ -8091,7 +8130,7 @@ function ComparativeAnalysisView({ data }) {
               </button>
             );
           })}
-          {benchUpdated && <span style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>Updated {benchUpdated} · 15-min delayed</span>}
+          {benchUpdated && <span style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>Updated {benchUpdated} · {period === "1d" ? "hourly bars" : "15-min delayed"}</span>}
         </div>
 
         {benchError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {benchError}</div>}
@@ -8103,6 +8142,7 @@ function ComparativeAnalysisView({ data }) {
 
         <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 8 }}>
           ⓘ Click legend buttons to show/hide lines. "My Portfolio" shows your total return spread across the selected period (dashed green line). Benchmark data via Yahoo Finance.
+          {period === "1d" && " · 1D shows today's hourly bars (intraday 5-min data is unavailable for NSE indices via public API)."}
         </div>
       </div>
 
