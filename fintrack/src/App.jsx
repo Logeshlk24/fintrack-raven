@@ -8033,7 +8033,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
   // ── form helpers ────────────────────────────────────────────────────────────
   function openAdd()  { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE", yahooOverride: "" }); setEditId(null); setShowForm(true); setAcOpen(false); }
-  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE", yahooOverride: h.yahooOverride || "" }); setEditId(h.id); setShowForm(true); }
+  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE", yahooOverride: h.yahooOverride || "", _mergedIds: h._ids || [] }); setEditId(h.id); setShowForm(true); }
   function closeForm(){ setShowForm(false); setEditId(null); setAcOpen(false); }
 
   function saveHolding() {
@@ -8048,7 +8048,18 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
     const storedPrice = (isUS && showUSD && usdRate > 0) ? Math.round(rawPrice * usdRate * 100) / 100 : rawPrice;
     const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: storedPrice, qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, addedAt: editId ? undefined : today() };
     if (editId) {
-      update(p => ({ [holdingsKey]: (p[holdingsKey] || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
+      // Check if we are editing a merged row (form may carry _ids from merged data)
+      // In that case: update the primary entry and remove the duplicates
+      const mergedIds = form._mergedIds || [];
+      if (mergedIds.length > 1) {
+        update(p => ({
+          [holdingsKey]: (p[holdingsKey] || [])
+            .filter(h => !mergedIds.slice(1).includes(h.id)) // delete extra duplicates
+            .map(h => h.id === editId ? { ...h, ...newH } : h) // update primary
+        }));
+      } else {
+        update(p => ({ [holdingsKey]: (p[holdingsKey] || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
+      }
     } else {
       update(p => ({ [holdingsKey]: [...(p[holdingsKey] || []), newH] }));
     }
@@ -8413,7 +8424,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                         <span style={{ fontSize: 10, color: "#d44", fontWeight: 500 }}>⚠ No price</span>
                         <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "monospace" }}>{h.ticker}</span>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                          <button onClick={() => openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h)}
+                          <button onClick={() => { const mergedAsOne = h._merged && h._ids?.length > 1 ? { ...h, id: h._ids[0] } : (holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h); openEdit(mergedAsOne); }}
                             style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "2px 7px", cursor: "pointer", color: "#92400e", whiteSpace: "nowrap" }}>
                             ✏️ Fix ticker
                           </button>
@@ -8449,7 +8460,18 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
               <div style={{ textAlign: "right" }}>
                 <ThreeDotMenu
-                  onEdit={() => openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h)}
+                  onEdit={() => {
+                    if (h._merged && h._ids?.length > 1) {
+                      // Merged row: open a special "edit all entries" modal using the merged data
+                      // We use the merged row itself (correct total qty + weighted avg price)
+                      // and set editId to _ids[0] as the primary — saveHolding will update that
+                      // entry and delete the rest, consolidating into one clean entry
+                      const mergedAsOne = { ...h, id: h._ids[0], qty: h.qty, buyPrice: h.buyPrice };
+                      openEdit(mergedAsOne);
+                    } else {
+                      openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h);
+                    }
+                  }}
                   onDelete={() => {
                     if (h._merged && h._ids?.length > 1) {
                       if (window.confirm(`This will delete all ${h._ids.length} entries for ${h.symbol}. Continue?`)) {
@@ -8503,89 +8525,24 @@ function PortfolioAnalysisView({ data }) {
     return s;
   }
 
-  // ── Fetch fundamentals directly from browser (avoids Vercel server-side CORS blocks)
-  // Uses Yahoo Finance quoteSummary via corsproxy.io — runs client-side so it works
-  async function fetchOneFundamental(ticker) {
-    const modules = "summaryDetail,defaultKeyStatistics,assetProfile,price";
-    const proxyUrl = "https://corsproxy.io/?url=" + encodeURIComponent(
-      "https://query1.finance.yahoo.com/v10/finance/quoteSummary/" + ticker + "?modules=" + modules
-    );
-    try {
-      const res = await fetch(proxyUrl, { headers: { "Accept": "application/json" } });
-      if (!res.ok) return { ok: false, ticker };
-      const json = await res.json();
-      const r = json && json.quoteSummary && json.quoteSummary.result && json.quoteSummary.result[0];
-      if (!r) return { ok: false, ticker };
-
-      const priceData = r.price                || {};
-      const summary   = r.summaryDetail        || {};
-      const keyStats  = r.defaultKeyStatistics || {};
-      const profile   = r.assetProfile         || {};
-
-      const currency     = priceData.currency || "INR";
-      const quoteType    = priceData.quoteType || "";
-      const isETF        = quoteType === "ETF";
-      const marketCapRaw = (priceData.marketCap && priceData.marketCap.raw) || (summary.marketCap && summary.marketCap.raw) || null;
-
-      const pe   = (summary.trailingPE && summary.trailingPE.raw)
-                || (summary.forwardPE && summary.forwardPE.raw)
-                || (keyStats.forwardPE && keyStats.forwardPE.raw)
-                || null;
-      const beta = (keyStats.beta && keyStats.beta.raw)
-                || (summary.beta && summary.beta.raw)
-                || null;
-
-      function classifyCap(raw, cur) {
-        if (!raw) return null;
-        if (cur === "INR") {
-          const cr = raw / 1e7;
-          if (cr >= 20000) return "Large";
-          if (cr >= 5000)  return "Mid";
-          return "Small";
-        }
-        const b = raw / 1e9;
-        if (b >= 10) return "Large";
-        if (b >= 2)  return "Mid";
-        return "Small";
-      }
-
-      return {
-        ok:        true,
-        ticker,
-        name:      priceData.longName || priceData.shortName || null,
-        pe:        pe   != null ? +Number(pe).toFixed(2)   : null,
-        beta:      beta != null ? +Number(beta).toFixed(2) : null,
-        sector:    isETF ? "ETF" : (profile.sector   || null),
-        industry:  isETF ? "ETF" : (profile.industry || null),
-        cap:       isETF ? "ETF" : classifyCap(marketCapRaw, currency),
-        marketCap: marketCapRaw,
-      };
-    } catch (e) {
-      return { ok: false, ticker };
-    }
-  }
-
+  // Fetch fundamentals for all holdings in one batch call
   async function fetchFundamentals() {
     if (allEmpty) return;
     setFundLoading(true);
-    const all     = [...indHoldings, ...usHoldings];
+    const all = [...indHoldings, ...usHoldings];
     const tickers = [...new Set(all.map(toTicker))];
-
-    const result = {};
-    // Fetch in batches of 4 concurrently, 300ms between batches
-    for (let i = 0; i < tickers.length; i += 4) {
-      const batch = tickers.slice(i, i + 4);
-      const batchResults = await Promise.all(batch.map(function(t) { return fetchOneFundamental(t); }));
-      batchResults.forEach(function(r, idx) { result[batch[idx]] = r; });
-      if (i + 4 < tickers.length) await new Promise(function(resolve) { setTimeout(resolve, 300); });
-    }
-
-    setFundMap(result);
+    try {
+      const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
+      if (res.ok) {
+        const d = await res.json();
+        setFundMap(d);
+      }
+    } catch {}
     setFundLoading(false);
     setFundLoaded(true);
   }
 
-  React.useEffect(function() { fetchFundamentals(); }, [indHoldings.length, usHoldings.length]); // eslint-disable-line
+  React.useEffect(() => { fetchFundamentals(); }, [indHoldings.length, usHoldings.length]);
 
   function holdingValue(h) { return (h.buyPrice || 0) * (h.qty || 0); }
 
