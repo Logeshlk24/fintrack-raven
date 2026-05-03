@@ -30,22 +30,6 @@ const LIGHT_MODE_STYLE = `
     border-radius: 6px;
     padding: 6px 10px;
   }
-
-  /* CSS-driven mobile responsive — works even if JS matchMedia returns wrong value */
-  @media (max-width: 1024px) {
-    .ft-sidebar { display: none !important; }
-    .ft-bottom-nav { display: flex !important; }
-    .ft-main { padding: 1rem !important; padding-bottom: 80px !important; }
-    .ft-money-grid { grid-template-columns: 1fr !important; }
-    .ft-overview-grid { grid-template-columns: 1fr !important; }
-    .ft-period-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-    .ft-period-bar::-webkit-scrollbar { display: none; }
-    .ft-tab-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-    .ft-tab-bar::-webkit-scrollbar { display: none; }
-  }
-  @media (min-width: 1025px) {
-    .ft-bottom-nav { display: none !important; }
-  }
 `;
 
 // ── localStorage → kept only for one-time migration on first sign-in ──────────
@@ -301,21 +285,14 @@ function useDrive() { return React.useContext(DriveContext); }
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function App() {
-  // ── Mobile detection — checks UA + matchMedia with wide breakpoint ─────────
-  function isMobileDevice() {
-    if (typeof window === "undefined") return false;
-    const ua = navigator.userAgent || "";
-    const isMobileUA = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(ua);
-    const isNarrow = window.matchMedia("(max-width: 1024px)").matches;
-    // If UA says mobile OR screen is narrow → mobile layout
-    return isMobileUA || isNarrow;
-  }
-  const [mobile, setMobile] = useState(() => isMobileDevice());
+  // ── Mobile detection ──────────────────────────────────────────────────────
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+  );
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   useEffect(() => {
-    // Re-check on resize
-    const mq = window.matchMedia("(max-width: 1024px)");
-    const handler = () => setMobile(isMobileDevice());
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e) => setMobile(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
@@ -474,7 +451,7 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
 
       {/* Sidebar — hidden on mobile */}
-      <aside className="ft-sidebar" style={{
+      <aside style={{
         width: sidebarCollapsed ? 56 : 200,
         background: "var(--color-background-primary)",
         borderRight: "0.5px solid var(--color-border-tertiary)",
@@ -594,15 +571,15 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main className="ft-main" style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
-        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} mobile={mobile} />}
-        {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} mobile={mobile} />}
-        {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} mobile={mobile} />}
-        {page === "portfolio" && portfolioOn && <PortfolioHub data={data} update={update} mobile={mobile} />}
-        {page === "goals" && <GoalsPage data={data} update={update} mobile={mobile} />}
-        {page === "business" && <BusinessPage data={data} update={update} mobile={mobile} />}
-        {page === "projects" && <ProjectsPage data={data} update={update} mobile={mobile} />}
-        {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} navItems={navItems} navEditMode={navEditMode} setNavEditMode={setNavEditMode} onNavDragStart={onNavDragStart} onNavDragOver={onNavDragOver} onNavDrop={onNavDrop} navDragOver={navDragOver} navDragIdx={navDragIdx} setNavDragOver={setNavDragOver} mobile={mobile} />}
+      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
+        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
+        {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
+        {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
+        {page === "portfolio" && portfolioOn && <PortfolioHub data={data} update={update} />}
+        {page === "goals" && <GoalsPage data={data} update={update} />}
+        {page === "business" && <BusinessPage data={data} update={update} />}
+        {page === "projects" && <ProjectsPage data={data} update={update} />}
+        {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} navItems={navItems} navEditMode={navEditMode} setNavEditMode={setNavEditMode} onNavDragStart={onNavDragStart} onNavDragOver={onNavDragOver} onNavDrop={onNavDrop} navDragOver={navDragOver} navDragIdx={navDragIdx} setNavDragOver={setNavDragOver} />}
       </main>
 
       {/* ── Mobile Bottom Navigation Bar ── */}
@@ -619,7 +596,7 @@ export default function App() {
                 borderTop: "0.5px solid var(--color-border-tertiary)",
                 borderRadius: "16px 16px 0 0",
                 padding: "1rem",
-                display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 8,
+                display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8,
               }}>
                 {moreItems.map(item => (
                   <button key={item.id} onClick={() => { setPage(item.id); setShowMoreMenu(false); }} style={{
@@ -647,7 +624,7 @@ export default function App() {
           )}
 
           {/* Bottom bar */}
-          <nav className="ft-bottom-nav" style={{
+          <nav style={{
             position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
             background: "var(--color-background-primary)",
             borderTop: "0.5px solid var(--color-border-tertiary)",
@@ -758,7 +735,7 @@ function SignInPage() {
         </p>
 
         {/* Feature pills */}
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 10, marginBottom: 28 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 28 }}>
           {[["◈", "Assets &\nNet Worth"], ["◉", "F&O P&L\nTracker"], ["☁", "Cloud\nSync"]].map(([icon, label]) => (
             <div key={label} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "0.9rem 0.5rem", fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
               <div style={{ fontSize: 22, color: "#1a6b3c", marginBottom: 6 }}>{icon}</div>
@@ -843,7 +820,7 @@ function Onboarding({ step, setStep, data, update, done }) {
 
         {step === 0 && (
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
               {[["◈", "Track assets & liabilities"], ["⊕", "Multi-currency support"], ["✓", "Private & secure"]].map(([icon, label]) => (
                 <div key={label} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, padding: "1rem", textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)" }}>
                   <div style={{ fontSize: 20, color: "#1a6b3c", marginBottom: 6 }}>{icon}</div>{label}
@@ -970,7 +947,7 @@ function ProfilePage({ data, update }) {
           <span style={{ fontSize: 18 }}>👤</span>
           <span style={{ fontWeight: 600, fontSize: 15 }}>Personal Info</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div>
             <label style={labelStyle}>Display Name</label>
             <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
@@ -997,7 +974,7 @@ function ProfilePage({ data, update }) {
           <span style={{ fontWeight: 600, fontSize: 15 }}>Overview Widget</span>
         </div>
         <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>Choose what to display in the widget area on the right side of your Overview.</p>
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
           {WIDGET_OPTIONS.map(opt => (
             <button key={opt.id} onClick={() => setWidgetType(opt.id)} style={{
               padding: "12px 14px", borderRadius: 10, textAlign: "left",
@@ -1036,7 +1013,7 @@ function ProfilePage({ data, update }) {
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
-function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfolioOn, mobile }) {
+function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfolioOn }) {
   const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const [period, setPeriod] = useState(data.overviewDefaultPeriod || "all");
@@ -1165,14 +1142,14 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Top stat row — F&O card hidden when toggle is off */}
-      <div className="ft-overview-grid" style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : (foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr"), gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
         <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
         {/* Income card with period toggle */}
         <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
             <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
-            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
               {PERIODS.map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)}
                   style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
@@ -1206,7 +1183,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Portfolio + To-Do row */}
-      <div className="ft-overview-grid" style={{ display: "grid", gridTemplateColumns: (mobile || !portfolioOn) ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: portfolioOn ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
 
         {/* ── Portfolio Summary ── */}
         {portfolioOn && (() => {
@@ -1270,7 +1247,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                 <span style={{ fontWeight: 500, fontSize: 15 }}>📈 Assets</span>
                 <button onClick={() => setPage("portfolio")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View →</button>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 {[
                   { label: "Invested",      val: fmtCur(totalInvested), color: "var(--color-text-primary)" },
                   { label: "Current Value", val: fmtCur(totalCurrent),  color: "#1a6b3c" },
@@ -1366,7 +1343,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       {/* Bank balances */}
       {bankBalances.length > 0 && (
         <Card title="Bank Balances" action={<button onClick={() => setPage("money")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>Manage →</button>}>
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 }}>
             {bankBalances.map(b => (
               <div key={b.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>{b.name}</div>
@@ -1389,7 +1366,7 @@ function FOSummaryMini({ trades, netPnl }) {
   const winning = trades.filter(t => (Number(t.sellPremium) - Number(t.buyPremium)) > 0).length;
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
         <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Total Trades</div><div style={{ fontWeight: 500 }}>{trades.length}</div></div>
         <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Winners</div><div style={{ fontWeight: 500, color: "#1a6b3c" }}>{winning}</div></div>
         <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Net P&L</div><div style={{ fontWeight: 500, color: netPnl >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(netPnl)}</div></div>
@@ -1419,7 +1396,7 @@ function AssetPie({ assets }) {
 }
 
 // ─── Money ────────────────────────────────────────────────────────────────────
-function MoneyPage({ data, update, tab, setTab, mobile }) {
+function MoneyPage({ data, update, tab, setTab }) {
   const accounts = data.banks || [];
   const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
 
@@ -1551,7 +1528,7 @@ function MoneyPage({ data, update, tab, setTab, mobile }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(420px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit {editTx.type === "income" ? "Income" : "Expense"}</div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
                 <input type="date" value={editTx.date} onChange={e => setEditTx(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -1628,7 +1605,7 @@ function MoneyPage({ data, update, tab, setTab, mobile }) {
               <input value={editAcct.name} onChange={e => setEditAcct(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
             </div>
             {editAcct.type === "Credit Card" && (
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                 <div>
                   <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Outstanding Balance (₹)</label>
                   <input type="number" placeholder="e.g. 5000" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -1657,16 +1634,16 @@ function MoneyPage({ data, update, tab, setTab, mobile }) {
       <TabBar tabs={["expenses", "income", "transfer", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Transfer", "Scheduled", "Liabilities", "Analysis"]} />
 
       {/* ── Transfer Tab ── */}
-      {tab === "transfer" && <TransferTab data={data} update={update} accounts={accounts} mobile={mobile} />}
+      {tab === "transfer" && <TransferTab data={data} update={update} accounts={accounts} />}
 
       {/* ── Scheduled Payments Tab ── */}
-      {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} mobile={mobile} />}
+      {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} />}
 
       {/* ── Income / Expense Tabs ── */}
       {(tab === "income" || tab === "expenses") && (
         <>
           <PeriodBar periods={["This Week", "This Month", "Last Month", "6M", "12M"]} active={period} setActive={setPeriod} />
-          <div className="ft-money-grid" style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1.4fr", gap: 16, marginTop: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16, marginTop: 16 }}>
             <Card title={`Add ${tab === "income" ? "Income" : "Expense"}`}>
               <LabelInput label="Amount (INR)" placeholder="e.g. 5000" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
               <LabelInput label="Notes" placeholder="optional" value={form.note} onChange={v => setForm(p => ({ ...p, note: v }))} />
@@ -1772,8 +1749,8 @@ function MoneyPage({ data, update, tab, setTab, mobile }) {
       )}
 
       {/* ── Liabilities Tab ── */}
-      {tab === "liabilities" && <LiabilitiesTab data={data} update={update} mobile={mobile} />}
-      {tab === "analysis" && <AnalysisTab data={data} mobile={mobile} />}
+      {tab === "liabilities" && <LiabilitiesTab data={data} update={update} />}
+      {tab === "analysis" && <AnalysisTab data={data} />}
     </div>
   );
 }
@@ -1790,7 +1767,7 @@ const DEFAULT_LOT_SIZES = {
   "Gold": 100, "Gold M": 10,
 };
 
-function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl, mobile }) {
+function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
   const lotSizes = { ...DEFAULT_LOT_SIZES, ...(data.lotSizes || {}) };
   const brokerProfiles = data.brokerProfiles || [];
 
@@ -1882,7 +1859,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl, mobile }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(480px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Trade</div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
                 <input type="date" value={editTrade.date} onChange={e => setEditTrade(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -1981,7 +1958,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl, mobile }) {
             );
           })()}
 
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: 10, margin: "10px 0" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, margin: "10px 0" }}>
             <StatCard label="Total Trades" value={filtered.length} />
             <StatCard label="Winners" value={winners} />
             <StatCard label="Losers" value={losers} />
@@ -1989,7 +1966,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl, mobile }) {
             <StatCard label="Net P&L (after charges)" value={fmtCur(filteredPnl)} pnl={filteredPnl} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1.5fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16 }}>
             <Card title="Log New Trade">
               {/* Row 1: Date */}
               <div style={{ marginBottom: 8 }}>
@@ -2081,7 +2058,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl, mobile }) {
               )}
 
               {/* Strike, Expiry, Premiums, Lots, Lot Size */}
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 8, marginTop: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
 
               {/* Strike, Expiry, Premiums, Lots, Lot Size */}
                 <LabelInput label="Strike Price" placeholder="e.g. 22500" value={form.strikePrice} onChange={v => setForm(p => ({ ...p, strikePrice: v }))} />
@@ -2177,7 +2154,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl, mobile }) {
       )}
 
       {tab === "charges" && (
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1.4fr", gap: 16, marginTop: 16 }}>
+        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16 }}>
 
           {/* Left: Add / Edit broker form */}
           <Card title={editingBroker ? "Edit Broker Template" : "Add Broker Template"}>
@@ -2222,7 +2199,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl, mobile }) {
                         <button onClick={() => deleteBroker(b.id)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14 }}>✕</button>
                       </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
                       <span>Brokerage: ₹{b.charges.brokerage}</span>
                       <span>STT: {b.charges.stt}%</span>
                       <span>Exch: {b.charges.exchangeFee}%</span>
@@ -2302,14 +2279,14 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
   return (
     <div style={{ marginTop: 16 }}>
       {/* Month summary stats */}
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
         <StatCard label="Trades This Month" value={monthTrades.length} />
         <StatCard label="Gross P&L" value={fmtCur(monthGross)} pnl={monthGross} />
         <StatCard label="Total Charges" value={"- " + fmtCur(monthCharges)} />
         <StatCard label="Net P&L" value={fmtCur(monthNet)} pnl={monthNet} big />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: (mobile || !selectedDay) ? "1fr" : "1fr 320px", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: selectedDay ? "1fr 320px" : "1fr", gap: 16 }}>
         {/* Calendar */}
         <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
           {/* Header */}
@@ -2399,7 +2376,7 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
               <EmptyState msg="No trades on this day." />
             ) : (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Gross P&L</div>
                     <div style={{ fontWeight: 600, fontSize: 15, color: selectedData.gross >= 0 ? "#1a6b3c" : "#c0392b" }}>{fmtCur(selectedData.gross)}</div>
@@ -2462,10 +2439,10 @@ function EssentialsPage({ data, update, tab, setTab }) {
       <TabBar tabs={["essentials", "goals"]} active={tab} setActive={setTab} labels={["Essentials", "Goals"]} />
 
       {tab === "essentials" && (
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 16, marginTop: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
           <Card title="Financial Profile">
             <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12 }}>Used for health scores and personalised guidance. All fields are optional.</p>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <LabelInput label="Age" placeholder="Your age" value={profileForm.age} onChange={v => setProfileForm(p => ({ ...p, age: v }))} />
               <LabelInput label="Monthly Income" placeholder="Monthly income" value={profileForm.income} onChange={v => setProfileForm(p => ({ ...p, income: v }))} />
               <LabelInput label="Monthly Expense" placeholder="Monthly expense" value={profileForm.expense} onChange={v => setProfileForm(p => ({ ...p, expense: v }))} />
@@ -2521,7 +2498,7 @@ function EssentialsPage({ data, update, tab, setTab }) {
             </div>
           )}
           <Card title="Create New Goal">
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <LabelInput label="Goal Name *" placeholder="Goal name" value={goalForm.name} onChange={v => setGoalForm(p => ({ ...p, name: v }))} />
               <LabelInput label="Target Amount *" placeholder="Target amount" value={goalForm.target} onChange={v => setGoalForm(p => ({ ...p, target: v }))} />
               <LabelInput label="Target Date *" type="date" value={goalForm.targetDate} onChange={v => setGoalForm(p => ({ ...p, targetDate: v }))} />
@@ -2543,7 +2520,7 @@ function EssentialsPage({ data, update, tab, setTab }) {
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNavEditMode, onNavDragStart, onNavDragOver, onNavDrop, navDragOver, navDragIdx, setNavDragOver, mobile }) {
+function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNavEditMode, onNavDragStart, onNavDragOver, onNavDrop, navDragOver, navDragIdx, setNavDragOver }) {
   const foOn = (data.featureToggles || { fo: true }).fo !== false;
   const cardStyle = { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginBottom: 16 };
   const sectionTitle = (icon, label, sub) => (
@@ -3168,7 +3145,7 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
     <div style={{ marginTop: 16 }}>
       <div style={cardStyle}>
         {sectionTitle("◉", "Index Options — Lot Sizes", "Default lot sizes for index contracts.")}
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3, 1fr)", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
           {[...indexItems, ...(custom["Index Options"] || [])].map(name => (
             <div key={name}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
@@ -3185,7 +3162,7 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
       </div>
       <div style={cardStyle}>
         {sectionTitle("◈", "Commodities — Lot Sizes", "Default lot sizes for commodity contracts on MCX.")}
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3, 1fr)", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
           {[...commodityItems, ...(custom["Commodities"] || [])].map(name => (
             <div key={name}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
@@ -3207,7 +3184,7 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
       </div>
       <div style={cardStyle}>
         {sectionTitle("⊕", "Manage Instruments", "Add custom instruments to any category.")}
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1.2fr 1.5fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.5fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 20 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
             <select value={newInstrument.category} onChange={e => setNewInstrument(p => ({ ...p, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
@@ -3296,7 +3273,7 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
               <input value={editAcct.name} onChange={e => setEditAcct(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
             </div>
             {editAcct.type === "Credit Card" && (
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                 <div>
                   <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Outstanding Balance (₹)</label>
                   <input type="number" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -3344,7 +3321,7 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
       {/* Add Account */}
       <div style={cardStyle}>
         {sectionTitle("🏦", "Add Account", "Add bank accounts, credit cards or cash wallets.")}
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr auto 1fr auto", gap: 10, alignItems: "flex-end" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "flex-end" }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account Name</label>
             <input placeholder="e.g. HDFC Savings, SBI, Axis CC" value={acctForm.name} onChange={e => setAcctForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} onKeyDown={e => e.key === "Enter" && addAccount()} />
@@ -3362,7 +3339,7 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
           <GreenBtn onClick={addAccount} label="+ Add" />
         </div>
         {acctForm.type === "Credit Card" && (
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginTop: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
             <div>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
               <input type="number" placeholder="e.g. 1,00,000" value={acctForm.creditLimit} onChange={e => setAcctForm(p => ({ ...p, creditLimit: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -3464,7 +3441,7 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle, navItems, n
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 16, marginTop: 16 }}>
+    <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
       {editCat && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -3582,7 +3559,7 @@ function LiabilityTypesSettings({ data, update, cardStyle, sectionTitle }) {
 }
 
 // ─── Transfer Tab ───────────────────────────────────────────────────────────── ─────────────────────────────────────────────────────────────
-function TransferTab({ data, update, accounts, mobile }) {
+function TransferTab({ data, update, accounts }) {
   const [form, setForm] = useState({ fromId: "", toId: "", amount: "", note: "", date: today() });
   const [error, setError] = useState("");
 
@@ -3636,7 +3613,7 @@ function TransferTab({ data, update, accounts, mobile }) {
   ].filter(g => g.list.length > 0);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1.5fr", gap: 16, marginTop: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, marginTop: 16 }}>
 
       {/* Left: form */}
       <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
@@ -3770,7 +3747,7 @@ function TransferTab({ data, update, accounts, mobile }) {
 // ─── Scheduled Payments Tab ──────────────────────────────────────────────────
 
 // ═══════════════════════════ ANALYSIS TAB ═══════════════════════════════════
-function AnalysisTab({ data, mobile }) {
+function AnalysisTab({ data }) {
   const [view,     setView]     = useState("graph");
   const [period,   setPeriod]   = useState("6M");
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
@@ -4195,7 +4172,7 @@ function AnalysisTab({ data, mobile }) {
 }
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ScheduledPaymentsTab({ data, update, accounts, mobile }) {
+function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
   const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
   const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", tenure: "", notes: "", accountId: "" });
@@ -4423,7 +4400,7 @@ function ScheduledPaymentsTab({ data, update, accounts, mobile }) {
               </div>
             </div>
             <LabelInput label="Name" placeholder="e.g. HDFC Home Loan" value={editForm.name} onChange={v => setEditForm(p => ({ ...p, name: v }))} />
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={editForm.amount} onChange={v => setEditForm(p => ({ ...p, amount: v }))} />
               <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={editForm.day} onChange={v => setEditForm(p => ({ ...p, day: v }))} />
             </div>
@@ -4468,7 +4445,7 @@ function ScheduledPaymentsTab({ data, update, accounts, mobile }) {
           </div>
         </>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "300px 1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         <Card title="Add Scheduled Payment">
           {/* Income / Expense toggle */}
@@ -4495,7 +4472,7 @@ function ScheduledPaymentsTab({ data, update, accounts, mobile }) {
             </div>
           </div>
           <LabelInput label="Name" placeholder="e.g. HDFC Home Loan, Netflix, Rent" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} />
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
             <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
           </div>
@@ -4654,7 +4631,7 @@ function ScheduledPaymentsTab({ data, update, accounts, mobile }) {
 }
 
 // ─── Liabilities Tab Content ─────────────────────────────────────────
-function LiabilitiesTab({ data, update, mobile }) {
+function LiabilitiesTab({ data, update }) {
   const accounts = data.banks || [];
   const liabilities = data.emis || [];
   
@@ -4879,7 +4856,7 @@ function LiabilitiesTab({ data, update, mobile }) {
   return (
     <div style={{ marginTop: 16 }}>
       {/* Summary Strip — matching Scheduled Payments look */}
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Due This Month", val: fmtCur(liabDueThisMonth), color: "#4da6ff" },
           { label: "Overdue", val: fmtCur(liabOverdue), color: "#d44" },
@@ -4897,7 +4874,7 @@ function LiabilitiesTab({ data, update, mobile }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(480px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Liability</div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div style={{ gridColumn: "span 2" }}>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Name</label>
                 <input value={editLiability.name} onChange={e => setEditLiability(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -5044,7 +5021,7 @@ function LiabilitiesTab({ data, update, mobile }) {
               {editLiability._paymentMode === "interestOnly" && (
                 <div style={{ gridColumn: "span 2", background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 8 }}>💰 Capital Payment Settings</div>
-                  <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <div>
                       <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Due Day</label>
                       <input type="number" min="1" max="31" placeholder="e.g. 10"
@@ -5080,7 +5057,7 @@ function LiabilitiesTab({ data, update, mobile }) {
 
       {/* Add Liability Form */}
       <Card title="➕ Add Liability">
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "2fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Name</label>
             <input placeholder="e.g. HDFC Credit Card, Personal Loan" value={liabilityForm.name} onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -5146,7 +5123,7 @@ function LiabilitiesTab({ data, update, mobile }) {
             )}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
@@ -5249,7 +5226,7 @@ function LiabilitiesTab({ data, update, mobile }) {
         {addPaymentMode === "interestOnly" && (
           <div style={{ marginBottom: 10, background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 8 }}>💰 Capital Payment Settings</div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
                 <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Due Day</label>
                 <input type="number" min="1" max="31" placeholder="e.g. 10"
@@ -5541,7 +5518,7 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 }
 
 // ─── Goals Page ───────────────────────────────────────────────────────────────
-function GoalsPage({ data, update, mobile }) {
+function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
   const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
@@ -5649,7 +5626,7 @@ function GoalsPage({ data, update, mobile }) {
           <input placeholder={values.goalType === "task" ? "e.g. Complete certification, Learn piano" : "e.g. Emergency Fund, New Laptop"} value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
         {values.goalType === "money" ? (
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
             <div>
               <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
               <input type="text" inputMode="decimal" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -5824,7 +5801,7 @@ function GoalsPage({ data, update, mobile }) {
       </div>
 
       {/* Summary strip */}
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
           { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
@@ -5839,7 +5816,7 @@ function GoalsPage({ data, update, mobile }) {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: (mobile || !showAdd) ? "1fr" : "300px 1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "300px 1fr" : "1fr", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         {showAdd && (
           <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
@@ -5875,7 +5852,7 @@ function GoalsPage({ data, update, mobile }) {
               No {activeTab} goals yet. Click "+ Add Goal" to create one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
               {displayed.sort((a, b) => {
                 const pOrder = { high: 0, medium: 1, low: 2 };
                 if (a.completed !== b.completed) return a.completed ? 1 : -1;
@@ -5928,7 +5905,7 @@ function PercentageCalculator() {
         <span style={{ fontWeight: 600, fontSize: 16 }}>Percentage Calculator</span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1.2fr", gap: 14, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: 14, alignItems: "start" }}>
         {/* Input A */}
         <div>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>{cfg.labelA}</label>
@@ -5986,7 +5963,7 @@ function PercentageCalculator() {
   );
 }
 
-function BusinessPage({ data, update, mobile }) {
+function BusinessPage({ data, update }) {
   // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
   // Migrate legacy flat businessData into first business if needed
   const businesses = data.businesses || [];
@@ -6284,7 +6261,7 @@ function BusinessPage({ data, update, mobile }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit {editEntry.month} {editEntry.year}</div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
               <div>
                 <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹)</label>
                 <input type="text" inputMode="decimal" value={editEntry.grossIncome}
@@ -6455,7 +6432,7 @@ function BusinessPage({ data, update, mobile }) {
           {showAddMonth && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
               <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Month Data</div>
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
                   <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
@@ -6487,7 +6464,7 @@ function BusinessPage({ data, update, mobile }) {
           ) : (
             <>
               {/* Summary stats for year */}
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
                 {[
                   { label: "Total Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0)), color: "#1a6b3c" },
                   { label: "Total Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0)), color: "#4da6ff" },
@@ -6593,7 +6570,7 @@ function BusinessPage({ data, update, mobile }) {
 // ─── Projects Page ───────────────────────────────────────────────────────────
 const DEFAULT_TASK_TYPES = ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
 
-function ProjectsPage({ data, update, mobile }) {
+function ProjectsPage({ data, update }) {
   const projects = data.projectsData || [];
   const TASK_TYPES = (data.projectTaskTypes && data.projectTaskTypes.length > 0) ? data.projectTaskTypes : DEFAULT_TASK_TYPES;
   const [selectedProject, setSelectedProject] = useState(null);
@@ -6859,7 +6836,7 @@ function ProjectsPage({ data, update, mobile }) {
               No projects yet. Click "+ New Project" to create your first one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
               {projects.map(pr => {
                 const done = (pr.todos || []).filter(t => t.done).length;
                 const total = (pr.todos || []).length;
@@ -6896,7 +6873,7 @@ function ProjectsPage({ data, update, mobile }) {
 
       {/* ── PROJECT DETAIL ── */}
       {project && (
-        <div style={{ display: "grid", gridTemplateColumns: (mobile || leftTab === "notes") ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
+        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
 
           {/* LEFT PANEL — Tabbed: Tasks | Files | Notes */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}) }}>
@@ -7280,7 +7257,7 @@ function ProjectsPage({ data, update, mobile }) {
             {/* Summary card */}
             <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.1rem 1.2rem" }}>
               <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 12 }}>Project Overview</div>
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
                 <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
                   <div style={{ fontSize: 22, fontWeight: 600, color: "#4da6ff" }}>{todos.length}</div>
                   <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Total Tasks</div>
@@ -8062,7 +8039,7 @@ function Card({ title, children, action }) {
 
 function TabBar({ tabs, active, setActive, labels }) {
   return (
-    <div className="ft-tab-bar" style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
+    <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
       {tabs.map((t, i) => (
         <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
           {labels ? labels[i] : t}
@@ -8074,7 +8051,7 @@ function TabBar({ tabs, active, setActive, labels }) {
 
 function PeriodBar({ periods, active, setActive }) {
   return (
-    <div className="ft-period-bar" style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
       {periods.map(p => (
         <button key={p} onClick={() => setActive(p)} style={{ padding: "4px 12px", borderRadius: 6, border: "0.5px solid", borderColor: active === p ? "#1a6b3c" : "var(--color-border-secondary)", background: active === p ? "#1a6b3c" : "transparent", color: active === p ? "#fff" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer" }}>{p}</button>
       ))}
@@ -8262,7 +8239,7 @@ const NSE_SEARCH = NSE_STOCKS.map(([symbol, name]) => ({ symbol, name, lower: sy
 // PORTFOLIO PAGE — CORS-safe prices via corsproxy.io + stock autocomplete
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Portfolio Hub — tabs: Overall / Indian Stocks / US Stocks / Mutual Funds ─
-function PortfolioHub({ data, update, mobile }) {
+function PortfolioHub({ data, update }) {
   const [tab, setTab] = useState("overall");
 
   // ── Nifty50 live fetch ──────────────────────────────────────────────────────
@@ -8399,7 +8376,7 @@ function PortfolioHub({ data, update, mobile }) {
                 {Object.keys(indPrices).length > 0 ? "Live prices loaded" : "Open tabs below & click Refresh to load prices"}
               </span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
               {[
                 { label: "Invested",      val: fmtCur(totalInvested),  color: "var(--color-text-primary)" },
                 { label: "Current Value", val: fmtCur(totalCurrent),   color: "#1a6b3c" },
@@ -8429,7 +8406,7 @@ function PortfolioHub({ data, update, mobile }) {
             </div>
 
             {/* Breakdown by category */}
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3,1fr)", gap: 8 }}>
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
               {[
                 { label: "🇮🇳 Indian Stocks", invested: indInvested, current: indCurrent },
                 { label: "🇺🇸 US Stocks",     invested: usInvested,  current: usCurrent  },
@@ -8553,10 +8530,10 @@ function PortfolioHub({ data, update, mobile }) {
         </div>
       )}
 
-      {tab === "indian"   && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" mobile={mobile} />}
-      {tab === "us"       && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  mobile={mobile} />}
-      {tab === "mf"       && <MutualFundsPage data={data} update={update} mobile={mobile} />}
-      {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} mobile={mobile} /></div>}
+      {tab === "indian"   && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
+      {tab === "us"       && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
+      {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
+      {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
       {tab === "compare"  && <ComparativeAnalysisView data={data} />}
     </div>
   );
@@ -9446,7 +9423,7 @@ function ComparativeAnalysisView({ data }) {
 }
 
 // ─── Mutual Funds Page ────────────────────────────────────────────────────────
-function MutualFundsPage({ data, update, mobile }) {
+function MutualFundsPage({ data, update }) {
   const mfs = data.mutualFunds || [];
   const [tab, setTab] = useState("holdings"); // "holdings" | "sip"
   const [form, setForm] = useState({ name: "", units: "", nav: "", investedAmount: "", startDate: "" });
@@ -9520,7 +9497,7 @@ function MutualFundsPage({ data, update, mobile }) {
       </div>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Total Invested", val: fmt(totalInvested), color: "var(--color-text-primary)" },
           { label: "Current Value",  val: fmt(currentValue),  color: "#1a6b3c" },
@@ -9568,7 +9545,7 @@ function MutualFundsPage({ data, update, mobile }) {
         <>
           {showForm && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem", marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "2fr 1fr 1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 10 }}>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Fund Name *</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Mirae Asset Large Cap" style={{ width: "100%", boxSizing: "border-box" }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Units</label><input type="number" value={form.units} onChange={e => setForm(p => ({ ...p, units: e.target.value }))} placeholder="e.g. 100.5" style={{ width: "100%", boxSizing: "border-box" }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Current NAV (₹)</label><input type="number" value={form.nav} onChange={e => setForm(p => ({ ...p, nav: e.target.value }))} placeholder="e.g. 85.4" style={{ width: "100%", boxSizing: "border-box" }} /></div>
@@ -9632,7 +9609,7 @@ function MutualFundsPage({ data, update, mobile }) {
 
       {/* ── SIP CALCULATOR TAB ── */}
       {tab === "sip" && (
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
           {/* Sliders */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem" }}>
             <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 20 }}>🧮 Step-Up SIP Calculator</h3>
@@ -9707,7 +9684,7 @@ function MutualFundsPage({ data, update, mobile }) {
   );
 }
 
-function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "portfolioHoldings", defaultExchange = "NSE", mobile }) {
+function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "portfolioHoldings", defaultExchange = "NSE" }) {
   const holdings = data[holdingsKey] || [];
 
   // ── local UI state ──────────────────────────────────────────────────────────
@@ -10120,7 +10097,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
               ⚡ <strong>{holdings.length - mergedHoldings.length}</strong> duplicate entr{holdings.length - mergedHoldings.length === 1 ? "y" : "ies"} auto-merged into weighted avg price. Showing {mergedHoldings.length} unique holdings.
             </div>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
             <StatCard label={`Total Invested (${isUS && showUSD ? "USD" : "INR"})`} value={fmtVal(totalInvested)} icon="💰" />
             <StatCard label={`Current Value (${isUS && showUSD ? "USD" : "INR"})`}  value={fmtVal(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
             <StatCard label="Total P&L"      value={fmtPnlVal(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
@@ -10128,7 +10105,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
             </div>
           {/* XIRR + CAGR always on same row */}
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
             <StatCard
               label="XIRR"
               value={portfolioXIRR != null ? fmtRate(portfolioXIRR) : "Add buy dates"}
@@ -10153,7 +10130,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       {showForm && (
         <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
           <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
 
             {/* Exchange selector */}
             <div>
@@ -10305,7 +10282,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
           </div>
 
           {/* Column headers */}
-          <div style={{ display: mobile ? "none" : "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
             <span>STOCK</span>
             <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span style={{ textAlign: "right" }}>DAY CHG</span>
@@ -10317,7 +10294,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
           {/* Rows */}
           {sorted.map(h => (
-            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
+            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
               <div>
                 <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {h.symbol.replace(/\.(NS|BO)$/i, "")}
@@ -10434,7 +10411,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 const CAP_COLORS   = { Large:"#1a6b3c", Mid:"#4da6ff", Small:"#f59e0b", ETF:"#8b5cf6", Unknown:"#9ca3af" };
 const SECTOR_COLORS = ["#1a6b3c","#4da6ff","#f59e0b","#ef4444","#8b5cf6","#10b981","#f97316","#ec4899","#14b8a6","#6366f1","#84cc16","#0ea5e9","#a78bfa","#fb923c","#34d399","#f43f5e","#06b6d4"];
 
-function PortfolioAnalysisView({ data, mobile }) {
+function PortfolioAnalysisView({ data }) {
   // Merge duplicate symbol+exchange entries into weighted avg (same logic as Portfolio tab)
   function computeMerged(list) {
     const map = new Map();
@@ -10689,7 +10666,7 @@ function PortfolioAnalysisView({ data, mobile }) {
       </div>
 
       {/* Row 1: IN vs US + Cap */}
-      <div style={{display:"grid",gridTemplateColumns: mobile ? "1fr" : "1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>🌏 Indian vs US Holdings</div>
           <div style={{display:"flex",gap:16,alignItems:"center"}}>
