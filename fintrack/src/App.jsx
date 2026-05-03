@@ -40,9 +40,9 @@ const LIGHT_MODE_STYLE = `
     /* Inputs always fit */
     input[type="time"], input[type="date"] { min-width: 0; width: 100% !important; }
 
-    /* Holdings table — horizontally scrollable on mobile */
-    .holdings-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch; width: 100%; }
-    .holdings-table-wrap > div { min-width: 560px; }
+    /* Holdings table — horizontally scrollable on mobile with proper min-width */
+    .holdings-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch; width: 100%; display: block !important; }
+    .holdings-table-wrap > div { min-width: 620px; }
 
     /* Project detail — stack panels on mobile */
     .project-detail-grid { grid-template-columns: 1fr !important; }
@@ -53,12 +53,31 @@ const LIGHT_MODE_STYLE = `
     /* 4-col stats rows (Liabilities, Goals) — 2 col on mobile */
     .stats-4col { grid-template-columns: 1fr 1fr !important; }
 
-    /* 3-col analysis charts — stack on mobile */
+    /* Analysis 2-col — stack on mobile */
     .analysis-2col { grid-template-columns: 1fr !important; }
+
+    /* AllocationCard donut + legend — stack vertically on mobile */
+    .alloc-card-inner { flex-direction: column !important; align-items: center !important; }
+    .alloc-card-inner svg { margin-bottom: 10px; }
+    .alloc-legend { max-height: none !important; width: 100% !important; }
+
+    /* Indian vs US Holdings card inner — stack on mobile */
+    .ind-us-inner { flex-direction: column !important; align-items: center !important; }
+    .ind-us-stats { flex-direction: row !important; gap: 20px !important; justify-content: center; }
 
     /* Day Tracking header — wrap date picker */
     .day-track-header { flex-wrap: wrap !important; gap: 8px !important; }
     .day-track-header input[type="date"] { width: 100% !important; }
+
+    /* Liabilities Add form — ensure fields stack properly */
+    .liability-form-grid { grid-template-columns: 1fr !important; }
+
+    /* Goals stats — ensure 2-col */
+    .goals-stats { grid-template-columns: 1fr 1fr !important; }
+
+    /* Portfolio tab bar — allow scroll */
+    .portfolio-tabs { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+    .portfolio-tabs::-webkit-scrollbar { display: none; }
   }
 `;
 
@@ -3478,8 +3497,6 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
   const [uploading,    setUploading]    = useState({});
   const [clientInput,  setClientInput]  = useState(data.driveClientId || "");
   const [newSubName,   setNewSubName]   = useState({});
-  const [renamingId,   setRenamingId]   = useState(null);
-  const [renameVal,    setRenameVal]    = useState("");
 
   function setFolders(fn) {
     setFoldersState(prev => {
@@ -3512,17 +3529,7 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
       return f;
     }));
   }
-  function renameFolder(id, newName, parentId=null) {
-    if (!newName.trim()) return;
-    setFolders(p => p.map(f => {
-      if (!parentId && f.id===id) return { ...f, name: newName.trim() };
-      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===id ? { ...s, name: newName.trim() } : s) };
-      return f;
-    }));
-    setRenamingId(null);
-    setRenameVal("");
-  }
-  function startRename(folder) { setRenamingId(folder.id); setRenameVal(folder.name); }
+  function setDriveFId(folderId, val, parentId=null) {
     setFolders(p => p.map(f => {
       if (!parentId && f.id===folderId) return { ...f, driveFolderId:val };
       if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, driveFolderId:val } : s) };
@@ -3629,36 +3636,17 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                 const isOpen = openSubId === sub.id;
                 return (
                   <div key={sub.id}
-                    onClick={() => renamingId === sub.id ? null : setOpenSubId(isOpen ? null : sub.id)}
+                    onClick={() => setOpenSubId(isOpen ? null : sub.id)}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
-                    style={{ background: "var(--color-background-primary)", borderRadius: 12, border: isOpen ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "0.9rem 1rem 0.75rem", cursor: renamingId === sub.id ? "default" : "pointer", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", transition: "box-shadow 0.15s" }}>
+                    style={{ background: "var(--color-background-primary)", borderRadius: 12, border: isOpen ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "0.9rem 1rem 0.75rem", cursor: "pointer", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", transition: "box-shadow 0.15s" }}>
                     <button onClick={e => { e.stopPropagation(); deleteFolder(sub.id, folder.id); }}
                       style={{ position: "absolute", top: 7, right: 7, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#d44", opacity: 0.5, padding: "2px 4px" }}>🗑</button>
                     <div style={{ fontSize: 26, marginBottom: 5 }}>{isOpen ? "📂" : "📁"}</div>
-                    {renamingId === sub.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{ display:"flex", gap:5, marginBottom:4 }}>
-                        <input
-                          autoFocus
-                          value={renameVal}
-                          onChange={e => setRenameVal(e.target.value)}
-                          onKeyDown={e => { if (e.key==="Enter") renameFolder(sub.id, renameVal, folder.id); if (e.key==="Escape") { setRenamingId(null); setRenameVal(""); } }}
-                          style={{ flex:1, fontSize:12, fontWeight:600, border:"1px solid #1a6b3c", borderRadius:5, padding:"2px 6px", outline:"none" }}
-                        />
-                        <button onClick={e => { e.stopPropagation(); renameFolder(sub.id, renameVal, folder.id); }} style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:5, padding:"2px 7px", cursor:"pointer", fontSize:10, fontWeight:500 }}>✓</button>
-                        <button onClick={e => { e.stopPropagation(); setRenamingId(null); setRenameVal(""); }} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:5, padding:"2px 7px", cursor:"pointer", fontSize:10, color:"var(--color-text-secondary)" }}>✕</button>
-                      </div>
-                    ) : (
-                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 16, wordBreak: "break-word" }}>{sub.name}</div>
-                    )}
-                    <div style={{ display:"flex", gap:5, alignItems:"center", flexWrap:"wrap" }}>
-                      <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-                        {fcount} file{fcount !== 1 ? "s" : ""}
-                        {fcount === 0 && <span style={{ marginLeft: 4, fontSize: 10, background: "#f1f5f9", color: "#94a3b8", borderRadius: 4, padding: "1px 5px" }}>Empty</span>}
-                      </span>
-                      <button onClick={e => { e.stopPropagation(); startRename(sub); }}
-                        style={{ marginLeft:"auto", background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:5, padding:"1px 7px", cursor:"pointer", fontSize:10, color:"var(--color-text-secondary)" }}
-                        title="Rename sub-folder">✏️ Rename</button>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 16, wordBreak: "break-word" }}>{sub.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      {fcount} file{fcount !== 1 ? "s" : ""}
+                      {fcount === 0 && <span style={{ marginLeft: 4, fontSize: 10, background: "#f1f5f9", color: "#94a3b8", borderRadius: 4, padding: "1px 5px" }}>Empty</span>}
                     </div>
                   </div>
                 );
@@ -3721,40 +3709,23 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                 const sfCount = (folder.subFolders||[]).length;
                 return (
                   <div key={folder.id}
-                    onClick={() => renamingId === folder.id ? null : setOpenId(folder.id)}
+                    onClick={() => setOpenId(folder.id)}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
-                    style={{ background:"var(--color-background-primary)", borderRadius:14, border:"0.5px solid var(--color-border-secondary)", borderTop:"3px solid #1a6b3c", padding:"1.1rem 1.1rem 0.9rem", cursor: renamingId === folder.id ? "default" : "pointer", position:"relative", boxShadow:"0 1px 4px rgba(0,0,0,0.05)", transition:"box-shadow 0.15s" }}>
+                    style={{ background:"var(--color-background-primary)", borderRadius:14, border:"0.5px solid var(--color-border-secondary)", borderTop:"3px solid #1a6b3c", padding:"1.1rem 1.1rem 0.9rem", cursor:"pointer", position:"relative", boxShadow:"0 1px 4px rgba(0,0,0,0.05)", transition:"box-shadow 0.15s" }}>
                     {/* Delete button */}
                     <button onClick={e=>{e.stopPropagation(); deleteFolder(folder.id);}}
                       style={{ position:"absolute", top:8, right:8, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"#d44", opacity:0.5, padding:"2px 4px" }}
                       title="Delete folder">🗑</button>
                     <div style={{ fontSize:32, marginBottom:6 }}>📁</div>
-                    {renamingId === folder.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{ display:"flex", gap:5, marginBottom:6 }}>
-                        <input
-                          autoFocus
-                          value={renameVal}
-                          onChange={e => setRenameVal(e.target.value)}
-                          onKeyDown={e => { if (e.key==="Enter") renameFolder(folder.id, renameVal); if (e.key==="Escape") { setRenamingId(null); setRenameVal(""); } }}
-                          style={{ flex:1, fontSize:13, fontWeight:600, border:"1px solid #1a6b3c", borderRadius:6, padding:"3px 8px", outline:"none" }}
-                        />
-                        <button onClick={e => { e.stopPropagation(); renameFolder(folder.id, renameVal); }} style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, fontWeight:500 }}>✓</button>
-                        <button onClick={e => { e.stopPropagation(); setRenamingId(null); setRenameVal(""); }} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"var(--color-text-secondary)" }}>✕</button>
-                      </div>
-                    ) : (
-                      <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:20, wordBreak:"break-word" }}>{folder.name}</div>
-                    )}
+                    <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:20, wordBreak:"break-word" }}>{folder.name}</div>
                     <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:6 }}>
                       {fcount} file{fcount!==1?"s":""}
                       {sfCount>0 && ` · ${sfCount} sub-folder${sfCount!==1?"s":""}`}
                     </div>
-                    <div style={{ display:"flex", gap:5, flexWrap:"wrap", alignItems:"center" }}>
+                    <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
                       {folder.driveFolderId && <span style={{ fontSize:10, background:"#dbeafe", color:"#1d4ed8", borderRadius:4, padding:"1px 6px" }}>☁ Drive</span>}
                       {fcount === 0 && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:4, padding:"1px 6px" }}>Empty</span>}
-                      <button onClick={e => { e.stopPropagation(); startRename(folder); }}
-                        style={{ marginLeft:"auto", background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:5, padding:"1px 8px", cursor:"pointer", fontSize:10, color:"var(--color-text-secondary)" }}
-                        title="Rename folder">✏️ Rename</button>
                     </div>
                   </div>
                 );
@@ -3774,25 +3745,8 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                     ← Back
                   </button>
                   <span style={{ fontSize:22 }}>📂</span>
-                  {renamingId === folder.id ? (
-                    <div style={{ display:"flex", gap:6, alignItems:"center", flex:1 }}>
-                      <input
-                        autoFocus
-                        value={renameVal}
-                        onChange={e => setRenameVal(e.target.value)}
-                        onKeyDown={e => { if (e.key==="Enter") renameFolder(folder.id, renameVal); if (e.key==="Escape") { setRenamingId(null); setRenameVal(""); } }}
-                        style={{ fontSize:16, fontWeight:700, border:"1px solid #1a6b3c", borderRadius:7, padding:"4px 10px", outline:"none", flex:1, maxWidth:280 }}
-                      />
-                      <button onClick={() => renameFolder(folder.id, renameVal)} style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:12, fontWeight:500 }}>✓ Save</button>
-                      <button onClick={() => { setRenamingId(null); setRenameVal(""); }} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)" }}>✕</button>
-                    </div>
-                  ) : (
-                    <>
-                      <span style={{ fontWeight:700, fontSize:18 }}>{folder.name}</span>
-                      {folder.driveFolderId && <span style={{ fontSize:11, background:"#dbeafe", color:"#1d4ed8", borderRadius:5, padding:"2px 8px" }}>☁ Drive</span>}
-                      <button onClick={() => startRename(folder)} style={{ marginLeft:4, background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"3px 10px", cursor:"pointer", fontSize:11, color:"var(--color-text-secondary)" }}>✏️ Rename</button>
-                    </>
-                  )}
+                  <span style={{ fontWeight:700, fontSize:18 }}>{folder.name}</span>
+                  {folder.driveFolderId && <span style={{ fontSize:11, background:"#dbeafe", color:"#1d4ed8", borderRadius:5, padding:"2px 8px" }}>☁ Drive</span>}
                 </div>
                 <FolderBody folder={folder} />
               </div>
@@ -7792,21 +7746,18 @@ function ProjectsPage({ data, update }) {
                       <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
                         <span style={{ fontWeight:600, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{filePreview.name}</span>
                         <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
-                          {filePreview.webViewLink && <a href={filePreview.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
                           {filePreview.dataUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
                           <button onClick={() => setFilePreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
                         </div>
                       </div>
                       <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
-                        {filePreview.previewUrl
-                          ? <iframe src={filePreview.previewUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" allow="autoplay" />
-                          : filePreview.dataUrl?.startsWith("data:image")
-                            ? <img src={filePreview.dataUrl} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
-                            : filePreview.dataUrl?.startsWith("data:application/pdf") || filePreview.type === "application/pdf"
+                        {filePreview.dataUrl?.startsWith("data:image")
+                          ? <img src={filePreview.dataUrl} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
+                          : filePreview.dataUrl?.startsWith("data:application/pdf") || filePreview.type === "application/pdf"
+                            ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
+                            : filePreview.dataUrl
                               ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                              : filePreview.dataUrl
-                                ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                                : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
+                              : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
                         }
                       </div>
                     </div>
@@ -7830,29 +7781,20 @@ function ProjectsPage({ data, update }) {
                   <div style={{ padding: "0.5rem 0" }}>
                     {files.map(f => (
                       <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                        <div onClick={() => (f.dataUrl || f.previewUrl || f.webViewLink) && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: (f.dataUrl || f.previewUrl || f.webViewLink) ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
+                        <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: f.dataUrl ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
                           {f.type?.startsWith("image/") && f.dataUrl
                             ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : f.source === "gdrive" ? <span style={{ fontSize: 18 }}>☁</span>
                             : <span>{fileIcon(f.type)}</span>
                           }
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div onClick={() => (f.dataUrl || f.previewUrl || f.webViewLink) && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: (f.dataUrl || f.previewUrl || f.webViewLink) ? "pointer" : "default" }}>{f.name}</div>
-                          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "flex", gap: 6, alignItems: "center" }}>
-                            {formatFileSize(f.size)}
-                            <span style={{ background: f.source === "gdrive" ? "#dbeafe" : "#f1f5f9", color: f.source === "gdrive" ? "#1d4ed8" : "#64748b", borderRadius: 3, padding: "0 4px", fontSize: 9 }}>
-                              {f.source === "gdrive" ? "☁ Drive" : "💾 Local"}
-                            </span>
-                          </div>
+                          <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: f.dataUrl ? "pointer" : "default" }}>{f.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
                         </div>
-                        {(f.dataUrl || f.previewUrl || f.webViewLink) && (
-                          <button onClick={() => setFilePreview(f)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)", flexShrink: 0, whiteSpace: "nowrap" }}>👁 Preview</button>
+                        {f.dataUrl && (
+                          <button onClick={() => setFilePreview(f)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)", flexShrink: 0 }}>👁 Preview</button>
                         )}
-                        {f.webViewLink
-                          ? <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0, whiteSpace: "nowrap" }}>☁ Open</a>
-                          : f.dataUrl && <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
-                        }
+                        <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
                         <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
                       </div>
                     ))}
@@ -11297,9 +11239,9 @@ function PortfolioAnalysisView({ data }) {
     return (
       <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
         <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>{title}</div>
-        <div style={{display:"flex",gap:16,alignItems:"center"}}>
+        <div className="alloc-card-inner" style={{display:"flex",gap:16,alignItems:"center"}}>
           <DonutChart items={sorted.map((it,i)=>({...it,color:colors[i%colors.length]}))} total={total} size={130}/>
-          <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,maxHeight:180,overflowY:"auto"}}>
+          <div className="alloc-legend" style={{flex:1,display:"flex",flexDirection:"column",gap:5,maxHeight:180,overflowY:"auto"}}>
             {sorted.map((it,i)=>{
               const pct=total>0?(it.value/total*100).toFixed(1):0;
               return (
@@ -11368,13 +11310,13 @@ function PortfolioAnalysisView({ data }) {
       <div className="analysis-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>🌏 Indian vs US Holdings</div>
-          <div style={{display:"flex",gap:16,alignItems:"center"}}>
+          <div className="ind-us-inner" style={{display:"flex",gap:16,alignItems:"center"}}>
             <DonutChart
               items={[
                 indTotal>0?{label:"🇮🇳 Indian",value:indTotal,color:"#1a6b3c"}:null,
                 usTotal >0?{label:"🇺🇸 US",    value:usTotal, color:"#4da6ff"}:null,
               ].filter(Boolean)} total={grandTotal} size={130}/>
-            <div style={{flex:1,display:"flex",flexDirection:"column",gap:10}}>
+            <div className="ind-us-stats" style={{flex:1,display:"flex",flexDirection:"column",gap:10}}>
               {indTotal>0&&<div>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
                   <div style={{width:10,height:10,borderRadius:2,background:"#1a6b3c"}}/>
