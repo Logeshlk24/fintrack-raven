@@ -1400,7 +1400,8 @@ function MoneyPage({ data, update, tab, setTab }) {
   const accounts = data.banks || [];
   const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
 
-  const [form, setForm] = useState({ type: "expense", amount: "", category: "", note: "", date: today(), bankId: "", accountType: "all" });
+  const nowTime = () => { const n = new Date(); return n.toTimeString().slice(0,5); };
+  const [form, setForm] = useState({ type: "expense", amount: "", category: "", note: "", date: today(), time: "", bankId: "", accountType: "all" });
   const [period, setPeriod] = useState("12M");
 
   // Account form state
@@ -1434,7 +1435,7 @@ function MoneyPage({ data, update, tab, setTab }) {
     if (!form.amount) return;
     const type = tab === "income" ? "income" : "expense";
     update(p => ({ transactions: [...p.transactions, { id: Date.now(), ...form, amount: parseFloat(form.amount), type }] }));
-    setForm(p => ({ ...p, amount: "", category: "", note: "", date: today() }));
+    setForm(p => ({ ...p, amount: "", category: "", note: "", date: today(), time: "" }));
   }
 
   function addAccount() {
@@ -1532,6 +1533,10 @@ function MoneyPage({ data, update, tab, setTab }) {
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
                 <input type="date" value={editTx.date} onChange={e => setEditTx(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Time <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span></label>
+                <input type="time" value={editTx.time || ""} onChange={e => setEditTx(p => ({ ...p, time: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
@@ -1647,7 +1652,16 @@ function MoneyPage({ data, update, tab, setTab }) {
             <Card title={`Add ${tab === "income" ? "Income" : "Expense"}`}>
               <LabelInput label="Amount (INR)" placeholder="e.g. 5000" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
               <LabelInput label="Notes" placeholder="optional" value={form.note} onChange={v => setForm(p => ({ ...p, note: v }))} />
-              <LabelInput label="Date" type="date" value={form.date} onChange={v => setForm(p => ({ ...p, date: v }))} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
+                  <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Time <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span></label>
+                  <input type="time" value={form.time || ""} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+              </div>
 
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Category</label>
@@ -1716,7 +1730,7 @@ function MoneyPage({ data, update, tab, setTab }) {
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
                     <thead>
-                      <tr>{["Date", "Category", "Account", "Notes", "Amount", ""].map(h => (
+                      <tr>{["Date", "Time", "Category", "Account", "Notes", "Amount", ""].map(h => (
                         <th key={h} style={{ textAlign: "left", padding: "4px 6px", color: "var(--color-text-secondary)", fontWeight: 500, borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap" }}>{h}</th>
                       ))}</tr>
                     </thead>
@@ -1725,6 +1739,9 @@ function MoneyPage({ data, update, tab, setTab }) {
                       return (
                         <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                           <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{t.date}</td>
+                          <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
+                            {t.time ? <span style={{ background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 6px", fontFamily: "monospace", fontSize: 11, color: "var(--color-text-secondary)" }}>{t.time}</span> : <span style={{ color: "var(--color-border-primary)" }}>—</span>}
+                          </td>
                           <td style={{ padding: "5px 6px" }}>{t.category || "—"}</td>
                           <td style={{ padding: "5px 6px" }}>
                             {acct ? <span style={{ background: acct.type === "Credit Card" ? "#fff3e0" : acct.type === "Cash" ? "#f0fdf4" : "#e8f5ee", color: acct.type === "Credit Card" ? "#e65100" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 500 }}>{acct.name}</span> : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
@@ -1927,6 +1944,8 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                           <div style={{ fontWeight: 700, fontSize: 15, color: isIncome ? "#1a6b3c" : "var(--color-text-primary)" }}>
                             ₹{Number(t.amount).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                           </div>
+                          {/* Time */}
+                          {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{t.time}</div>}
                         </div>
                         {/* Delete */}
                         <button
