@@ -1998,20 +1998,6 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
 
   return (
     <div style={{ marginTop: 16 }}>
-      {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-        <div style={{ background: "linear-gradient(135deg, #e8f5ee 0%, #d1ead9 100%)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #b6ddc2" }}>
-          <div style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Total Income</div>
-          <div style={{ fontWeight: 800, fontSize: 20, color: "#1a6b3c" }}>+₹{totalIncome.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
-          <div style={{ fontSize: 11, color: "#4a9a6a", marginTop: 4 }}>{allTx.filter(t => t.type === "income").length} entries</div>
-        </div>
-        <div style={{ background: "linear-gradient(135deg, #fef2f2 0%, #fde8e8 100%)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #f5c0c0" }}>
-          <div style={{ fontSize: 11, color: "#cc2222", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Total Expenses</div>
-          <div style={{ fontWeight: 800, fontSize: 20, color: "#cc2222" }}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
-          <div style={{ fontSize: 11, color: "#e05a5a", marginTop: 4 }}>{allTx.filter(t => t.type === "expense").length} entries</div>
-        </div>
-      </div>
-
       {/* Search + Filter + Sort bar */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "var(--color-background-secondary)", borderRadius: 14, padding: "10px 16px", border: "0.5px solid var(--color-border-secondary)" }}>
@@ -3483,17 +3469,6 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
     if (!parentId) { setFolders(p => p.filter(f => f.id!==id)); if (openId===id) setOpenId(null); }
     else setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:(f.subFolders||[]).filter(s=>s.id!==id) } : f));
   }
-  const [renamingFolderId, setRenamingFolderId] = useState(null);
-  const [renameFolderVal,  setRenameFolderVal]  = useState("");
-  function startRenameFolder(id, currentName, e) { e.stopPropagation(); setRenamingFolderId(id); setRenameFolderVal(currentName); }
-  function commitRenameFolder(id, parentId=null) {
-    const name = renameFolderVal.trim();
-    if (name) {
-      if (!parentId) setFolders(p => p.map(f => f.id===id ? { ...f, name } : f));
-      else setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:(f.subFolders||[]).map(s => s.id===id ? { ...s, name } : s) } : f));
-    }
-    setRenamingFolderId(null); setRenameFolderVal("");
-  }
   function deleteFile(folderId, fileId, parentId=null) {
     setFolders(p => p.map(f => {
       if (!parentId && f.id===folderId) return { ...f, files:(f.files||[]).filter(d=>d.id!==fileId) };
@@ -3614,18 +3589,8 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                     style={{ background: "var(--color-background-primary)", borderRadius: 12, border: isOpen ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "0.9rem 1rem 0.75rem", cursor: "pointer", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", transition: "box-shadow 0.15s" }}>
                     <button onClick={e => { e.stopPropagation(); deleteFolder(sub.id, folder.id); }}
                       style={{ position: "absolute", top: 7, right: 7, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#d44", opacity: 0.5, padding: "2px 4px" }}>🗑</button>
-                    <button onClick={e=>startRenameFolder(sub.id, sub.name, e)}
-                      style={{ position:"absolute", top:7, right:30, background:"none", border:"none", cursor:"pointer", fontSize:11, color:"#6b7280", opacity:0.6, padding:"2px 4px" }} title="Rename">✏️</button>
                     <div style={{ fontSize: 26, marginBottom: 5 }}>{isOpen ? "📂" : "📁"}</div>
-                    {renamingFolderId === sub.id
-                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:3, paddingRight:16 }}>
-                          <input autoFocus value={renameFolderVal} onChange={e=>setRenameFolderVal(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameFolder(sub.id, folder.id); if(e.key==="Escape") setRenamingFolderId(null); }}
-                            onBlur={()=>commitRenameFolder(sub.id, folder.id)}
-                            style={{ width:"100%", fontSize:13, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit" }} />
-                        </div>
-                      : <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 36, wordBreak: "break-word" }}>{sub.name}</div>
-                    }
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 16, wordBreak: "break-word" }}>{sub.name}</div>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
                       {fcount} file{fcount !== 1 ? "s" : ""}
                       {fcount === 0 && <span style={{ marginLeft: 4, fontSize: 10, background: "#f1f5f9", color: "#94a3b8", borderRadius: 4, padding: "1px 5px" }}>Empty</span>}
@@ -3699,19 +3664,8 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                     <button onClick={e=>{e.stopPropagation(); deleteFolder(folder.id);}}
                       style={{ position:"absolute", top:8, right:8, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"#d44", opacity:0.5, padding:"2px 4px" }}
                       title="Delete folder">🗑</button>
-                    <button onClick={e=>startRenameFolder(folder.id, folder.name, e)}
-                      style={{ position:"absolute", top:8, right:32, background:"none", border:"none", cursor:"pointer", fontSize:12, color:"#6b7280", opacity:0.6, padding:"2px 4px" }}
-                      title="Rename folder">✏️</button>
                     <div style={{ fontSize:32, marginBottom:6 }}>📁</div>
-                    {renamingFolderId === folder.id
-                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:4, paddingRight:20 }}>
-                          <input autoFocus value={renameFolderVal} onChange={e=>setRenameFolderVal(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameFolder(folder.id); if(e.key==="Escape") setRenamingFolderId(null); }}
-                            onBlur={()=>commitRenameFolder(folder.id)}
-                            style={{ width:"100%", fontSize:14, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit" }} />
-                        </div>
-                      : <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:40, wordBreak:"break-word" }}>{folder.name}</div>
-                    }
+                    <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:20, wordBreak:"break-word" }}>{folder.name}</div>
                     <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:6 }}>
                       {fcount} file{fcount!==1?"s":""}
                       {sfCount>0 && ` · ${sfCount} sub-folder${sfCount!==1?"s":""}`}
@@ -6642,17 +6596,6 @@ function BusinessPage({ data, update }) {
     updateBizData(d => d.filter(e => e.year !== yr));
     if (selectedYear === yr) setSelectedYear(null);
   }
-  const [renamingYear,   setRenamingYear]   = useState(null);
-  const [renameYearVal,  setRenameYearVal]  = useState("");
-  function startRenameYear(yr, e) { e.stopPropagation(); setRenamingYear(yr); setRenameYearVal(String(yr)); }
-  function commitRenameYear(yr) {
-    const newYr = parseInt(renameYearVal.trim());
-    if (newYr && newYr !== yr) {
-      updateBizData(d => d.map(e => e.year === yr ? { ...e, year: newYr } : e));
-      if (selectedYear === yr) setSelectedYear(newYr);
-    }
-    setRenamingYear(null); setRenameYearVal("");
-  }
 
   function addBusiness() {
     if (!newBizName.trim()) return;
@@ -6665,14 +6608,6 @@ function BusinessPage({ data, update }) {
     if (!confirm("Delete this business and all its data?")) return;
     update(p => ({ businesses: (p.businesses || []).filter(b => b.id !== id) }));
     if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); }
-  }
-  const [renamingBizId, setRenamingBizId] = useState(null);
-  const [renameBizVal,  setRenameBizVal]  = useState("");
-  function startRenameBiz(id, currentName, e) { e.stopPropagation(); setRenamingBizId(id); setRenameBizVal(currentName); }
-  function commitRenameBiz(id) {
-    const name = renameBizVal.trim();
-    if (name) update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, name } : b) }));
-    setRenamingBizId(null); setRenameBizVal("");
   }
 
   function addYear() {
@@ -6999,18 +6934,8 @@ function BusinessPage({ data, update }) {
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
-                    <button onClick={ev=>startRenameBiz(biz.id, biz.name, ev)}
-                      style={{ position:"absolute", top:10, right:34, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"var(--color-text-secondary)", opacity:0.5, padding:2 }} title="Rename">✏️</button>
                     <div style={{ fontSize: 32, marginBottom: 6 }}>🏢</div>
-                    {renamingBizId === biz.id
-                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:4 }}>
-                          <input autoFocus value={renameBizVal} onChange={e=>setRenameBizVal(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameBiz(biz.id); if(e.key==="Escape") setRenamingBizId(null); }}
-                            onBlur={()=>commitRenameBiz(biz.id)}
-                            style={{ width:"100%", fontSize:18, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"'DM Serif Display', serif" }} />
-                        </div>
-                      : <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4, paddingRight: 44 }}>{biz.name}</div>
-                    }
+                    <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                       <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
@@ -7055,18 +6980,8 @@ function BusinessPage({ data, update }) {
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteYear(s.year); }}
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
-                    <button onClick={ev=>startRenameYear(s.year, ev)}
-                      style={{ position:"absolute", top:10, right:34, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"var(--color-text-secondary)", opacity:0.5, padding:2 }} title="Rename year">✏️</button>
                     <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
-                    {renamingYear === s.year
-                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:6 }}>
-                          <input autoFocus value={renameYearVal} onChange={e=>setRenameYearVal(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameYear(s.year); if(e.key==="Escape") setRenamingYear(null); }}
-                            onBlur={()=>commitRenameYear(s.year)}
-                            style={{ width:"100%", fontSize:20, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"'DM Serif Display', serif" }} />
-                        </div>
-                      : <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6, paddingRight: 44 }}>{s.year}</div>
-                    }
+                    <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                       <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
@@ -7303,14 +7218,6 @@ function ProjectsPage({ data, update }) {
     update(p => ({ projectsData: (p.projectsData || []).filter(pr => pr.id !== id) }));
     if (selectedProject === id) setSelectedProject(null);
   }
-  const [renamingProjectId, setRenamingProjectId] = useState(null);
-  const [renameProjectVal,  setRenameProjectVal]  = useState("");
-  function startRenameProject(id, currentName, e) { e.stopPropagation(); setRenamingProjectId(id); setRenameProjectVal(currentName); }
-  function commitRenameProject(id) {
-    const name = renameProjectVal.trim();
-    if (name) update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === id ? { ...pr, name } : pr) }));
-    setRenamingProjectId(null); setRenameProjectVal("");
-  }
 
   function addTask() {
     if (!taskForm.name.trim() || !project) return;
@@ -7529,18 +7436,8 @@ function ProjectsPage({ data, update }) {
                   >
                     <button onClick={ev => { ev.stopPropagation(); deleteProject(pr.id); }}
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>🗑</button>
-                    <button onClick={ev=>startRenameProject(pr.id, pr.name, ev)}
-                      style={{ position:"absolute", top:10, right:34, background:"none", border:"none", cursor:"pointer", fontSize:13, opacity:0.5, padding:2 }} title="Rename project">✏️</button>
                     <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
-                    {renamingProjectId === pr.id
-                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:4, paddingRight:20 }}>
-                          <input autoFocus value={renameProjectVal} onChange={e=>setRenameProjectVal(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameProject(pr.id); if(e.key==="Escape") setRenamingProjectId(null); }}
-                            onBlur={()=>commitRenameProject(pr.id)}
-                            style={{ width:"100%", fontSize:15, fontWeight:600, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit" }} />
-                        </div>
-                      : <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 48 }}>{pr.name}</div>
-                    }
+                    <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 }}>{pr.name}</div>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
                       {total} task{total !== 1 ? "s" : ""} · {(pr.files || []).length} file{(pr.files || []).length !== 1 ? "s" : ""}
                     </div>
@@ -7800,22 +7697,18 @@ function ProjectsPage({ data, update }) {
                       <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
                         <span style={{ fontWeight:600, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{filePreview.name}</span>
                         <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
-                          {filePreview.webViewLink && <a href={filePreview.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
-                          {filePreview.downloadUrl && <a href={filePreview.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
-                          {filePreview.dataUrl && !filePreview.downloadUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
+                          {filePreview.dataUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
                           <button onClick={() => setFilePreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
                         </div>
                       </div>
                       <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
-                        {filePreview.previewUrl
-                          ? <iframe src={filePreview.previewUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" allow="autoplay" />
-                          : filePreview.dataUrl?.startsWith("data:image")
-                            ? <img src={filePreview.dataUrl} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
-                            : filePreview.dataUrl?.startsWith("data:application/pdf") || filePreview.type === "application/pdf"
+                        {filePreview.dataUrl?.startsWith("data:image")
+                          ? <img src={filePreview.dataUrl} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
+                          : filePreview.dataUrl?.startsWith("data:application/pdf") || filePreview.type === "application/pdf"
+                            ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
+                            : filePreview.dataUrl
                               ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                              : filePreview.dataUrl
-                                ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                                : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
+                              : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
                         }
                       </div>
                     </div>
@@ -7839,23 +7732,20 @@ function ProjectsPage({ data, update }) {
                   <div style={{ padding: "0.5rem 0" }}>
                     {files.map(f => (
                       <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                        <div onClick={() => (f.dataUrl || f.previewUrl) && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: (f.dataUrl || f.previewUrl) ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
+                        <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: f.dataUrl ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
                           {f.type?.startsWith("image/") && f.dataUrl
                             ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                             : <span>{fileIcon(f.type)}</span>
                           }
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div onClick={() => (f.dataUrl || f.previewUrl) && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: (f.dataUrl || f.previewUrl) ? "pointer" : "default" }}>{f.name}</div>
+                          <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: f.dataUrl ? "pointer" : "default" }}>{f.name}</div>
                           <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
                         </div>
-                        {(f.dataUrl || f.previewUrl) && (
+                        {f.dataUrl && (
                           <button onClick={() => setFilePreview(f)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)", flexShrink: 0 }}>👁 Preview</button>
                         )}
-                        {f.downloadUrl
-                          ? <a href={f.downloadUrl} target="_blank" rel="noreferrer" style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
-                          : f.dataUrl && <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
-                        }
+                        <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
                         <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
                       </div>
                     ))}
