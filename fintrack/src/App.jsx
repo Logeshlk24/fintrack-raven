@@ -30,6 +30,21 @@ const LIGHT_MODE_STYLE = `
     border-radius: 6px;
     padding: 6px 10px;
   }
+
+  /* CSS-driven mobile responsive — works even if JS matchMedia returns wrong value */
+  @media (max-width: 767px) {
+    .ft-sidebar { display: none !important; }
+    .ft-bottom-nav { display: flex !important; }
+    .ft-main { padding: 1rem !important; padding-bottom: 80px !important; }
+    .ft-money-grid { grid-template-columns: 1fr !important; }
+    .ft-period-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .ft-period-bar::-webkit-scrollbar { display: none; }
+    .ft-tab-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .ft-tab-bar::-webkit-scrollbar { display: none; }
+  }
+  @media (min-width: 768px) {
+    .ft-bottom-nav { display: none !important; }
+  }
 `;
 
 // ── localStorage → kept only for one-time migration on first sign-in ──────────
@@ -451,7 +466,7 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
 
       {/* Sidebar — hidden on mobile */}
-      <aside style={{
+      <aside className="ft-sidebar" style={{
         width: sidebarCollapsed ? 56 : 200,
         background: "var(--color-background-primary)",
         borderRight: "0.5px solid var(--color-border-tertiary)",
@@ -571,7 +586,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
+      <main className="ft-main" style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} mobile={mobile} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
@@ -624,7 +639,7 @@ export default function App() {
           )}
 
           {/* Bottom bar */}
-          <nav style={{
+          <nav className="ft-bottom-nav" style={{
             position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
             background: "var(--color-background-primary)",
             borderTop: "0.5px solid var(--color-border-tertiary)",
@@ -1643,7 +1658,7 @@ function MoneyPage({ data, update, tab, setTab, mobile }) {
       {(tab === "income" || tab === "expenses") && (
         <>
           <PeriodBar periods={["This Week", "This Month", "Last Month", "6M", "12M"]} active={period} setActive={setPeriod} />
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1.4fr", gap: 16, marginTop: 16 }}>
+          <div className="ft-money-grid" style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1.4fr", gap: 16, marginTop: 16 }}>
             <Card title={`Add ${tab === "income" ? "Income" : "Expense"}`}>
               <LabelInput label="Amount (INR)" placeholder="e.g. 5000" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
               <LabelInput label="Notes" placeholder="optional" value={form.note} onChange={v => setForm(p => ({ ...p, note: v }))} />
@@ -8039,7 +8054,7 @@ function Card({ title, children, action }) {
 
 function TabBar({ tabs, active, setActive, labels }) {
   return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
+    <div className="ft-tab-bar" style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
       {tabs.map((t, i) => (
         <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
           {labels ? labels[i] : t}
@@ -8051,7 +8066,7 @@ function TabBar({ tabs, active, setActive, labels }) {
 
 function PeriodBar({ periods, active, setActive }) {
   return (
-    <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+    <div className="ft-period-bar" style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
       {periods.map(p => (
         <button key={p} onClick={() => setActive(p)} style={{ padding: "4px 12px", borderRadius: 6, border: "0.5px solid", borderColor: active === p ? "#1a6b3c" : "var(--color-border-secondary)", background: active === p ? "#1a6b3c" : "transparent", color: active === p ? "#fff" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer" }}>{p}</button>
       ))}
