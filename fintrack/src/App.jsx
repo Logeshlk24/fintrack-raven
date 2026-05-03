@@ -8449,46 +8449,8 @@ function DividendView({ data }) {
     return s;
   }
 
-  // Fetch dividend data for one ticker via CORS proxy → Yahoo Finance v8 chart API
-  // Browser-side fetch through corsproxy bypasses Yahoo's server-side blocking
-  async function fetchOneTicker(ticker) {
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d&includePrePost=false`;
-    const yahooUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d&includePrePost=false`;
-
-    // Try direct first (works on some networks), then via CORS proxy
-    const attempts = [
-      yahooUrl,
-      yahooUrl2,
-      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-    ];
-
-    for (const url of attempts) {
-      try {
-        const r = await fetch(url, {
-          headers: { "Accept": "application/json, text/plain, */*" },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!r.ok) continue;
-        const j = await r.json();
-        const meta = j?.chart?.result?.[0]?.meta;
-        if (!meta) continue;
-
-        const divRate  = meta.trailingAnnualDividendRate ?? null;
-        const divYield = meta.trailingAnnualDividendYield ?? null;
-        const isPaying = divRate != null && divRate > 0;
-        return {
-          ok: true, ticker, isPaying,
-          dividendRate: divRate, dividendYield: divYield,
-          trailingDivRate: divRate, trailingDivYield: divYield,
-          exDividendDate: null, dividendDate: null,
-          lastDividendValue: null, payoutRatio: null, fiveYearAvgYield: null,
-        };
-      } catch (_) {}
-    }
-    return { ok: false, ticker, isPaying: false };
-  }
-
+  // Fetch dividend data using Vercel API route as a proxy with crumb auth
+  // The API route fetches a crumb from Yahoo and uses it for authenticated requests
   async function fetchDividends(holdingsOverride) {
     const holdings = holdingsOverride ?? indHoldings;
     setLoading(true); setError(""); setLoaded(false);
@@ -8498,12 +8460,84 @@ function DividendView({ data }) {
     const tickers = [...new Set(allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
     setProgress({ done: 0, total: tickers.length });
 
-    // Fetch 3 at a time — CORS proxies have rate limits
+    // Try to get a crumb from Yahoo using a CORS proxy, then fetch dividend data
+    let crumb = "";
+    let yahooCookie = "";
+    try {
+      // Step 1: Get crumb via proxy
+      const crumbUrl = "https://query1.finance.yahoo.com/v1/test/getcrumb";
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(crumbUrl)}`;
+      const crumbRes = await fetch(proxyUrl, { credentials: "include", signal: AbortSignal.timeout(5000) });
+      if (crumbRes.ok) crumb = (await crumbRes.text()).trim();
+    } catch (_) {}
+
     const BATCH = 3;
     const collected = {};
+
     for (let i = 0; i < tickers.length; i += BATCH) {
       const batch = tickers.slice(i, i + BATCH);
-      const results = await Promise.all(batch.map(t => fetchOneTicker(t)));
+      const results = await Promise.all(batch.map(async ticker => {
+        // Build Yahoo v10 quoteSummary URL
+        const modules = "summaryDetail,defaultKeyStatistics";
+        const base = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}${crumb ? "&crumb=" + encodeURIComponent(crumb) : ""}`;
+        const base2 = base.replace("query1", "query2");
+
+        const attempts = [
+          `https://corsproxy.io/?${encodeURIComponent(base)}`,
+          `https://corsproxy.io/?${encodeURIComponent(base2)}`,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+        ];
+
+        for (const url of attempts) {
+          try {
+            const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) continue;
+            const j = await r.json();
+            const result = j?.quoteSummary?.result?.[0];
+            if (!result) continue;
+            const sd = result.summaryDetail || {};
+            const ks = result.defaultKeyStatistics || {};
+            const raw = v => (v && typeof v === "object" ? v.raw : v) ?? null;
+            const divRate  = raw(sd.dividendRate) ?? raw(sd.trailingAnnualDividendRate);
+            const divYield = raw(sd.dividendYield) ?? raw(sd.trailingAnnualDividendYield);
+            const isPaying = divRate != null && divRate > 0;
+            return {
+              ok: true, ticker, isPaying,
+              dividendRate: divRate, dividendYield: divYield,
+              trailingDivRate: raw(sd.trailingAnnualDividendRate),
+              trailingDivYield: raw(sd.trailingAnnualDividendYield),
+              exDividendDate: raw(sd.exDividendDate),
+              dividendDate: raw(ks.lastDividendDate) ?? raw(sd.exDividendDate),
+              lastDividendValue: raw(ks.lastDividendValue),
+              payoutRatio: raw(sd.payoutRatio),
+              fiveYearAvgYield: raw(sd.fiveYearAvgDividendYield),
+            };
+          } catch (_) {}
+        }
+
+        // Fallback: v8 chart endpoint (has trailingAnnualDividendRate in meta)
+        const chartBase = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+        const fallbackAttempts = [
+          `https://corsproxy.io/?${encodeURIComponent(chartBase)}`,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(chartBase)}`,
+        ];
+        for (const url of fallbackAttempts) {
+          try {
+            const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) continue;
+            const j = await r.json();
+            const meta = j?.chart?.result?.[0]?.meta;
+            if (!meta) continue;
+            const divRate  = meta.trailingAnnualDividendRate ?? null;
+            const divYield = meta.trailingAnnualDividendYield ?? null;
+            return { ok: true, ticker, isPaying: divRate > 0, dividendRate: divRate, dividendYield: divYield,
+              trailingDivRate: divRate, trailingDivYield: divYield, exDividendDate: null, dividendDate: null,
+              lastDividendValue: null, payoutRatio: null, fiveYearAvgYield: null };
+          } catch (_) {}
+        }
+
+        return { ok: false, ticker, isPaying: false };
+      }));
       results.forEach((r, j) => { collected[batch[j]] = r; });
       setProgress({ done: Math.min(i + BATCH, tickers.length), total: tickers.length });
     }
@@ -8512,6 +8546,12 @@ function DividendView({ data }) {
     setLoaded(true);
     setLoading(false);
     setLastUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+
+    // Show error if nothing worked
+    const successCount = Object.values(collected).filter(d => d.ok).length;
+    if (successCount === 0 && tickers.length > 0) {
+      setError("Could not fetch dividend data — Yahoo Finance may be temporarily unavailable. Try Refresh.");
+    }
   }
 
   // Auto-fetch whenever indHoldings populates (Firestore is async — could be [] on first render)
@@ -9945,6 +9985,9 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             <StatCard label="Total P&L"      value={fmtPnlVal(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
             <StatCard label="Day's P&L"      value={fmtPnlVal(dayPnl)}         icon="📅" pnl={dayPnl} />
             <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
+            </div>
+          {/* XIRR + CAGR always on same row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
             <StatCard
               label="XIRR"
               value={portfolioXIRR != null ? fmtRate(portfolioXIRR) : "Add buy dates"}
