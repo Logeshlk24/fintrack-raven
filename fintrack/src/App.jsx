@@ -1940,6 +1940,28 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
   const [showFilter, setShowFilter] = useState(false);
   const [showSort, setShowSort]   = useState(false);
 
+  const transfers = (data.transactions || [])
+    .filter(t => t.isTransfer && t.transferRole === "out")
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  function getAcctName(id) {
+    const a = (accounts || []).find(a => String(a.id) === String(id));
+    return a ? a.name : "—";
+  }
+  function getAcctType(id) {
+    return (accounts || []).find(a => String(a.id) === String(id))?.type || "Bank";
+  }
+  function badgeStyle(id) {
+    const t = getAcctType(id);
+    if (t === "Credit Card") return { background: "#fff3e0", color: "#e65100" };
+    if (t === "Cash") return { background: "#f0fdf4", color: "#166534" };
+    return { background: "#e8f5ee", color: "#1a6b3c" };
+  }
+  function deleteTransfer(pairId) {
+    if (!window.confirm("Delete this transfer? Both entries will be removed.")) return;
+    update(p => ({ transactions: p.transactions.filter(t => t.transferPairId !== pairId) }));
+  }
+
   const allTx = (data.transactions || [])
     .filter(t => !t.isTransfer)
     .filter(t => filterType === "all" || t.type === filterType)
@@ -2121,11 +2143,47 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
           })}
         </div>
       )}
+
+      {/* Transfer History */}
+      {transfers.length > 0 && (
+        <div style={{ marginTop: 24, background: "var(--color-background-primary)", borderRadius: 16, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>↔ Transfer History</span>
+            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{transfers.length} transfers</span>
+          </div>
+          {transfers.map((t, idx) => {
+            const toAcct = (accounts || []).find(a => String(a.id) === String(t.transferToId));
+            return (
+              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: idx < transfers.length - 1 ? "0.5px solid var(--color-border-tertiary)" : "none" }}>
+                <div style={{ width: 44, height: 44, borderRadius: 13, background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>↔</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 3 }}>
+                    <span style={{ ...badgeStyle(t.bankId), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>{getAcctName(t.bankId)}</span>
+                    <span style={{ color: "#1a6b3c", fontWeight: 700 }}>→</span>
+                    <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : { color: "var(--color-text-secondary)" }), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
+                      {toAcct ? toAcct.name : "—"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                    {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: "#1a6b3c", flexShrink: 0 }}>
+                  ₹{Number(t.amount).toLocaleString("en-IN")}
+                </div>
+                <button onClick={() => deleteTransfer(t.transferPairId)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, opacity: 0.5, padding: "2px 4px", flexShrink: 0 }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                  onMouseLeave={e => e.currentTarget.style.opacity = "0.5"}
+                >🗑</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
-
-// ─── Recent Transactions Tab ─────────────────────────────────────────────────
 const CATEGORY_ICONS = {
   // Expense
   "Food": "🍽️", "Snacks": "🧃", "Drinks": "🥤", "Coffee": "☕", "Restaurant": "🍽️",
@@ -4203,7 +4261,7 @@ function TransferTab({ data, update, accounts }) {
   ].filter(g => g.list.length > 0);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, marginTop: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16, marginTop: 16 }}>
 
       {/* Left: form */}
       <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
@@ -4282,53 +4340,10 @@ function TransferTab({ data, update, accounts }) {
           style={{ width: "100%", background: accounts.length < 2 ? "#ccc" : "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", cursor: accounts.length < 2 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 600 }}>
           ↔ Transfer
         </button>
-      </div>
 
-      {/* Right: history */}
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>
-          Transfer History
-          <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)", marginLeft: 8 }}>{transfers.length} transfers</span>
+        <div style={{ marginTop: 10, fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center" }}>
+          Transfer history is visible in the Transactions tab
         </div>
-
-        {transfers.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "3.5rem 1rem", color: "var(--color-text-secondary)", fontSize: 13 }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>↔</div>
-            No transfers yet.<br/>Use the form to move money between accounts.
-          </div>
-        ) : (
-          <div>
-            {transfers.map(t => {
-              const toAcct = accounts.find(a => String(a.id) === String(t.transferToId));
-              return (
-                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 4px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                  {/* Icon */}
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>↔</div>
-                  {/* Details */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 3 }}>
-                      <span style={{ ...badgeStyle(t.bankId), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>{getAcctName(t.bankId)}</span>
-                      <span style={{ color: "#1a6b3c", fontWeight: 700 }}>→</span>
-                      <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : { color: "var(--color-text-secondary)" }), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
-                        {toAcct ? toAcct.name : "—"}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-                      {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
-                    </div>
-                  </div>
-                  {/* Amount */}
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "#1a6b3c", flexShrink: 0 }}>
-                    ₹{Number(t.amount).toLocaleString("en-IN")}
-                  </div>
-                  {/* Delete */}
-                  <button onClick={() => deleteTransfer(t.transferPairId)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, opacity: 0.6, padding: "2px 4px", flexShrink: 0 }}>🗑</button>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -5032,7 +5047,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
           </div>
         </>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         <Card title="Add Scheduled Payment">
           {/* Income / Expense toggle */}
@@ -5644,7 +5659,7 @@ function LiabilitiesTab({ data, update }) {
 
       {/* Add Liability Form */}
       <Card title="➕ Add Liability">
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Name</label>
             <input placeholder="e.g. HDFC Credit Card, Personal Loan" value={liabilityForm.name} onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -5710,7 +5725,7 @@ function LiabilitiesTab({ data, update }) {
             )}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
