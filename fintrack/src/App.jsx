@@ -39,6 +39,12 @@ const LIGHT_MODE_STYLE = `
     table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     /* Inputs always fit */
     input[type="time"], input[type="date"] { min-width: 0; width: 100% !important; }
+    /* Mobile holdings stats grid: 2 cols instead of 4 */
+    .mobile-stats-2col { grid-template-columns: 1fr 1fr !important; }
+    /* Make pie chart wrap on mobile */
+    .pie-wrap { flex-direction: column !important; align-items: center !important; }
+    /* Bar charts: don't overflow */
+    svg { max-width: 100%; }
   }
 `;
 
@@ -2548,7 +2554,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
             );
           })()}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, margin: "10px 0" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, margin: "10px 0" }}>
             <StatCard label="Total Trades" value={filtered.length} />
             <StatCard label="Winners" value={winners} />
             <StatCard label="Losers" value={losers} />
@@ -2556,7 +2562,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
             <StatCard label="Net P&L (after charges)" value={fmtCur(filteredPnl)} pnl={filteredPnl} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16 }}>
             <Card title="Log New Trade">
               {/* Row 1: Date */}
               <div style={{ marginBottom: 8 }}>
@@ -4585,7 +4591,7 @@ function AnalysisTab({ data }) {
           ))}
         </div>
         <div style={{display:"flex",gap:32,alignItems:"flex-start",flexWrap:"wrap"}}>
-          <svg width={240} height={220} style={{flexShrink:0}}>
+          <svg width={240} height={220} style={{flexShrink:0,maxWidth:"100%"}}>
             {slices.map((s,i)=>(
               <path key={i}
                 d={`M${CX},${CY} L${s.x1},${s.y1} A${R},${R} 0 ${s.large},1 ${s.x2},${s.y2} Z`}
@@ -4652,7 +4658,7 @@ function AnalysisTab({ data }) {
     const mExpense=Object.values(dayMap).reduce((s,d)=>s+d.expense,0);
     return (
       <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}}>
-        <div style={{flex:"0 0 auto",minWidth:320}}>
+        <div style={{flex:"1 1 auto",minWidth:0,maxWidth:"100%"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
             <button onClick={prev} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>‹</button>
             <span style={{fontWeight:700,fontSize:15}}>{MONTHS[calMonth]} {calYear}</span>
@@ -5032,7 +5038,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
           </div>
         </>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         <Card title="Add Scheduled Payment">
           {/* Income / Expense toggle */}
@@ -5644,7 +5650,7 @@ function LiabilitiesTab({ data, update }) {
 
       {/* Add Liability Form */}
       <Card title="➕ Add Liability">
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Name</label>
             <input placeholder="e.g. HDFC Credit Card, Personal Loan" value={liabilityForm.name} onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -5710,7 +5716,7 @@ function LiabilitiesTab({ data, update }) {
             )}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
@@ -7463,7 +7469,7 @@ function ProjectsPage({ data, update }) {
         <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
 
           {/* LEFT PANEL — Tabbed: Tasks | Files | Notes */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}) }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}), minWidth: 0 }}>
 
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px", flexShrink: 0 }}>
@@ -10136,7 +10142,7 @@ function MutualFundsPage({ data, update }) {
         <>
           {showForm && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem", marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10 }}>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Fund Name *</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Mirae Asset Large Cap" style={{ width: "100%", boxSizing: "border-box" }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Units</label><input type="number" value={form.units} onChange={e => setForm(p => ({ ...p, units: e.target.value }))} placeholder="e.g. 100.5" style={{ width: "100%", boxSizing: "border-box" }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Current NAV (₹)</label><input type="number" value={form.nav} onChange={e => setForm(p => ({ ...p, nav: e.target.value }))} placeholder="e.g. 85.4" style={{ width: "100%", boxSizing: "border-box" }} /></div>
@@ -10150,6 +10156,7 @@ function MutualFundsPage({ data, update }) {
             <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)", fontSize: 13 }}>No mutual funds yet. Click "+ Add Fund" to add.</div>
           ) : (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ background: "var(--color-background-secondary)" }}>
                   {["Fund","Units","NAV","Invested","Current Value","Return","Return %","CAGR","XIRR",""].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: h === "Fund" ? "left" : "right", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>)}
@@ -10193,6 +10200,7 @@ function MutualFundsPage({ data, update }) {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>
@@ -10916,7 +10924,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
                 </div>
               </div>
               {/* Row 2: LTP | Day Chg | Invested | Cur Value */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
+              <div className="mobile-stats-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
                 <div>
                   <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>LTP</div>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>
