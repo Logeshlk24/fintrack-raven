@@ -1882,8 +1882,8 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                     {groupNet >= 0 ? "+" : "-"}₹{Math.abs(groupNet).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                   </span>
                 </div>
-                {/* Transaction rows */}
-                {group.items.map((t, idx) => {
+                {/* Transaction rows — newest first within group */}
+                {group.items.slice().sort((a, b) => new Date(b.date) - new Date(a.date) || (b.id - a.id)).map((t, idx, arr) => {
                   const acct = accounts.find(b => String(b.id) === String(t.bankId));
                   const { bg, iconColor } = getCategoryColorLight(t.category || t.note, t.type);
                   const emoji = getCategoryIcon(t.category || t.note);
@@ -1894,7 +1894,7 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                       style={{
                         display: "flex", alignItems: "center", gap: 12,
                         padding: "13px 16px",
-                        borderBottom: idx < group.items.length - 1 ? "0.5px solid var(--color-border-tertiary)" : "none",
+                        borderBottom: idx < arr.length - 1 ? "0.5px solid var(--color-border-tertiary)" : "none",
                         cursor: "pointer", transition: "background 0.12s",
                       }}
                       onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
@@ -1906,33 +1906,37 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                       </div>
                       {/* Category + account */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text-primary)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text-primary)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {t.category || t.note || "Uncategorized"}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--color-text-secondary)" }}>
                           {acct && <><span style={{ fontSize: 11 }}>🏛</span><span>{acct.name}</span></>}
                           {t.note && t.category && <span style={{ color: "var(--color-border-primary)" }}>· {t.note}</span>}
+                        </div>
+                      </div>
+                      {/* Right side: pill + amount stacked, then delete */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                        <div style={{ textAlign: "right" }}>
                           {/* Type pill */}
-                          <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, background: isIncome ? "#e8f5ee" : "#fff0f0", color: isIncome ? "#1a6b3c" : "#cc2222", borderRadius: 6, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                            {isIncome ? "Income" : "Expense"}
-                          </span>
+                          <div style={{ marginBottom: 4 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, background: isIncome ? "#e8f5ee" : "#fff0f0", color: isIncome ? "#1a6b3c" : "#cc2222", borderRadius: 5, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              {isIncome ? "Income" : "Expense"}
+                            </span>
+                          </div>
+                          {/* Amount */}
+                          <div style={{ fontWeight: 700, fontSize: 15, color: isIncome ? "#1a6b3c" : "var(--color-text-primary)" }}>
+                            ₹{Number(t.amount).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
+                          </div>
                         </div>
+                        {/* Delete */}
+                        <button
+                          onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
+                          title="Delete"
+                          onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
+                        >🗑</button>
                       </div>
-                      {/* Amount + time */}
-                      <div style={{ textAlign: "right", flexShrink: 0, minWidth: 72 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15, color: isIncome ? "#1a6b3c" : "var(--color-text-primary)", marginBottom: 2 }}>
-                          {isIncome ? "+" : ""}₹{Number(t.amount).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
-                        </div>
-                        {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{t.time}</div>}
-                      </div>
-                      {/* Delete */}
-                      <button
-                        onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.5 }}
-                        title="Delete"
-                        onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.5"; }}
-                      >🗑</button>
                     </div>
                   );
                 })}
