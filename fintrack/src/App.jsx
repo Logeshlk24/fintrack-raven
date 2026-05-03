@@ -120,7 +120,6 @@ const defaultData = {
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
-  liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
 };
 
 
