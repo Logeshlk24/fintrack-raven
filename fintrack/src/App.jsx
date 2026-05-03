@@ -30,13 +30,6 @@ const LIGHT_MODE_STYLE = `
     border-radius: 6px;
     padding: 6px 10px;
   }
-  html, body {
-    overflow-x: hidden;
-    max-width: 100vw;
-  }
-  @media (max-width: 767px) {
-    * { box-sizing: border-box; }
-  }
 `;
 
 // ── localStorage → kept only for one-time migration on first sign-in ──────────
@@ -453,7 +446,7 @@ export default function App() {
 
   return (
     <DriveProvider data={data} update={update}>
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)", overflowX: "hidden", maxWidth: "100vw" }}>
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" }}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
 
@@ -578,7 +571,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: mobile ? "100vw" : undefined, boxSizing: "border-box" }}>
+      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
@@ -1149,7 +1142,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Top stat row — F&O card hidden when toggle is off */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
         <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
         {/* Income card with period toggle */}
@@ -1190,7 +1183,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Portfolio + To-Do row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: portfolioOn ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
 
         {/* ── Portfolio Summary ── */}
         {portfolioOn && (() => {
@@ -1522,7 +1515,7 @@ function MoneyPage({ data, update, tab, setTab }) {
   }
   const expense = data.transactions.filter(t => t.type === "expense" && filterByPeriod(t.date, period)).reduce((s, t) => s + Number(t.amount), 0);
 
-  const pageTitle = { expenses: "Expenses", income: "Income", scheduled: "Scheduled Payments", liabilities: "Liabilities" }[tab];
+  const pageTitle = { expenses: "Expenses", income: "Income", recent: "Recent Transactions", scheduled: "Scheduled Payments", liabilities: "Liabilities" }[tab];
 
   const banks = accounts.filter(a => a.type === "Bank");
   const cards = accounts.filter(a => a.type === "Credit Card");
@@ -1635,10 +1628,10 @@ function MoneyPage({ data, update, tab, setTab }) {
         </div>
       )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle}</h1>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle || (tab === "recent" ? "Recent Transactions" : tab)}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
-      <TabBar tabs={["expenses", "income", "transfer", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Transfer", "Scheduled", "Liabilities", "Analysis"]} />
+      <TabBar tabs={["expenses", "income", "recent", "transfer", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Recent", "Transfer", "Scheduled", "Liabilities", "Analysis"]} />
 
       {/* ── Transfer Tab ── */}
       {tab === "transfer" && <TransferTab data={data} update={update} accounts={accounts} />}
@@ -1755,9 +1748,232 @@ function MoneyPage({ data, update, tab, setTab }) {
         </>
       )}
 
+      {/* ── Recent Transactions Tab ── */}
+      {tab === "recent" && <RecentTransactionsTab data={data} update={update} accounts={accounts} setEditTx={setEditTx} />}
+
       {/* ── Liabilities Tab ── */}
       {tab === "liabilities" && <LiabilitiesTab data={data} update={update} />}
       {tab === "analysis" && <AnalysisTab data={data} />}
+    </div>
+  );
+}
+
+// ─── Recent Transactions Tab ─────────────────────────────────────────────────
+const CATEGORY_ICONS = {
+  // Expense
+  "Food": "🍽️", "Snacks": "🧃", "Drinks": "🥤", "Coffee": "☕", "Restaurant": "🍽️",
+  "Rent": "🏠", "Home": "🏠", "Travel": "✈️", "Transport": "🚌", "Cab": "🚕", "Petrol": "⛽",
+  "Shopping": "🛍️", "Clothes": "👕", "Health": "💊", "Medical": "🏥", "Gym": "💪",
+  "Bills": "📋", "Electricity": "⚡", "Water": "💧", "Internet": "📶", "EMI": "💳",
+  "Entertainment": "🎬", "Movies": "🎬", "Games": "🎮", "Subscriptions": "📺",
+  "Education": "📚", "Salary": "💰", "Freelance": "💼", "Investment": "📈",
+  "Business": "🏢", "Gift": "🎁", "Transfer": "↔️", "Other": "📌",
+  "Sbi card": "💳", "Credit Card": "💳",
+};
+
+function getCategoryIcon(category) {
+  if (!category) return "📌";
+  for (const [key, icon] of Object.entries(CATEGORY_ICONS)) {
+    if (category.toLowerCase().includes(key.toLowerCase())) return icon;
+  }
+  return "📌";
+}
+
+function getCategoryColor(category, type) {
+  if (type === "income") return { bg: "#1a3d2b", icon: "#4cc97a" };
+  const cat = (category || "").toLowerCase();
+  if (cat.includes("food") || cat.includes("snack") || cat.includes("restaurant") || cat.includes("juice") || cat.includes("tea") || cat.includes("shawarma")) return { bg: "#3d2a1a", icon: "#e8945a" };
+  if (cat.includes("rent") || cat.includes("home")) return { bg: "#1a1a3d", icon: "#8888ff" };
+  if (cat.includes("travel") || cat.includes("cab") || cat.includes("petrol")) return { bg: "#2a1a3d", icon: "#cc88ff" };
+  if (cat.includes("health") || cat.includes("medical")) return { bg: "#3d1a1a", icon: "#ff8888" };
+  if (cat.includes("card") || cat.includes("emi") || cat.includes("sbi card")) return { bg: "#3d1a1a", icon: "#ff6b6b" };
+  if (cat.includes("shop") || cat.includes("cloth")) return { bg: "#1a3030", icon: "#4cc9c9" };
+  return { bg: "#2a2a2a", icon: "#aaaaaa" };
+}
+
+function groupByDate(transactions) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const groups = {};
+  transactions.forEach(t => {
+    const d = new Date(t.date); d.setHours(0,0,0,0);
+    let label;
+    if (d.getTime() === today.getTime()) label = "Today";
+    else if (d.getTime() === yesterday.getTime()) label = "Yesterday";
+    else label = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined });
+    if (!groups[label]) groups[label] = { label, date: d, items: [] };
+    groups[label].items.push(t);
+  });
+  return Object.values(groups).sort((a, b) => b.date - a.date);
+}
+
+function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("all"); // all | expense | income
+  const [sortBy, setSortBy] = useState("date"); // date | amount
+  const [showFilter, setShowFilter] = useState(false);
+  const [showSort, setShowSort] = useState(false);
+
+  const allTx = (data.transactions || [])
+    .filter(t => !t.isTransfer)
+    .filter(t => filterType === "all" || t.type === filterType)
+    .filter(t => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (t.category || "").toLowerCase().includes(q) ||
+             (t.note || "").toLowerCase().includes(q) ||
+             String(t.amount).includes(q);
+    })
+    .slice()
+    .sort((a, b) => {
+      if (sortBy === "amount") return Number(b.amount) - Number(a.amount);
+      return new Date(b.date) - new Date(a.date);
+    });
+
+  const grouped = groupByDate(allTx);
+
+  const totalExpense = allTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const totalIncome  = allTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/* Search + Filter + Sort bar */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "#1e1e2e", borderRadius: 14, padding: "10px 16px", border: "0.5px solid #2a2a3e" }}>
+          <span style={{ fontSize: 16, color: "#6b7280" }}>🔍</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search transactions"
+            style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 14, color: "#e5e7eb", padding: 0 }}
+          />
+          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#6b7280", padding: 0 }}>✕</button>}
+        </div>
+        {/* Filter button */}
+        <div style={{ position: "relative" }}>
+          <button onClick={() => { setShowFilter(p => !p); setShowSort(false); }} style={{
+            width: 44, height: 44, borderRadius: "50%", background: filterType !== "all" ? "#1a6b3c" : "#1e1e2e",
+            border: "0.5px solid #2a2a3e", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
+          }}>▽</button>
+          {showFilter && (
+            <div style={{ position: "absolute", top: 50, right: 0, background: "#1e1e2e", border: "0.5px solid #2a2a3e", borderRadius: 12, zIndex: 50, minWidth: 140, boxShadow: "0 4px 20px rgba(0,0,0,0.4)", overflow: "hidden" }}>
+              {[["all","All"], ["expense","Expenses"], ["income","Income"]].map(([v, l]) => (
+                <button key={v} onClick={() => { setFilterType(v); setShowFilter(false); }}
+                  style={{ display: "block", width: "100%", padding: "10px 16px", background: filterType === v ? "#1a6b3c22" : "none", border: "none", cursor: "pointer", textAlign: "left", fontSize: 13, color: filterType === v ? "#4cc97a" : "#e5e7eb", fontWeight: filterType === v ? 600 : 400 }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* Sort button */}
+        <div style={{ position: "relative" }}>
+          <button onClick={() => { setShowSort(p => !p); setShowFilter(false); }} style={{
+            width: 44, height: 44, borderRadius: "50%", background: "#1e1e2e",
+            border: "0.5px solid #2a2a3e", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
+          }}>≡</button>
+          {showSort && (
+            <div style={{ position: "absolute", top: 50, right: 0, background: "#1e1e2e", border: "0.5px solid #2a2a3e", borderRadius: 12, zIndex: 50, minWidth: 150, boxShadow: "0 4px 20px rgba(0,0,0,0.4)", overflow: "hidden" }}>
+              {[["date","By Date"], ["amount","By Amount"]].map(([v, l]) => (
+                <button key={v} onClick={() => { setSortBy(v); setShowSort(false); }}
+                  style={{ display: "block", width: "100%", padding: "10px 16px", background: sortBy === v ? "#1a6b3c22" : "none", border: "none", cursor: "pointer", textAlign: "left", fontSize: 13, color: sortBy === v ? "#4cc97a" : "#e5e7eb", fontWeight: sortBy === v ? 600 : 400 }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Summary strip */}
+      {filterType !== "expense" && filterType !== "income" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+          <div style={{ flex: 1, background: "#1a3d2b", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #2a5a3a" }}>
+            <div style={{ fontSize: 11, color: "#4cc97a", marginBottom: 2 }}>Total Income</div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: "#4cc97a" }}>+₹{totalIncome.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+          </div>
+          <div style={{ flex: 1, background: "#3d1a1a", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #5a2a2a" }}>
+            <div style={{ fontSize: 11, color: "#ff8888", marginBottom: 2 }}>Total Expenses</div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: "#ff8888" }}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Grouped transaction list */}
+      {grouped.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#6b7280", fontSize: 14 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+          No transactions found
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {grouped.map(group => {
+            const groupTotal = group.items.reduce((s, t) => t.type === "expense" ? s - Number(t.amount) : s + Number(t.amount), 0);
+            return (
+              <div key={group.label} style={{ background: "#1e1e2e", borderRadius: 16, overflow: "hidden", border: "0.5px solid #2a2a3e" }}>
+                {/* Group header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "0.5px solid #2a2a3e" }}>
+                  <span style={{ fontWeight: 700, fontSize: 16, color: "#f3f4f6" }}>{group.label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: groupTotal >= 0 ? "#4cc97a" : "#ff8888" }}>
+                    {groupTotal >= 0 ? "+" : ""}₹{Math.abs(groupTotal).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
+                  </span>
+                </div>
+                {/* Transactions */}
+                {group.items.map((t, idx) => {
+                  const acct = accounts.find(b => String(b.id) === String(t.bankId));
+                  const { bg, icon: iconColor } = getCategoryColor(t.category || t.note, t.type);
+                  const emoji = getCategoryIcon(t.category || t.note);
+                  const timeStr = t.time || "";
+                  return (
+                    <div key={t.id}
+                      onClick={() => setEditTx && setEditTx({ ...t })}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 14,
+                        padding: "14px 16px",
+                        borderBottom: idx < group.items.length - 1 ? "0.5px solid #2a2a3e" : "none",
+                        cursor: "pointer",
+                        transition: "background 0.15s",
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = "#252535"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    >
+                      {/* Icon circle */}
+                      <div style={{ width: 46, height: 46, borderRadius: 14, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: `0.5px solid ${iconColor}33` }}>
+                        {emoji}
+                      </div>
+                      {/* Middle: category + account */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: "#f3f4f6", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {t.category || t.note || "Uncategorized"}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#6b7280" }}>
+                          {acct && <><span>🏛</span><span>{acct.name}</span></>}
+                          {t.note && t.category && <span style={{ color: "#4a4a5a" }}>· {t.note}</span>}
+                        </div>
+                      </div>
+                      {/* Right: amount + time + delete */}
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: t.type === "income" ? "#4cc97a" : "#f3f4f6", marginBottom: 3 }}>
+                          {t.type === "income" ? "+" : ""}₹{Number(t.amount).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
+                        </div>
+                        {timeStr && <div style={{ fontSize: 11, color: "#6b7280" }}>{timeStr}</div>}
+                      </div>
+                      {/* Delete button */}
+                      <button
+                        onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#3a3a4a", padding: "4px", borderRadius: 6, flexShrink: 0 }}
+                        title="Delete"
+                        onMouseEnter={e => e.currentTarget.style.color = "#ff6b6b"}
+                        onMouseLeave={e => e.currentTarget.style.color = "#3a3a4a"}
+                      >🗑</button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -8046,9 +8262,9 @@ function Card({ title, children, action }) {
 
 function TabBar({ tabs, active, setActive, labels }) {
   return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
+    <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
       {tabs.map((t, i) => (
-        <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1, whiteSpace: "nowrap", flexShrink: 0 }}>
+        <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
           {labels ? labels[i] : t}
         </button>
       ))}
@@ -8362,10 +8578,10 @@ function PortfolioHub({ data, update }) {
   return (
     <div>
       {/* Tab bar */}
-      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1, whiteSpace: "nowrap", flexShrink: 0 }}>
+            style={{ padding: "10px 22px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1 }}>
             {t.label}
           </button>
         ))}
