@@ -3483,16 +3483,16 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
     if (!parentId) { setFolders(p => p.filter(f => f.id!==id)); if (openId===id) setOpenId(null); }
     else setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:(f.subFolders||[]).filter(s=>s.id!==id) } : f));
   }
-  const [renamingId, setRenamingId] = useState(null);
-  const [renameVal,  setRenameVal]  = useState("");
-  function startRename(id, currentName, e) { e.stopPropagation(); setRenamingId(id); setRenameVal(currentName); }
-  function commitRename(id, parentId=null) {
-    const name = renameVal.trim();
+  const [renamingFolderId, setRenamingFolderId] = useState(null);
+  const [renameFolderVal,  setRenameFolderVal]  = useState("");
+  function startRenameFolder(id, currentName, e) { e.stopPropagation(); setRenamingFolderId(id); setRenameFolderVal(currentName); }
+  function commitRenameFolder(id, parentId=null) {
+    const name = renameFolderVal.trim();
     if (name) {
       if (!parentId) setFolders(p => p.map(f => f.id===id ? { ...f, name } : f));
       else setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:(f.subFolders||[]).map(s => s.id===id ? { ...s, name } : s) } : f));
     }
-    setRenamingId(null); setRenameVal("");
+    setRenamingFolderId(null); setRenameFolderVal("");
   }
   function deleteFile(folderId, fileId, parentId=null) {
     setFolders(p => p.map(f => {
@@ -3614,14 +3614,14 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                     style={{ background: "var(--color-background-primary)", borderRadius: 12, border: isOpen ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "0.9rem 1rem 0.75rem", cursor: "pointer", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", transition: "box-shadow 0.15s" }}>
                     <button onClick={e => { e.stopPropagation(); deleteFolder(sub.id, folder.id); }}
                       style={{ position: "absolute", top: 7, right: 7, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#d44", opacity: 0.5, padding: "2px 4px" }}>🗑</button>
-                    <button onClick={e=>startRename(sub.id, sub.name, e)}
-                      style={{ position:"absolute", top:7, right:30, background:"none", border:"none", cursor:"pointer", fontSize:12, color:"#6b7280", opacity:0.6, padding:"2px 4px" }} title="Rename">✏️</button>
+                    <button onClick={e=>startRenameFolder(sub.id, sub.name, e)}
+                      style={{ position:"absolute", top:7, right:30, background:"none", border:"none", cursor:"pointer", fontSize:11, color:"#6b7280", opacity:0.6, padding:"2px 4px" }} title="Rename">✏️</button>
                     <div style={{ fontSize: 26, marginBottom: 5 }}>{isOpen ? "📂" : "📁"}</div>
-                    {renamingId === sub.id
+                    {renamingFolderId === sub.id
                       ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:3, paddingRight:16 }}>
-                          <input autoFocus value={renameVal} onChange={e=>setRenameVal(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==="Enter") commitRename(sub.id, folder.id); if(e.key==="Escape") setRenamingId(null); }}
-                            onBlur={()=>commitRename(sub.id, folder.id)}
+                          <input autoFocus value={renameFolderVal} onChange={e=>setRenameFolderVal(e.target.value)}
+                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameFolder(sub.id, folder.id); if(e.key==="Escape") setRenamingFolderId(null); }}
+                            onBlur={()=>commitRenameFolder(sub.id, folder.id)}
                             style={{ width:"100%", fontSize:13, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit" }} />
                         </div>
                       : <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 36, wordBreak: "break-word" }}>{sub.name}</div>
@@ -3699,16 +3699,15 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
                     <button onClick={e=>{e.stopPropagation(); deleteFolder(folder.id);}}
                       style={{ position:"absolute", top:8, right:8, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"#d44", opacity:0.5, padding:"2px 4px" }}
                       title="Delete folder">🗑</button>
-                    {/* Rename button */}
-                    <button onClick={e=>startRename(folder.id, folder.name, e)}
-                      style={{ position:"absolute", top:8, right:32, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"#6b7280", opacity:0.6, padding:"2px 4px" }}
+                    <button onClick={e=>startRenameFolder(folder.id, folder.name, e)}
+                      style={{ position:"absolute", top:8, right:32, background:"none", border:"none", cursor:"pointer", fontSize:12, color:"#6b7280", opacity:0.6, padding:"2px 4px" }}
                       title="Rename folder">✏️</button>
                     <div style={{ fontSize:32, marginBottom:6 }}>📁</div>
-                    {renamingId === folder.id
+                    {renamingFolderId === folder.id
                       ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:4, paddingRight:20 }}>
-                          <input autoFocus value={renameVal} onChange={e=>setRenameVal(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==="Enter") commitRename(folder.id); if(e.key==="Escape"){ setRenamingId(null); } }}
-                            onBlur={()=>commitRename(folder.id)}
+                          <input autoFocus value={renameFolderVal} onChange={e=>setRenameFolderVal(e.target.value)}
+                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameFolder(folder.id); if(e.key==="Escape") setRenamingFolderId(null); }}
+                            onBlur={()=>commitRenameFolder(folder.id)}
                             style={{ width:"100%", fontSize:14, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit" }} />
                         </div>
                       : <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:40, wordBreak:"break-word" }}>{folder.name}</div>
@@ -6643,6 +6642,17 @@ function BusinessPage({ data, update }) {
     updateBizData(d => d.filter(e => e.year !== yr));
     if (selectedYear === yr) setSelectedYear(null);
   }
+  const [renamingYear,   setRenamingYear]   = useState(null);
+  const [renameYearVal,  setRenameYearVal]  = useState("");
+  function startRenameYear(yr, e) { e.stopPropagation(); setRenamingYear(yr); setRenameYearVal(String(yr)); }
+  function commitRenameYear(yr) {
+    const newYr = parseInt(renameYearVal.trim());
+    if (newYr && newYr !== yr) {
+      updateBizData(d => d.map(e => e.year === yr ? { ...e, year: newYr } : e));
+      if (selectedYear === yr) setSelectedYear(newYr);
+    }
+    setRenamingYear(null); setRenameYearVal("");
+  }
 
   function addBusiness() {
     if (!newBizName.trim()) return;
@@ -6655,6 +6665,14 @@ function BusinessPage({ data, update }) {
     if (!confirm("Delete this business and all its data?")) return;
     update(p => ({ businesses: (p.businesses || []).filter(b => b.id !== id) }));
     if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); }
+  }
+  const [renamingBizId, setRenamingBizId] = useState(null);
+  const [renameBizVal,  setRenameBizVal]  = useState("");
+  function startRenameBiz(id, currentName, e) { e.stopPropagation(); setRenamingBizId(id); setRenameBizVal(currentName); }
+  function commitRenameBiz(id) {
+    const name = renameBizVal.trim();
+    if (name) update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, name } : b) }));
+    setRenamingBizId(null); setRenameBizVal("");
   }
 
   function addYear() {
@@ -6981,8 +6999,18 @@ function BusinessPage({ data, update }) {
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                    <button onClick={ev=>startRenameBiz(biz.id, biz.name, ev)}
+                      style={{ position:"absolute", top:10, right:34, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"var(--color-text-secondary)", opacity:0.5, padding:2 }} title="Rename">✏️</button>
                     <div style={{ fontSize: 32, marginBottom: 6 }}>🏢</div>
-                    <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
+                    {renamingBizId === biz.id
+                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:4 }}>
+                          <input autoFocus value={renameBizVal} onChange={e=>setRenameBizVal(e.target.value)}
+                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameBiz(biz.id); if(e.key==="Escape") setRenamingBizId(null); }}
+                            onBlur={()=>commitRenameBiz(biz.id)}
+                            style={{ width:"100%", fontSize:18, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"'DM Serif Display', serif" }} />
+                        </div>
+                      : <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4, paddingRight: 44 }}>{biz.name}</div>
+                    }
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                       <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
@@ -7027,8 +7055,18 @@ function BusinessPage({ data, update }) {
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteYear(s.year); }}
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                    <button onClick={ev=>startRenameYear(s.year, ev)}
+                      style={{ position:"absolute", top:10, right:34, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"var(--color-text-secondary)", opacity:0.5, padding:2 }} title="Rename year">✏️</button>
                     <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
-                    <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
+                    {renamingYear === s.year
+                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:6 }}>
+                          <input autoFocus value={renameYearVal} onChange={e=>setRenameYearVal(e.target.value)}
+                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameYear(s.year); if(e.key==="Escape") setRenamingYear(null); }}
+                            onBlur={()=>commitRenameYear(s.year)}
+                            style={{ width:"100%", fontSize:20, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"'DM Serif Display', serif" }} />
+                        </div>
+                      : <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6, paddingRight: 44 }}>{s.year}</div>
+                    }
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                       <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
@@ -7265,6 +7303,14 @@ function ProjectsPage({ data, update }) {
     update(p => ({ projectsData: (p.projectsData || []).filter(pr => pr.id !== id) }));
     if (selectedProject === id) setSelectedProject(null);
   }
+  const [renamingProjectId, setRenamingProjectId] = useState(null);
+  const [renameProjectVal,  setRenameProjectVal]  = useState("");
+  function startRenameProject(id, currentName, e) { e.stopPropagation(); setRenamingProjectId(id); setRenameProjectVal(currentName); }
+  function commitRenameProject(id) {
+    const name = renameProjectVal.trim();
+    if (name) update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === id ? { ...pr, name } : pr) }));
+    setRenamingProjectId(null); setRenameProjectVal("");
+  }
 
   function addTask() {
     if (!taskForm.name.trim() || !project) return;
@@ -7483,8 +7529,18 @@ function ProjectsPage({ data, update }) {
                   >
                     <button onClick={ev => { ev.stopPropagation(); deleteProject(pr.id); }}
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>🗑</button>
+                    <button onClick={ev=>startRenameProject(pr.id, pr.name, ev)}
+                      style={{ position:"absolute", top:10, right:34, background:"none", border:"none", cursor:"pointer", fontSize:13, opacity:0.5, padding:2 }} title="Rename project">✏️</button>
                     <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
-                    <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 }}>{pr.name}</div>
+                    {renamingProjectId === pr.id
+                      ? <div onClick={e=>e.stopPropagation()} style={{ marginBottom:4, paddingRight:20 }}>
+                          <input autoFocus value={renameProjectVal} onChange={e=>setRenameProjectVal(e.target.value)}
+                            onKeyDown={e=>{ if(e.key==="Enter") commitRenameProject(pr.id); if(e.key==="Escape") setRenamingProjectId(null); }}
+                            onBlur={()=>commitRenameProject(pr.id)}
+                            style={{ width:"100%", fontSize:15, fontWeight:600, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit" }} />
+                        </div>
+                      : <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 48 }}>{pr.name}</div>
+                    }
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
                       {total} task{total !== 1 ? "s" : ""} · {(pr.files || []).length} file{(pr.files || []).length !== 1 ? "s" : ""}
                     </div>
@@ -7746,7 +7802,7 @@ function ProjectsPage({ data, update }) {
                         <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
                           {filePreview.webViewLink && <a href={filePreview.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
                           {filePreview.downloadUrl && <a href={filePreview.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
-                          {filePreview.dataUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
+                          {filePreview.dataUrl && !filePreview.downloadUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
                           <button onClick={() => setFilePreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
                         </div>
                       </div>
