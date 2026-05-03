@@ -1029,6 +1029,13 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   const [period, setPeriod] = useState(data.overviewDefaultPeriod || "all");
   const [clockTime, setClockTime] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setClockTime(new Date()), 1000); return () => clearInterval(t); }, []);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const h = e => setIsMobile(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
 
   const userProfile = data.userProfile || {};
   const widgetType = userProfile.widgetType || "none";
@@ -1151,49 +1158,83 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
         {widgetType !== "none" && <OverviewWidget compact />}
       </div>
 
-      {/* Top stat row — F&O card hidden when toggle is off */}
-      <div style={{ display: "grid", gridTemplateColumns: foOn ? "repeat(auto-fit, minmax(160px, 1fr))" : "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
-        <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
-
-        {/* Income card with period toggle */}
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
-            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+      {/* Top stat row — responsive */}
+      {isMobile ? (
+        /* ── MOBILE: Net Worth full width, then Income+Expenses 2-col ── */
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+          <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
+          {/* Period toggle — shared, shown once above the 2-col row */}
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 2, gap: 1 }}>
               {PERIODS.map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)}
-                  style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                  style={{ padding: "3px 9px", borderRadius: 5, border: "none", cursor: "pointer", fontSize: 11, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
                   {p.label}
                 </button>
               ))}
             </div>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(filteredIncome)}</div>
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
-        </div>
-
-        {/* Expenses card with same period toggle (synced) */}
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊟ Total Expenses</span>
-            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
-              {PERIODS.map(p => (
-                <button key={p.key} onClick={() => setPeriod(p.key)}
-                  style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#d44" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
-                  {p.label}
-                </button>
-              ))}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {/* Income card — mobile, no toggle (period shared above) */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem", display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(filteredIncome)}</div>
+              <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+            </div>
+            {/* Expenses card — mobile */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem", display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>⊟ Total Expenses</span>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#d44" }}>{fmtCur(filteredExpense)}</div>
+              <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
             </div>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#d44" }}>{fmtCur(filteredExpense)}</div>
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+          {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
         </div>
+      ) : (
+        /* ── DESKTOP: original grid layout ── */
+        <div style={{ display: "grid", gridTemplateColumns: foOn ? "repeat(auto-fit, minmax(160px, 1fr))" : "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
+          <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
-        {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
-      </div>
+          {/* Income card with period toggle */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
+              <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+                {PERIODS.map(p => (
+                  <button key={p.key} onClick={() => setPeriod(p.key)}
+                    style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(filteredIncome)}</div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+          </div>
+
+          {/* Expenses card with same period toggle (synced) */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊟ Total Expenses</span>
+              <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+                {PERIODS.map(p => (
+                  <button key={p.key} onClick={() => setPeriod(p.key)}
+                    style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#d44" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#d44" }}>{fmtCur(filteredExpense)}</div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+          </div>
+
+          {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
+        </div>
+      )}
 
       {/* Portfolio + To-Do row */}
-      <div style={{ display: "grid", gridTemplateColumns: portfolioOn ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: portfolioOn && !isMobile ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: 12, marginBottom: 12 }}>
 
         {/* ── Portfolio Summary ── */}
         {portfolioOn && (() => {
