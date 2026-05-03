@@ -1418,7 +1418,7 @@ function MoneyPage({ data, update, tab, setTab }) {
   }, []);
 
   const nowTime = () => { const n = new Date(); return n.toTimeString().slice(0,5); };
-  const [form, setForm] = useState({ type: "expense", amount: "", category: "", note: "", date: today(), time: "", bankId: "", accountType: "all" });
+  const [form, setForm] = useState({ type: "expense", amount: "", category: "", note: "", date: today(), time: nowTime(), bankId: "", accountType: "all" });
   const [period, setPeriod] = useState("12M");
 
   // Account form state
@@ -1452,7 +1452,7 @@ function MoneyPage({ data, update, tab, setTab }) {
     if (!form.amount) return;
     const type = tab === "income" ? "income" : "expense";
     update(p => ({ transactions: [...p.transactions, { id: Date.now(), ...form, amount: parseFloat(form.amount), type }] }));
-    setForm(p => ({ ...p, amount: "", category: "", note: "", date: today(), time: "" }));
+    setForm(p => ({ ...p, amount: "", category: "", note: "", date: today(), time: nowTime() }));
   }
 
   function addAccount() {
@@ -4682,9 +4682,7 @@ function AnalysisTab({ data }) {
   // ── Main render ────────────────────────────────────────────────────────────
   const views=[
     {id:"graph",     label:"📈 Income vs Expense"},
-    {id:"pie",       label:"🥧 Category Breakdown"},
     {id:"calendar",  label:"📅 Calendar"},
-
   ];
   return (
     <div style={{marginTop:16}}>
@@ -4712,7 +4710,6 @@ function AnalysisTab({ data }) {
       </div>
       <div style={{background:"var(--color-background-primary)",borderRadius:14,border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"}}>
         {view==="graph"    && <GraphView/>}
-        {view==="pie"      && <PieView/>}
         {view==="calendar" && <CalendarView/>}
 
       </div>
