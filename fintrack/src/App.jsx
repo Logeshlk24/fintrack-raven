@@ -6440,6 +6440,8 @@ function GoalsPage({ data, update }) {
 
       {/* Summary strip */}
       <div className="stats-4col" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
           { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
           { label: "Wants Goals", val: wants.length, sub: `${wants.filter(i => i.completed).length} completed`, color: "#9b59b6" },
           { label: "Wants Progress", val: fmtCur(totalWantsSaved), sub: `of ${fmtCur(totalWantsTarget)}`, color: "#f5a623" },
