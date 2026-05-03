@@ -573,7 +573,7 @@ export default function App() {
       {/* Main */}
       <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
-        {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
+        {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} mobile={mobile} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
         {page === "portfolio" && portfolioOn && <PortfolioHub data={data} update={update} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
@@ -1396,7 +1396,7 @@ function AssetPie({ assets }) {
 }
 
 // ─── Money ────────────────────────────────────────────────────────────────────
-function MoneyPage({ data, update, tab, setTab }) {
+function MoneyPage({ data, update, tab, setTab, mobile }) {
   const accounts = data.banks || [];
   const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
 
@@ -1643,7 +1643,7 @@ function MoneyPage({ data, update, tab, setTab }) {
       {(tab === "income" || tab === "expenses") && (
         <>
           <PeriodBar periods={["This Week", "This Month", "Last Month", "6M", "12M"]} active={period} setActive={setPeriod} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16, marginTop: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1.4fr", gap: 16, marginTop: 16 }}>
             <Card title={`Add ${tab === "income" ? "Income" : "Expense"}`}>
               <LabelInput label="Amount (INR)" placeholder="e.g. 5000" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
               <LabelInput label="Notes" placeholder="optional" value={form.note} onChange={v => setForm(p => ({ ...p, note: v }))} />
