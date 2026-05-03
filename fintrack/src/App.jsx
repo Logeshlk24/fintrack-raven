@@ -30,6 +30,16 @@ const LIGHT_MODE_STYLE = `
     border-radius: 6px;
     padding: 6px 10px;
   }
+  html, body { overflow-x: hidden; }
+  * { box-sizing: border-box; }
+  @media (max-width: 767px) {
+    /* Prevent any element from causing horizontal scroll */
+    main, .main-content { max-width: 100vw; overflow-x: hidden; }
+    /* Tables scroll inside their container */
+    table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* Inputs always fit */
+    input[type="time"], input[type="date"] { min-width: 0; width: 100% !important; }
+  }
 `;
 
 // ── localStorage → kept only for one-time migration on first sign-in ──────────
@@ -571,7 +581,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
+      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%" }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
@@ -1142,7 +1152,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Top stat row — F&O card hidden when toggle is off */}
-      <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: foOn ? "repeat(auto-fit, minmax(160px, 1fr))" : "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
         <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
         {/* Income card with period toggle */}
@@ -1183,7 +1193,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Portfolio + To-Do row */}
-      <div style={{ display: "grid", gridTemplateColumns: portfolioOn ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: portfolioOn ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: 12, marginBottom: 12 }}>
 
         {/* ── Portfolio Summary ── */}
         {portfolioOn && (() => {
@@ -1399,6 +1409,13 @@ function AssetPie({ assets }) {
 function MoneyPage({ data, update, tab, setTab }) {
   const accounts = data.banks || [];
   const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const h = e => setIsMobile(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
 
   const nowTime = () => { const n = new Date(); return n.toTimeString().slice(0,5); };
   const [form, setForm] = useState({ type: "expense", amount: "", category: "", note: "", date: today(), time: "", bankId: "", accountType: "all" });
@@ -1648,7 +1665,7 @@ function MoneyPage({ data, update, tab, setTab }) {
       {(tab === "income" || tab === "expenses") && (
         <>
           <PeriodBar periods={["This Week", "This Month", "Last Month", "6M", "12M"]} active={period} setActive={setPeriod} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16, marginTop: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1.4fr", gap: 16, marginTop: 16 }}>
             <Card title={`Add ${tab === "income" ? "Income" : "Expense"}`}>
               <LabelInput label="Amount (INR)" placeholder="e.g. 5000" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
               <LabelInput label="Notes" placeholder="optional" value={form.note} onChange={v => setForm(p => ({ ...p, note: v }))} />
@@ -8472,12 +8489,14 @@ function Card({ title, children, action }) {
 
 function TabBar({ tabs, active, setActive, labels }) {
   return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
-      {tabs.map((t, i) => (
-        <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
-          {labels ? labels[i] : t}
-        </button>
-      ))}
+    <div style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", marginBottom: 4 }}>
+      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content" }}>
+        {tabs.map((t, i) => (
+          <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1, whiteSpace: "nowrap" }}>
+            {labels ? labels[i] : t}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -8787,14 +8806,16 @@ function PortfolioHub({ data, update }) {
 
   return (
     <div>
-      {/* Tab bar */}
-      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20 }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: "10px 22px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1 }}>
-            {t.label}
-          </button>
-        ))}
+      {/* Tab bar — scrollable on mobile */}
+      <div style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", marginBottom: 20 }}>
+        <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content" }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{ padding: "10px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1, whiteSpace: "nowrap" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── OVERALL TAB ── */}
@@ -8839,7 +8860,7 @@ function PortfolioHub({ data, update }) {
             </div>
 
             {/* Breakdown by category */}
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
               {[
                 { label: "🇮🇳 Indian Stocks", invested: indInvested, current: indCurrent },
                 { label: "🇺🇸 US Stocks",     invested: usInvested,  current: usCurrent  },
