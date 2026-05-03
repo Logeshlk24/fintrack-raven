@@ -35,14 +35,13 @@ const LIGHT_MODE_STYLE = `
   @media (max-width: 1024px) {
     .ft-sidebar { display: none !important; }
     .ft-bottom-nav { display: flex !important; }
-    .ft-main { padding: 1rem !important; padding-bottom: 80px !important; overflow-x: hidden !important; box-sizing: border-box !important; }
+    .ft-main { padding: 1rem !important; padding-bottom: 80px !important; }
     .ft-money-grid { grid-template-columns: 1fr !important; }
     .ft-overview-grid { grid-template-columns: 1fr !important; }
     .ft-period-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .ft-period-bar::-webkit-scrollbar { display: none; }
     .ft-tab-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .ft-tab-bar::-webkit-scrollbar { display: none; }
-    input, select, textarea { max-width: 100% !important; box-sizing: border-box !important; }
   }
   @media (min-width: 1025px) {
     .ft-bottom-nav { display: none !important; }
@@ -87,6 +86,7 @@ const defaultData = {
   businessData: [],
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
+  liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
 };
 
@@ -594,7 +594,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main className="ft-main" style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%" }}>
+      <main className="ft-main" style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} mobile={mobile} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} mobile={mobile} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} mobile={mobile} />}
@@ -730,7 +730,6 @@ function SplashScreen({ msg }) {
 function SignInPage() {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
-  const mobile = typeof window !== "undefined" && (window.matchMedia("(max-width: 1024px)").matches || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(navigator.userAgent || ""));
 
   async function handleGoogle() {
     setError("");
@@ -805,7 +804,6 @@ function Onboarding({ step, setStep, data, update, done }) {
   const [form, setForm]     = useState({ name: "", email: "", ...data.profile });
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
-  const mobile = typeof window !== "undefined" && (window.matchMedia("(max-width: 1024px)").matches || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(navigator.userAgent || ""));
 
   const steps = [
     { title: "Welcome to FinTrack", sub: "Your privacy-first net worth + F&O tracker. No broker connections, no third-party tracking." },
@@ -8064,9 +8062,9 @@ function Card({ title, children, action }) {
 
 function TabBar({ tabs, active, setActive, labels }) {
   return (
-    <div className="ft-tab-bar" style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+    <div className="ft-tab-bar" style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
       {tabs.map((t, i) => (
-        <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1, whiteSpace: "nowrap", flexShrink: 0 }}>
+        <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
           {labels ? labels[i] : t}
         </button>
       ))}
