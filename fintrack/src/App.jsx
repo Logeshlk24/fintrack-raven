@@ -1940,28 +1940,6 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
   const [showFilter, setShowFilter] = useState(false);
   const [showSort, setShowSort]   = useState(false);
 
-  const transfers = (data.transactions || [])
-    .filter(t => t.isTransfer && t.transferRole === "out")
-    .sort((a, b) => b.date.localeCompare(a.date));
-
-  function getAcctName(id) {
-    const a = (accounts || []).find(a => String(a.id) === String(id));
-    return a ? a.name : "—";
-  }
-  function getAcctType(id) {
-    return (accounts || []).find(a => String(a.id) === String(id))?.type || "Bank";
-  }
-  function badgeStyle(id) {
-    const t = getAcctType(id);
-    if (t === "Credit Card") return { background: "#fff3e0", color: "#e65100" };
-    if (t === "Cash") return { background: "#f0fdf4", color: "#166534" };
-    return { background: "#e8f5ee", color: "#1a6b3c" };
-  }
-  function deleteTransfer(pairId) {
-    if (!window.confirm("Delete this transfer? Both entries will be removed.")) return;
-    update(p => ({ transactions: p.transactions.filter(t => t.transferPairId !== pairId) }));
-  }
-
   const allTx = (data.transactions || [])
     .filter(t => !t.isTransfer)
     .filter(t => filterType === "all" || t.type === filterType)
@@ -2143,47 +2121,11 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
           })}
         </div>
       )}
-
-      {/* Transfer History */}
-      {transfers.length > 0 && (
-        <div style={{ marginTop: 24, background: "var(--color-background-primary)", borderRadius: 16, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
-            <span style={{ fontWeight: 700, fontSize: 15 }}>↔ Transfer History</span>
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{transfers.length} transfers</span>
-          </div>
-          {transfers.map((t, idx) => {
-            const toAcct = (accounts || []).find(a => String(a.id) === String(t.transferToId));
-            return (
-              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: idx < transfers.length - 1 ? "0.5px solid var(--color-border-tertiary)" : "none" }}>
-                <div style={{ width: 44, height: 44, borderRadius: 13, background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>↔</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 3 }}>
-                    <span style={{ ...badgeStyle(t.bankId), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>{getAcctName(t.bankId)}</span>
-                    <span style={{ color: "#1a6b3c", fontWeight: 700 }}>→</span>
-                    <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : { color: "var(--color-text-secondary)" }), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
-                      {toAcct ? toAcct.name : "—"}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-                    {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
-                  </div>
-                </div>
-                <div style={{ fontWeight: 700, fontSize: 15, color: "#1a6b3c", flexShrink: 0 }}>
-                  ₹{Number(t.amount).toLocaleString("en-IN")}
-                </div>
-                <button onClick={() => deleteTransfer(t.transferPairId)}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, opacity: 0.5, padding: "2px 4px", flexShrink: 0 }}
-                  onMouseEnter={e => e.currentTarget.style.opacity = "1"}
-                  onMouseLeave={e => e.currentTarget.style.opacity = "0.5"}
-                >🗑</button>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
+
+// ─── Recent Transactions Tab ─────────────────────────────────────────────────
 const CATEGORY_ICONS = {
   // Expense
   "Food": "🍽️", "Snacks": "🧃", "Drinks": "🥤", "Coffee": "☕", "Restaurant": "🍽️",
@@ -2927,14 +2869,14 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
   return (
     <div style={{ marginTop: 16 }}>
       {/* Month summary stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
         <StatCard label="Trades This Month" value={monthTrades.length} />
         <StatCard label="Gross P&L" value={fmtCur(monthGross)} pnl={monthGross} />
         <StatCard label="Total Charges" value={"- " + fmtCur(monthCharges)} />
         <StatCard label="Net P&L" value={fmtCur(monthNet)} pnl={monthNet} big />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: selectedDay ? "1fr 320px" : "1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: selectedDay ? "1fr min(320px,100%)" : "1fr", gap: 16 }}>
         {/* Calendar */}
         <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
           {/* Header */}
@@ -4261,7 +4203,7 @@ function TransferTab({ data, update, accounts }) {
   ].filter(g => g.list.length > 0);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16, marginTop: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, marginTop: 16 }}>
 
       {/* Left: form */}
       <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
@@ -4340,10 +4282,53 @@ function TransferTab({ data, update, accounts }) {
           style={{ width: "100%", background: accounts.length < 2 ? "#ccc" : "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", cursor: accounts.length < 2 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 600 }}>
           ↔ Transfer
         </button>
+      </div>
 
-        <div style={{ marginTop: 10, fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center" }}>
-          Transfer history is visible in the Transactions tab
+      {/* Right: history */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
+        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>
+          Transfer History
+          <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)", marginLeft: 8 }}>{transfers.length} transfers</span>
         </div>
+
+        {transfers.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "3.5rem 1rem", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>↔</div>
+            No transfers yet.<br/>Use the form to move money between accounts.
+          </div>
+        ) : (
+          <div>
+            {transfers.map(t => {
+              const toAcct = accounts.find(a => String(a.id) === String(t.transferToId));
+              return (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 4px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  {/* Icon */}
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>↔</div>
+                  {/* Details */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 3 }}>
+                      <span style={{ ...badgeStyle(t.bankId), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>{getAcctName(t.bankId)}</span>
+                      <span style={{ color: "#1a6b3c", fontWeight: 700 }}>→</span>
+                      <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : { color: "var(--color-text-secondary)" }), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
+                        {toAcct ? toAcct.name : "—"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
+                    </div>
+                  </div>
+                  {/* Amount */}
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#1a6b3c", flexShrink: 0 }}>
+                    ₹{Number(t.amount).toLocaleString("en-IN")}
+                  </div>
+                  {/* Delete */}
+                  <button onClick={() => deleteTransfer(t.transferPairId)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, opacity: 0.6, padding: "2px 4px", flexShrink: 0 }}>🗑</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -5047,7 +5032,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
           </div>
         </>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         <Card title="Add Scheduled Payment">
           {/* Income / Expense toggle */}
@@ -5458,7 +5443,7 @@ function LiabilitiesTab({ data, update }) {
   return (
     <div style={{ marginTop: 16 }}>
       {/* Summary Strip — matching Scheduled Payments look */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Due This Month", val: fmtCur(liabDueThisMonth), color: "#4da6ff" },
           { label: "Overdue", val: fmtCur(liabOverdue), color: "#d44" },
@@ -5659,7 +5644,7 @@ function LiabilitiesTab({ data, update }) {
 
       {/* Add Liability Form */}
       <Card title="➕ Add Liability">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
           <div>
             <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Name</label>
             <input placeholder="e.g. HDFC Credit Card, Personal Loan" value={liabilityForm.name} onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -5725,7 +5710,7 @@ function LiabilitiesTab({ data, update }) {
             )}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 2fr", gap: 10, marginBottom: 10 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
@@ -6403,7 +6388,7 @@ function GoalsPage({ data, update }) {
       </div>
 
       {/* Summary strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
           { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
@@ -6418,7 +6403,7 @@ function GoalsPage({ data, update }) {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "300px 1fr" : "1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" : "1fr", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         {showAdd && (
           <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
@@ -6507,7 +6492,7 @@ function PercentageCalculator() {
         <span style={{ fontWeight: 600, fontSize: 16 }}>Percentage Calculator</span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: 14, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 14, alignItems: "start" }}>
         {/* Input A */}
         <div>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>{cfg.labelA}</label>
@@ -7475,7 +7460,7 @@ function ProjectsPage({ data, update }) {
 
       {/* ── PROJECT DETAIL ── */}
       {project && (
-        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
+        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
 
           {/* LEFT PANEL — Tabbed: Tasks | Files | Notes */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}) }}>
@@ -10215,7 +10200,7 @@ function MutualFundsPage({ data, update }) {
 
       {/* ── SIP CALCULATOR TAB ── */}
       {tab === "sip" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, alignItems: "start" }}>
           {/* Sliders */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem" }}>
             <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 20 }}>🧮 Step-Up SIP Calculator</h3>
@@ -10292,6 +10277,7 @@ function MutualFundsPage({ data, update }) {
 
 function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "portfolioHoldings", defaultExchange = "NSE" }) {
   const holdings = data[holdingsKey] || [];
+  const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
 
   // ── local UI state ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: defaultExchange, yahooOverride: "", buyDate: "" });
@@ -10634,14 +10620,14 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
   return (
     <div>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{title}</h1>
+          <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: isMobile ? 22 : 26 }}>{title}</h1>
           <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
             {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add your demat holdings to get started"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {/* USD ↔ INR segmented control — only for US Stocks */}
           {isUS && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -10887,7 +10873,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             </div>
           </div>
 
-          {/* Column headers */}
+          {/* Column headers — desktop only */}
+          {!isMobile && (
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
             <span>STOCK</span>
             <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
@@ -10897,9 +10884,62 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             <span style={{ textAlign: "right" }}>P&amp;L {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span />
           </div>
+          )}
 
           {/* Rows */}
-          {sorted.map(h => (
+          {sorted.map(h => isMobile ? (
+            /* ── Mobile card layout ── */
+            <div key={h._ids ? h._ids[0] : h.id} style={{ padding: "12px 14px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+              {/* Row 1: symbol + badges + actions */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                    {h.symbol.replace(/\.(NS|BO)$/i, "")}
+                    <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
+                    {h._merged && <span style={{ fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600 }}>⚡ avg {h._originalCount}×</span>}
+                  </div>
+                  {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + fmt(h.buyPrice)}</div>
+                </div>
+                {/* P&L + actions on right */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  {h.pnl != null && (
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ color: pnlColor(h.pnl), fontWeight: 700, fontSize: 14 }}>{fmtPnlVal(h.pnl)}</div>
+                      <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
+                    </div>
+                  )}
+                  <button onClick={() => { const m = h._merged && h._ids?.length > 1 ? { ...h, id: h._ids[0] } : (holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h); openEdit(m); }}
+                    style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer", fontSize: 13, padding: "4px 8px", color: "var(--color-text-secondary)" }}>✏️</button>
+                  <button onClick={() => { if (window.confirm(`Delete ${h.symbol}?`)) { if (h._ids) update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(x => !h._ids.includes(x.id)) })); else update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(x => x.id !== h.id) })); } }}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#d44", padding: "2px 4px" }}>🗑</button>
+                </div>
+              </div>
+              {/* Row 2: LTP | Day Chg | Invested | Cur Value */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>LTP</div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                    {loading ? "…" : h.cur != null ? (isUS && showUSD ? "$" + (h.curUsd ?? (h.cur / usdRate)).toFixed(2) : "₹" + fmt(h.cur)) : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Day</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: pnlColor(h.dayChangePct) }}>
+                    {h.dayChangePct != null ? `${h.dayChangePct >= 0 ? "▲" : "▼"}${Math.abs(h.dayChangePct).toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Inv.</div>
+                  <div style={{ fontSize: 12 }}>{fmtVal(h.invested)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Cur</div>
+                  <div style={{ fontSize: 12 }}>{h.curVal != null ? fmtVal(h.curVal) : "—"}</div>
+                </div>
+              </div>
+            </div>
+          ) : (
             <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
               <div>
                 <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
@@ -11272,7 +11312,7 @@ function PortfolioAnalysisView({ data }) {
       </div>
 
       {/* Row 1: IN vs US + Cap */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(280px,100%),1fr))",gap:14}}>
         <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>🌏 Indian vs US Holdings</div>
           <div style={{display:"flex",gap:16,alignItems:"center"}}>
