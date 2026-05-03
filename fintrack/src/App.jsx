@@ -1742,42 +1742,7 @@ function MoneyPage({ data, update, tab, setTab }) {
               <GreenBtn onClick={addTx} label="+ Add Entry" />
             </Card>
 
-            <Card title={`${filtered.length} entries`}>
-              {filtered.length === 0 ? <EmptyState msg={`No ${tab} recorded yet.`} /> : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr>{["Date", "Time", "Category", "Account", "Notes", "Amount", ""].map(h => (
-                        <th key={h} style={{ textAlign: "left", padding: "4px 6px", color: "var(--color-text-secondary)", fontWeight: 500, borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap" }}>{h}</th>
-                      ))}</tr>
-                    </thead>
-                    <tbody>{filtered.slice().reverse().map(t => {
-                      const acct = accounts.find(b => String(b.id) === String(t.bankId));
-                      return (
-                        <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                          <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{t.date}</td>
-                          <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
-                            {t.time ? <span style={{ background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 6px", fontFamily: "monospace", fontSize: 11, color: "var(--color-text-secondary)" }}>{t.time}</span> : <span style={{ color: "var(--color-border-primary)" }}>—</span>}
-                          </td>
-                          <td style={{ padding: "5px 6px" }}>{t.category || "—"}</td>
-                          <td style={{ padding: "5px 6px" }}>
-                            {acct ? <span style={{ background: acct.type === "Credit Card" ? "#fff3e0" : acct.type === "Cash" ? "#f0fdf4" : "#e8f5ee", color: acct.type === "Credit Card" ? "#e65100" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 500 }}>{acct.name}</span> : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
-                          </td>
-                          <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)" }}>{t.note || "—"}</td>
-                          <td style={{ padding: "5px 6px", fontWeight: 500, color: t.type === "income" ? "#1a6b3c" : "#d44" }}>{fmtCur(t.amount)}</td>
-                          <td style={{ padding: "2px 4px" }}>
-                            <ThreeDotMenu
-                              onEdit={() => setEditTx({ ...t })}
-                              onDelete={() => update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) }))}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}</tbody>
-                  </table>
-                </div>
-              )}
-            </Card>
+            <CategoryBreakdownCard transactions={filtered} type={tab === "income" ? "income" : "expense"} period={period} />
           </div>
         </>
       )}
@@ -1788,6 +1753,140 @@ function MoneyPage({ data, update, tab, setTab }) {
       {/* ── Liabilities Tab ── */}
       {tab === "liabilities" && <LiabilitiesTab data={data} update={update} />}
       {tab === "analysis" && <AnalysisTab data={data} />}
+    </div>
+  );
+}
+
+// ─── Category Breakdown Card ─────────────────────────────────────────────────
+const CAT_COLORS_EXP = ["#ef4444","#f97316","#eab308","#84cc16","#06b6d4","#8b5cf6","#ec4899","#14b8a6","#f59e0b","#6366f1","#10b981","#e11d48"];
+const CAT_COLORS_INC = ["#1a6b3c","#2d9e5f","#4cc97a","#9fe1c0","#0d4a2a","#68d9a0","#34d399","#059669","#10b981","#6ee7b7","#a7f3d0","#d1fae5"];
+
+function CategoryBreakdownCard({ transactions, type, period }) {
+  const isIncome = type === "income";
+  const COLORS = isIncome ? CAT_COLORS_INC : CAT_COLORS_EXP;
+  const accentColor = isIncome ? "#1a6b3c" : "#ef4444";
+
+  // Build category map
+  const catMap = {};
+  transactions.forEach(t => {
+    const key = t.category || "Uncategorized";
+    catMap[key] = (catMap[key] || 0) + Number(t.amount || 0);
+  });
+  const items = Object.entries(catMap)
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value);
+  const total = items.reduce((s, i) => s + i.value, 0);
+
+  // SVG donut dimensions
+  const SIZE = 160, CX = 80, CY = 80, R = 62, STROKE = 22;
+  const circumference = 2 * Math.PI * R;
+
+  // Build arc segments
+  let offset = 0;
+  const arcs = items.map((item, idx) => {
+    const pct = total > 0 ? item.value / total : 0;
+    const dash = pct * circumference;
+    const gap = circumference - dash;
+    const seg = { ...item, pct, dash, gap, offset, color: COLORS[idx % COLORS.length] };
+    offset += dash;
+    return seg;
+  });
+
+  const [hovered, setHovered] = useState(null);
+  const hoveredItem = hovered !== null ? arcs[hovered] : null;
+
+  if (transactions.length === 0) {
+    return (
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "2rem 1.2rem", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 260 }}>
+        <div style={{ fontSize: 36 }}>{isIncome ? "💰" : "🥧"}</div>
+        <div style={{ fontWeight: 600, fontSize: 15, color: "var(--color-text-primary)" }}>{isIncome ? "Income" : "Expenses"} Breakdown</div>
+        <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No {isIncome ? "income" : "expenses"} recorded yet</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <span style={{ fontSize: 18 }}>{isIncome ? "💰" : "🥧"}</span>
+        <span style={{ fontWeight: 600, fontSize: 15, color: "var(--color-text-primary)" }}>{isIncome ? "Income" : "Expenses"} Breakdown</span>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>{transactions.length} entries</span>
+      </div>
+
+      {/* Donut chart + legend side by side */}
+      <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: 16 }}>
+        {/* SVG Donut */}
+        <div style={{ position: "relative", flexShrink: 0, width: SIZE, height: SIZE }}>
+          <svg width={SIZE} height={SIZE} style={{ transform: "rotate(-90deg)" }}>
+            {/* Background ring */}
+            <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--color-background-secondary)" strokeWidth={STROKE} />
+            {/* Segments */}
+            {arcs.map((seg, idx) => (
+              <circle key={seg.label} cx={CX} cy={CY} r={R} fill="none"
+                stroke={seg.color}
+                strokeWidth={hovered === idx ? STROKE + 4 : STROKE}
+                strokeDasharray={`${seg.dash} ${seg.gap}`}
+                strokeDashoffset={-seg.offset}
+                strokeLinecap="butt"
+                style={{ cursor: "pointer", transition: "stroke-width 0.15s" }}
+                onMouseEnter={() => setHovered(idx)}
+                onMouseLeave={() => setHovered(null)}
+              />
+            ))}
+          </svg>
+          {/* Center label */}
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+            {hoveredItem ? (
+              <>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoveredItem.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: accentColor }}>₹{hoveredItem.value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{(hoveredItem.pct * 100).toFixed(1)}%</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Total</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>₹{total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          {arcs.slice(0, 6).map((seg, idx) => (
+            <div key={seg.label}
+              onMouseEnter={() => setHovered(idx)}
+              onMouseLeave={() => setHovered(null)}
+              style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", opacity: hovered === null || hovered === idx ? 1 : 0.45, transition: "opacity 0.15s" }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 12, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{seg.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: accentColor, flexShrink: 0 }}>₹{seg.value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+            </div>
+          ))}
+          {arcs.length > 6 && (
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>+{arcs.length - 6} more categories</div>
+          )}
+        </div>
+      </div>
+
+      {/* Full bar breakdown */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {arcs.map((seg, idx) => (
+          <div key={seg.label}
+            onMouseEnter={() => setHovered(idx)}
+            onMouseLeave={() => setHovered(null)}
+            style={{ cursor: "pointer" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+              <span style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: hovered === idx ? 600 : 400 }}>{seg.label}</span>
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{(seg.pct * 100).toFixed(1)}%</span>
+            </div>
+            <div style={{ height: 5, borderRadius: 4, background: "var(--color-background-secondary)", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${seg.pct * 100}%`, background: seg.color, borderRadius: 4, transition: "width 0.4s ease" }} />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
