@@ -30,6 +30,13 @@ const LIGHT_MODE_STYLE = `
     border-radius: 6px;
     padding: 6px 10px;
   }
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  @media (max-width: 767px) {
+    * { box-sizing: border-box; }
+  }
 `;
 
 // ── localStorage → kept only for one-time migration on first sign-in ──────────
@@ -446,7 +453,7 @@ export default function App() {
 
   return (
     <DriveProvider data={data} update={update}>
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" }}>
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)", overflowX: "hidden", maxWidth: "100vw" }}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
 
@@ -571,7 +578,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
+      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: mobile ? "100vw" : undefined, boxSizing: "border-box" }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
@@ -1142,7 +1149,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Top stat row — F&O card hidden when toggle is off */}
-      <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
         <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
         {/* Income card with period toggle */}
@@ -1183,7 +1190,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Portfolio + To-Do row */}
-      <div style={{ display: "grid", gridTemplateColumns: portfolioOn ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 12 }}>
 
         {/* ── Portfolio Summary ── */}
         {portfolioOn && (() => {
@@ -8039,9 +8046,9 @@ function Card({ title, children, action }) {
 
 function TabBar({ tabs, active, setActive, labels }) {
   return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
+    <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
       {tabs.map((t, i) => (
-        <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
+        <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1, whiteSpace: "nowrap", flexShrink: 0 }}>
           {labels ? labels[i] : t}
         </button>
       ))}
@@ -8355,10 +8362,10 @@ function PortfolioHub({ data, update }) {
   return (
     <div>
       {/* Tab bar */}
-      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20 }}>
+      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: "10px 22px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1 }}>
+            style={{ padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1, whiteSpace: "nowrap", flexShrink: 0 }}>
             {t.label}
           </button>
         ))}
