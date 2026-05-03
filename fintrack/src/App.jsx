@@ -39,6 +39,26 @@ const LIGHT_MODE_STYLE = `
     table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     /* Inputs always fit */
     input[type="time"], input[type="date"] { min-width: 0; width: 100% !important; }
+
+    /* Holdings table — horizontally scrollable on mobile */
+    .holdings-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch; width: 100%; }
+    .holdings-table-wrap > div { min-width: 560px; }
+
+    /* Project detail — stack panels on mobile */
+    .project-detail-grid { grid-template-columns: 1fr !important; }
+
+    /* SIP calculator — stack on mobile */
+    .sip-grid { grid-template-columns: 1fr !important; }
+
+    /* 4-col stats rows (Liabilities, Goals) — 2 col on mobile */
+    .stats-4col { grid-template-columns: 1fr 1fr !important; }
+
+    /* 3-col analysis charts — stack on mobile */
+    .analysis-2col { grid-template-columns: 1fr !important; }
+
+    /* Day Tracking header — wrap date picker */
+    .day-track-header { flex-wrap: wrap !important; gap: 8px !important; }
+    .day-track-header input[type="date"] { width: 100% !important; }
   }
 `;
 
@@ -1998,6 +2018,20 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
 
   return (
     <div style={{ marginTop: 16 }}>
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+        <div style={{ background: "linear-gradient(135deg, #e8f5ee 0%, #d1ead9 100%)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #b6ddc2" }}>
+          <div style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Total Income</div>
+          <div style={{ fontWeight: 800, fontSize: 20, color: "#1a6b3c" }}>+₹{totalIncome.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+          <div style={{ fontSize: 11, color: "#4a9a6a", marginTop: 4 }}>{allTx.filter(t => t.type === "income").length} entries</div>
+        </div>
+        <div style={{ background: "linear-gradient(135deg, #fef2f2 0%, #fde8e8 100%)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #f5c0c0" }}>
+          <div style={{ fontSize: 11, color: "#cc2222", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Total Expenses</div>
+          <div style={{ fontWeight: 800, fontSize: 20, color: "#cc2222" }}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+          <div style={{ fontSize: 11, color: "#e05a5a", marginTop: 4 }}>{allTx.filter(t => t.type === "expense").length} entries</div>
+        </div>
+      </div>
+
       {/* Search + Filter + Sort bar */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "var(--color-background-secondary)", borderRadius: 14, padding: "10px 16px", border: "0.5px solid var(--color-border-secondary)" }}>
@@ -5442,7 +5476,7 @@ function LiabilitiesTab({ data, update }) {
   return (
     <div style={{ marginTop: 16 }}>
       {/* Summary Strip — matching Scheduled Payments look */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div className="stats-4col" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Due This Month", val: fmtCur(liabDueThisMonth), color: "#4da6ff" },
           { label: "Overdue", val: fmtCur(liabOverdue), color: "#d44" },
@@ -6387,9 +6421,7 @@ function GoalsPage({ data, update }) {
       </div>
 
       {/* Summary strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
-        {[
-          { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
+      <div className="stats-4col" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
           { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
           { label: "Wants Goals", val: wants.length, sub: `${wants.filter(i => i.completed).length} completed`, color: "#9b59b6" },
           { label: "Wants Progress", val: fmtCur(totalWantsSaved), sub: `of ${fmtCur(totalWantsTarget)}`, color: "#f5a623" },
@@ -6402,7 +6434,7 @@ function GoalsPage({ data, update }) {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "300px 1fr" : "1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "min(300px, 100%) 1fr" : "1fr", gap: 16, alignItems: "start" }}>
         {/* Add form */}
         {showAdd && (
           <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
@@ -6491,7 +6523,7 @@ function PercentageCalculator() {
         <span style={{ fontWeight: 600, fontSize: 16 }}>Percentage Calculator</span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: 14, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 14, alignItems: "start" }}>
         {/* Input A */}
         <div>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>{cfg.labelA}</label>
@@ -7018,9 +7050,7 @@ function BusinessPage({ data, update }) {
           {showAddMonth && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
               <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Month Data</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10 }}>
                   <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
                     <option value="">Select month</option>
                     {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
@@ -7459,7 +7489,7 @@ function ProjectsPage({ data, update }) {
 
       {/* ── PROJECT DETAIL ── */}
       {project && (
-        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
+        <div className="project-detail-grid" style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "1fr 1.5fr", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
 
           {/* LEFT PANEL — Tabbed: Tasks | Files | Notes */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}) }}>
@@ -7910,7 +7940,7 @@ function ProjectsPage({ data, update }) {
               return (
                 <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
                   {/* Header */}
-                  <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div className="day-track-header" style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontWeight: 500, fontSize: 14 }}>🗓 Day Tracking</span>
                     <input
                       type="date"
@@ -10199,7 +10229,7 @@ function MutualFundsPage({ data, update }) {
 
       {/* ── SIP CALCULATOR TAB ── */}
       {tab === "sip" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+        <div className="sip-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
           {/* Sliders */}
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem" }}>
             <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 20 }}>🧮 Step-Up SIP Calculator</h3>
@@ -10872,6 +10902,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
           </div>
 
           {/* Column headers */}
+          <div className="holdings-table-wrap">
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
             <span>STOCK</span>
             <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
@@ -10986,6 +11017,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             <span>Prices via Yahoo Finance · 15-min delayed · For informational purposes only</span>
             {priceError && <span style={{ color: "#f0a020" }}>⚠ {priceError}</span>}
           </div>
+          </div>{/* end holdings-table-wrap */}
         </div>
       )}
 
@@ -11256,7 +11288,7 @@ function PortfolioAnalysisView({ data }) {
       </div>
 
       {/* Row 1: IN vs US + Cap */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div className="analysis-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>🌏 Indian vs US Holdings</div>
           <div style={{display:"flex",gap:16,alignItems:"center"}}>
