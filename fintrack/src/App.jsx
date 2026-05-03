@@ -2181,100 +2181,226 @@ function groupByDate(transactions) {
 }
 
 function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
-  const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState("all"); // all | expense | income
-  const [sortBy, setSortBy] = useState("date"); // date | amount
+  const [search, setSearch]         = useState("");
+  const [sortBy, setSortBy]         = useState("date");
   const [showFilter, setShowFilter] = useState(false);
-  const [showSort, setShowSort] = useState(false);
+  const [showSort, setShowSort]     = useState(false);
 
-  const allTx = (data.transactions || [])
-    .filter(t => !t.isTransfer)
-    .filter(t => filterType === "all" || t.type === filterType)
-    .filter(t => {
-      if (!search.trim()) return true;
-      const q = search.toLowerCase();
-      return (t.category || "").toLowerCase().includes(q) ||
-             (t.note || "").toLowerCase().includes(q) ||
-             String(t.amount).includes(q);
-    })
-    .slice()
-    .sort((a, b) => {
-      if (sortBy === "amount") return Number(b.amount) - Number(a.amount);
-      return new Date(b.date) - new Date(a.date);
+  // ── Filter state ─────────────────────────────────────────────────────────
+  const now = new Date();
+  const [filterYearMonth, setFilterYearMonth] = useState("all"); // "all" | "YYYY" | "YYYY-MM"
+  const [filterDateMode, setFilterDateMode]   = useState("ym");  // "ym" | "range"
+  const [filterDateFrom, setFilterDateFrom]   = useState("");
+  const [filterDateTo, setFilterDateTo]       = useState("");
+  const [filterCatType, setFilterCatType]     = useState("All"); // "All"|"Spending"|"Income"
+  const [filterCats, setFilterCats]           = useState([]);    // [] = all
+  const [filterAccounts, setFilterAccounts]   = useState([]);    // [] = all
+
+  // Derive available year/months from transactions
+  const allTransactions = data.transactions || [];
+  const yearMonthOptions = React.useMemo(() => {
+    const years = new Set(), months = new Set();
+    allTransactions.forEach(t => {
+      if (!t.date) return;
+      const y = t.date.slice(0,4), ym = t.date.slice(0,7);
+      years.add(y); months.add(ym);
     });
+    const sortedYears = [...years].sort((a,b) => b.localeCompare(a));
+    const sortedMonths = [...months].sort((a,b) => b.localeCompare(a)).slice(0,12);
+    return { years: sortedYears, months: sortedMonths };
+  }, [allTransactions]);
 
-  const grouped = groupByDate(allTx);
+  // All categories in data
+  const allCategories = React.useMemo(() => {
+    const cats = new Set();
+    allTransactions.forEach(t => { if (t.category) cats.add(t.category); });
+    return [...cats].sort();
+  }, [allTransactions]);
 
+  // Filtered categories based on type
+  const displayedCats = React.useMemo(() => {
+    if (filterCatType === "Spending") return allCategories.filter(c => allTransactions.some(t => t.category === c && t.type === "expense"));
+    if (filterCatType === "Income")   return allCategories.filter(c => allTransactions.some(t => t.category === c && t.type === "income"));
+    return allCategories;
+  }, [allCategories, filterCatType, allTransactions]);
+
+  // Count active filters
+  const activeFilterCount = [
+    filterYearMonth !== "all" || (filterDateMode === "range" && (filterDateFrom || filterDateTo)),
+    filterCats.length > 0,
+    filterAccounts.length > 0,
+    filterCatType !== "All",
+  ].filter(Boolean).length;
+
+  function resetFilters() {
+    setFilterYearMonth("all"); setFilterDateMode("ym");
+    setFilterDateFrom(""); setFilterDateTo("");
+    setFilterCatType("All"); setFilterCats([]); setFilterAccounts([]);
+  }
+
+  function toggleCat(cat) {
+    setFilterCats(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
+  }
+  function toggleAccount(id) {
+    setFilterAccounts(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
+  }
+
+  const allTx = React.useMemo(() => {
+    return allTransactions
+      .filter(t => !t.isTransfer)
+      .filter(t => {
+        // Date filter
+        if (filterDateMode === "range") {
+          if (filterDateFrom && t.date < filterDateFrom) return false;
+          if (filterDateTo   && t.date > filterDateTo)   return false;
+        } else if (filterYearMonth !== "all") {
+          if (!t.date?.startsWith(filterYearMonth)) return false;
+        }
+        // Category type filter
+        if (filterCatType === "Spending" && t.type !== "expense") return false;
+        if (filterCatType === "Income"   && t.type !== "income")  return false;
+        // Category chips
+        if (filterCats.length > 0 && !filterCats.includes(t.category)) return false;
+        // Account chips
+        if (filterAccounts.length > 0 && !filterAccounts.includes(String(t.bankId))) return false;
+        // Search
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          return (t.category||"").toLowerCase().includes(q) ||
+                 (t.note||"").toLowerCase().includes(q) ||
+                 String(t.amount).includes(q);
+        }
+        return true;
+      })
+      .slice()
+      .sort((a, b) => sortBy === "amount" ? Number(b.amount) - Number(a.amount) : new Date(b.date) - new Date(a.date));
+  }, [allTransactions, filterDateMode, filterYearMonth, filterDateFrom, filterDateTo, filterCatType, filterCats, filterAccounts, search, sortBy]);
+
+  const grouped      = groupByDate(allTx);
   const totalExpense = allTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
   const totalIncome  = allTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
 
+  // Month label helper
+  function fmtYM(ym) {
+    const [y, m] = ym.split("-");
+    const d = new Date(+y, +m - 1, 1);
+    return d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+  }
+
+  const BG  = "var(--color-background-primary)";
+  const BG2 = "var(--color-background-secondary)";
+  const BORDER = "var(--color-border-tertiary)";
+  const GREEN = "#1a6b3c";
+
+  // Chip style helper
+  function chip(active, extra = {}) {
+    return {
+      padding: "5px 14px", borderRadius: 20, fontSize: 13, cursor: "pointer", border: "none",
+      fontWeight: active ? 600 : 400,
+      background: active ? GREEN : BG2,
+      color: active ? "#fff" : "var(--color-text-secondary)",
+      ...extra,
+    };
+  }
+
   return (
     <div style={{ marginTop: 16 }}>
-      {/* Search + Filter + Sort bar */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "#1e1e2e", borderRadius: 14, padding: "10px 16px", border: "0.5px solid #2a2a3e" }}>
-          <span style={{ fontSize: 16, color: "#6b7280" }}>🔍</span>
+      {/* ── Search + Filter + Sort bar ── */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: BG2, borderRadius: 14, padding: "10px 14px", border: `0.5px solid ${BORDER}` }}>
+          <span style={{ fontSize: 15, color: "var(--color-text-secondary)" }}>🔍</span>
           <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search transactions"
-            style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 14, color: "#e5e7eb", padding: 0 }}
+            style={{ flex: 1, background: "none !important", border: "none !important", outline: "none", fontSize: 14, color: "var(--color-text-primary)", padding: "0 !important" }}
           />
-          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#6b7280", padding: 0 }}>✕</button>}
+          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", padding: 0 }}>✕</button>}
         </div>
-        {/* Filter button */}
-        <div style={{ position: "relative" }}>
-          <button onClick={() => { setShowFilter(p => !p); setShowSort(false); }} style={{
-            width: 44, height: 44, borderRadius: "50%", background: filterType !== "all" ? "#1a6b3c" : "#1e1e2e",
-            border: "0.5px solid #2a2a3e", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-          }}>▽</button>
-          {showFilter && (
-            <div style={{ position: "absolute", top: 50, right: 0, background: "#1e1e2e", border: "0.5px solid #2a2a3e", borderRadius: 12, zIndex: 50, minWidth: 140, boxShadow: "0 4px 20px rgba(0,0,0,0.4)", overflow: "hidden" }}>
-              {[["all","All"], ["expense","Expenses"], ["income","Income"]].map(([v, l]) => (
-                <button key={v} onClick={() => { setFilterType(v); setShowFilter(false); }}
-                  style={{ display: "block", width: "100%", padding: "10px 16px", background: filterType === v ? "#1a6b3c22" : "none", border: "none", cursor: "pointer", textAlign: "left", fontSize: 13, color: filterType === v ? "#4cc97a" : "#e5e7eb", fontWeight: filterType === v ? 600 : 400 }}>
-                  {l}
-                </button>
-              ))}
-            </div>
+        {/* Filter icon button */}
+        <button onClick={() => { setShowFilter(p => !p); setShowSort(false); }} style={{
+          width: 44, height: 44, borderRadius: "50%", border: `0.5px solid ${BORDER}`,
+          background: activeFilterCount > 0 ? GREEN : BG2,
+          cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
+          color: activeFilterCount > 0 ? "#fff" : "var(--color-text-secondary)", position: "relative", flexShrink: 0,
+        }}>
+          {activeFilterCount > 0 && (
+            <span style={{ position: "absolute", top: -3, right: -3, background: "#ef4444", color: "#fff", borderRadius: "50%", width: 16, height: 16, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeFilterCount}</span>
           )}
-        </div>
-        {/* Sort button */}
-        <div style={{ position: "relative" }}>
+          ≡
+        </button>
+        {/* Sort icon */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
           <button onClick={() => { setShowSort(p => !p); setShowFilter(false); }} style={{
-            width: 44, height: 44, borderRadius: "50%", background: "#1e1e2e",
-            border: "0.5px solid #2a2a3e", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-          }}>≡</button>
+            width: 44, height: 44, borderRadius: "50%", background: BG2, border: `0.5px solid ${BORDER}`,
+            cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)",
+          }}>↕</button>
           {showSort && (
-            <div style={{ position: "absolute", top: 50, right: 0, background: "#1e1e2e", border: "0.5px solid #2a2a3e", borderRadius: 12, zIndex: 50, minWidth: 150, boxShadow: "0 4px 20px rgba(0,0,0,0.4)", overflow: "hidden" }}>
-              {[["date","By Date"], ["amount","By Amount"]].map(([v, l]) => (
-                <button key={v} onClick={() => { setSortBy(v); setShowSort(false); }}
-                  style={{ display: "block", width: "100%", padding: "10px 16px", background: sortBy === v ? "#1a6b3c22" : "none", border: "none", cursor: "pointer", textAlign: "left", fontSize: 13, color: sortBy === v ? "#4cc97a" : "#e5e7eb", fontWeight: sortBy === v ? 600 : 400 }}>
-                  {l}
-                </button>
-              ))}
-            </div>
+            <>
+              <div onClick={() => setShowSort(false)} style={{ position: "fixed", inset: 0, zIndex: 498 }} />
+              <div style={{ position: "absolute", top: 50, right: 0, background: BG, border: `0.5px solid ${BORDER}`, borderRadius: 12, zIndex: 499, minWidth: 150, boxShadow: "0 6px 24px rgba(0,0,0,0.12)", overflow: "hidden" }}>
+                {[["date","By Date"], ["amount","By Amount"]].map(([v, l]) => (
+                  <button key={v} onClick={() => { setSortBy(v); setShowSort(false); }}
+                    style={{ display: "block", width: "100%", padding: "10px 16px", background: sortBy === v ? "#e8f5ee" : "none", border: "none", cursor: "pointer", textAlign: "left", fontSize: 13, color: sortBy === v ? GREEN : "var(--color-text-primary)", fontWeight: sortBy === v ? 600 : 400 }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      {/* Summary strip */}
-      {filterType !== "expense" && filterType !== "income" && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-          <div style={{ flex: 1, background: "#1a3d2b", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #2a5a3a" }}>
-            <div style={{ fontSize: 11, color: "#4cc97a", marginBottom: 2 }}>Total Income</div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: "#4cc97a" }}>+₹{totalIncome.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
-          </div>
-          <div style={{ flex: 1, background: "#3d1a1a", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #5a2a2a" }}>
-            <div style={{ fontSize: 11, color: "#ff8888", marginBottom: 2 }}>Total Expenses</div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: "#ff8888" }}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
-          </div>
+      {/* ── Active filter chips (quick preview) ── */}
+      {activeFilterCount > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {filterYearMonth !== "all" && filterDateMode === "ym" && (
+            <span style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
+              📅 {filterYearMonth.length === 4 ? filterYearMonth : fmtYM(filterYearMonth)}
+              <button onClick={() => setFilterYearMonth("all")} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+            </span>
+          )}
+          {filterCatType !== "All" && (
+            <span style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
+              {filterCatType}
+              <button onClick={() => setFilterCatType("All")} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+            </span>
+          )}
+          {filterCats.map(c => (
+            <span key={c} style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
+              {c}
+              <button onClick={() => toggleCat(c)} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+            </span>
+          ))}
+          {filterAccounts.map(id => {
+            const a = accounts.find(ac => String(ac.id) === id);
+            return a ? (
+              <span key={id} style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
+                {a.name}
+                <button onClick={() => toggleAccount(id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+              </span>
+            ) : null;
+          })}
+          <button onClick={resetFilters} style={{ padding:"3px 10px", borderRadius:20, fontSize:11, cursor:"pointer", border:`0.5px solid var(--color-border-secondary)`, background:"none", color:"var(--color-text-secondary)" }}>
+            Clear all
+          </button>
         </div>
       )}
 
-      {/* Grouped transaction list */}
+      {/* ── Summary strip ── */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <div style={{ flex: 1, background: "linear-gradient(135deg,#e8f5ee,#d1ead9)", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #b6ddc2" }}>
+          <div style={{ fontSize: 11, color: GREEN, fontWeight: 600, marginBottom: 2 }}>INCOME</div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: GREEN }}>+₹{totalIncome.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+        </div>
+        <div style={{ flex: 1, background: "linear-gradient(135deg,#fef2f2,#fde8e8)", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #f5c0c0" }}>
+          <div style={{ fontSize: 11, color: "#cc2222", fontWeight: 600, marginBottom: 2 }}>SPENDING</div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: "#cc2222" }}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+        </div>
+      </div>
+
+      {/* ── Grouped transaction list ── */}
       {grouped.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#6b7280", fontSize: 14 }}>
+        <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 14 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
           No transactions found
         </div>
@@ -2283,61 +2409,42 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
           {grouped.map(group => {
             const groupTotal = group.items.reduce((s, t) => t.type === "expense" ? s - Number(t.amount) : s + Number(t.amount), 0);
             return (
-              <div key={group.label} style={{ background: "#1e1e2e", borderRadius: 16, overflow: "hidden", border: "0.5px solid #2a2a3e" }}>
-                {/* Group header */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "0.5px solid #2a2a3e" }}>
-                  <span style={{ fontWeight: 700, fontSize: 16, color: "#f3f4f6" }}>{group.label}</span>
-                  <span style={{ fontWeight: 600, fontSize: 14, color: groupTotal >= 0 ? "#4cc97a" : "#ff8888" }}>
+              <div key={group.label} style={{ background: BG, borderRadius: 16, overflow: "hidden", border: `0.5px solid ${BORDER}`, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `0.5px solid ${BORDER}`, background: BG2 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>{group.label}</span>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: groupTotal >= 0 ? GREEN : "#cc2222" }}>
                     {groupTotal >= 0 ? "+" : ""}₹{Math.abs(groupTotal).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                   </span>
                 </div>
-                {/* Transactions */}
                 {group.items.map((t, idx) => {
                   const acct = accounts.find(b => String(b.id) === String(t.bankId));
                   const { bg, icon: iconColor } = getCategoryColor(t.category || t.note, t.type);
                   const emoji = getCategoryIcon(t.category || t.note);
-                  const timeStr = t.time || "";
                   return (
-                    <div key={t.id}
-                      onClick={() => setEditTx && setEditTx({ ...t })}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 14,
-                        padding: "14px 16px",
-                        borderBottom: idx < group.items.length - 1 ? "0.5px solid #2a2a3e" : "none",
-                        cursor: "pointer",
-                        transition: "background 0.15s",
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = "#252535"}
+                    <div key={t.id} onClick={() => setEditTx && setEditTx({ ...t })}
+                      style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderBottom: idx < group.items.length - 1 ? `0.5px solid ${BORDER}` : "none", cursor: "pointer", transition: "background 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = BG2}
                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                     >
-                      {/* Icon circle */}
-                      <div style={{ width: 46, height: 46, borderRadius: 14, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: `0.5px solid ${iconColor}33` }}>
-                        {emoji}
-                      </div>
-                      {/* Middle: category + account */}
+                      <div style={{ width: 46, height: 46, borderRadius: 14, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: `0.5px solid ${iconColor}33` }}>{emoji}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: "#f3f4f6", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {t.category || t.note || "Uncategorized"}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#6b7280" }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.category || t.note || "Uncategorized"}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-text-secondary)" }}>
                           {acct && <><span>🏛</span><span>{acct.name}</span></>}
-                          {t.note && t.category && <span style={{ color: "#4a4a5a" }}>· {t.note}</span>}
+                          {t.note && t.category && <span>· {t.note}</span>}
                         </div>
                       </div>
-                      {/* Right: amount + time + delete */}
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15, color: t.type === "income" ? "#4cc97a" : "#f3f4f6", marginBottom: 3 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: t.type === "income" ? GREEN : "var(--color-text-primary)", marginBottom: 3 }}>
                           {t.type === "income" ? "+" : ""}₹{Number(t.amount).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                         </div>
-                        {timeStr && <div style={{ fontSize: 11, color: "#6b7280" }}>{timeStr}</div>}
+                        {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{t.time}</div>}
                       </div>
-                      {/* Delete button */}
-                      <button
-                        onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#3a3a4a", padding: "4px", borderRadius: 6, flexShrink: 0 }}
+                      <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
                         title="Delete"
-                        onMouseEnter={e => e.currentTarget.style.color = "#ff6b6b"}
-                        onMouseLeave={e => e.currentTarget.style.color = "#3a3a4a"}
+                        onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
                       >🗑</button>
                     </div>
                   );
@@ -2346,6 +2453,137 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
             );
           })}
         </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          FILTER BOTTOM SHEET
+      ══════════════════════════════════════════════════════════════════ */}
+      {showFilter && (
+        <>
+          {/* Backdrop */}
+          <div onClick={() => setShowFilter(false)} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2px)" }} />
+          {/* Sheet */}
+          <div style={{
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 501,
+            background: BG, borderRadius: "20px 20px 0 0",
+            boxShadow: "0 -8px 40px rgba(0,0,0,0.18)",
+            maxHeight: "82vh", overflowY: "auto",
+            border: `0.5px solid ${BORDER}`,
+            WebkitOverflowScrolling: "touch",
+          }}>
+            {/* Handle bar */}
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 4 }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--color-border-primary)" }} />
+            </div>
+
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px" }}>
+              <span style={{ fontWeight: 700, fontSize: 18 }}>Filter</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={resetFilters} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 20, border: `0.5px solid ${BORDER}`, background: BG2, cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                  ↺ Reset
+                </button>
+                <button onClick={() => setShowFilter(false)} style={{ width: 32, height: 32, borderRadius: "50%", border: `0.5px solid ${BORDER}`, background: BG2, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)" }}>✕</button>
+              </div>
+            </div>
+
+            <div style={{ padding: "0 20px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+
+              {/* ── Section 1: Date ── */}
+              <div>
+                <div style={{ display: "flex", gap: 20, marginBottom: 14 }}>
+                  <button onClick={() => setFilterDateMode("ym")} style={{ fontSize: 14, fontWeight: filterDateMode === "ym" ? 700 : 400, color: filterDateMode === "ym" ? "var(--color-text-primary)" : "var(--color-text-secondary)", background: "none", border: "none", cursor: "pointer", padding: 0, borderBottom: filterDateMode === "ym" ? `2px solid ${GREEN}` : "2px solid transparent", paddingBottom: 2 }}>
+                    Year / month
+                  </button>
+                  <button onClick={() => setFilterDateMode("range")} style={{ fontSize: 14, fontWeight: filterDateMode === "range" ? 700 : 400, color: filterDateMode === "range" ? "var(--color-text-primary)" : "var(--color-text-secondary)", background: "none", border: "none", cursor: "pointer", padding: 0, borderBottom: filterDateMode === "range" ? `2px solid ${GREEN}` : "2px solid transparent", paddingBottom: 2 }}>
+                    Date range
+                  </button>
+                </div>
+
+                {filterDateMode === "ym" ? (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button onClick={() => setFilterYearMonth("all")} style={chip(filterYearMonth === "all")}>All</button>
+                    {yearMonthOptions.years.map(y => (
+                      <button key={y} onClick={() => setFilterYearMonth(filterYearMonth === y ? "all" : y)} style={chip(filterYearMonth === y)}>{y}</button>
+                    ))}
+                    {yearMonthOptions.months.map(ym => (
+                      <button key={ym} onClick={() => setFilterYearMonth(filterYearMonth === ym ? "all" : ym)} style={chip(filterYearMonth === ym)}>{fmtYM(ym)}</button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>From</label>
+                      <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>To</label>
+                      <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Section 2: Category ── */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>Category</span>
+                  {filterCats.length > 0 && (
+                    <button onClick={() => setFilterCats([])} style={{ fontSize: 12, color: GREEN, background: "none", border: "none", cursor: "pointer", padding: 0 }}>○ Select all</button>
+                  )}
+                </div>
+                {/* All / Spending / Income toggle */}
+                <div style={{ display: "flex", background: BG2, borderRadius: 22, padding: 3, gap: 2, marginBottom: 12, border: `0.5px solid ${BORDER}` }}>
+                  {["All", "Spending", "Income"].map(v => (
+                    <button key={v} onClick={() => { setFilterCatType(v); setFilterCats([]); }}
+                      style={{ flex: 1, padding: "6px 0", borderRadius: 18, border: "none", cursor: "pointer", fontSize: 13, fontWeight: filterCatType === v ? 600 : 400, background: filterCatType === v ? BG : "transparent", color: filterCatType === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", boxShadow: filterCatType === v ? "0 1px 4px rgba(0,0,0,0.1)" : "none", transition: "all 0.15s" }}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                {/* Category chips */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {displayedCats.length === 0 ? (
+                    <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No categories yet</span>
+                  ) : displayedCats.map(cat => (
+                    <button key={cat} onClick={() => toggleCat(cat)}
+                      style={{ padding: "6px 16px", borderRadius: 20, fontSize: 13, cursor: "pointer", border: filterCats.includes(cat) ? `1.5px solid ${GREEN}` : `0.5px solid ${BORDER}`, background: filterCats.includes(cat) ? "#e8f5ee" : BG2, color: filterCats.includes(cat) ? GREEN : "var(--color-text-secondary)", fontWeight: filterCats.includes(cat) ? 600 : 400, transition: "all 0.15s" }}>
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Section 3: Payment Mode ── */}
+              {accounts.length > 0 && (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>Payment mode</span>
+                    {filterAccounts.length > 0 && (
+                      <button onClick={() => setFilterAccounts([])} style={{ fontSize: 12, color: GREEN, background: "none", border: "none", cursor: "pointer", padding: 0 }}>○ Select all</button>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {accounts.map(a => {
+                      const active = filterAccounts.includes(String(a.id));
+                      return (
+                        <button key={a.id} onClick={() => toggleAccount(String(a.id))}
+                          style={{ padding: "6px 16px", borderRadius: 20, fontSize: 13, cursor: "pointer", border: active ? `1.5px solid ${GREEN}` : `0.5px solid ${BORDER}`, background: active ? "#e8f5ee" : BG2, color: active ? GREEN : "var(--color-text-secondary)", fontWeight: active ? 600 : 400, transition: "all 0.15s" }}>
+                          {a.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Apply button ── */}
+              <button onClick={() => setShowFilter(false)} style={{ width: "100%", background: GREEN, color: "#fff", border: "none", borderRadius: 12, padding: "14px 0", fontSize: 15, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
+                Show {allTx.length} Transaction{allTx.length !== 1 ? "s" : ""}
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
