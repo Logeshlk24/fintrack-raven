@@ -318,7 +318,7 @@ export default function App() {
   const [onboardStep, setOnboardStep]   = useState(0);
   const [modal, setModal]               = useState(null);
   const [foTab, setFoTab]               = useState("trades");
-  const [moneyTab, setMoneyTab]         = useState("expenses");
+  const [moneyTab, setMoneyTab]         = useState("transactions");
   const [essentialsTab, setEssentialsTab] = useState("essentials");
   const [settingsTab, setSettingsTab]   = useState("trading");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1694,7 +1694,7 @@ function MoneyPage({ data, update, tab, setTab }) {
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle || (tab === "recent" ? "Recent Transactions" : tab)}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
-      <TabBar tabs={["expenses", "income", "transactions", "transfer", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Transactions", "Transfer", "Scheduled", "Liabilities", "Analysis"]} />
+      <TabBar tabs={["transactions", "expenses", "income", "transfer", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Transactions", "Expenses", "Income", "Transfer", "Scheduled", "Liabilities", "Analysis"]} />
 
       {/* ── Transfer Tab ── */}
       {tab === "transfer" && <TransferTab data={data} update={update} accounts={accounts} />}
