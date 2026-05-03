@@ -35,14 +35,13 @@ const LIGHT_MODE_STYLE = `
   @media (max-width: 1024px) {
     .ft-sidebar { display: none !important; }
     .ft-bottom-nav { display: flex !important; }
-    .ft-main { padding: 1rem !important; padding-bottom: 80px !important; overflow-x: hidden !important; max-width: 100vw !important; }
-    .ft-money-grid { grid-template-columns: 1fr !important; width: 100% !important; box-sizing: border-box !important; }
+    .ft-main { padding: 1rem !important; padding-bottom: 80px !important; }
+    .ft-money-grid { grid-template-columns: 1fr !important; }
     .ft-overview-grid { grid-template-columns: 1fr !important; }
     .ft-period-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .ft-period-bar::-webkit-scrollbar { display: none; }
     .ft-tab-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .ft-tab-bar::-webkit-scrollbar { display: none; }
-    .ft-tab-bar button { white-space: nowrap !important; flex-shrink: 0 !important; }
   }
   @media (min-width: 1025px) {
     .ft-bottom-nav { display: none !important; }
@@ -595,7 +594,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main className="ft-main" style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%" }}>
+      <main className="ft-main" style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} mobile={mobile} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} mobile={mobile} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} mobile={mobile} />}
@@ -8051,7 +8050,7 @@ function StatCard({ label, value, sub, icon, danger, pnl, big, accent, tooltip }
 
 function Card({ title, children, action }) {
   return (
-    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", width: "100%", boxSizing: "border-box", minWidth: 0 }}>
+    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
         <span style={{ fontWeight: 500, fontSize: 15 }}>{title}</span>
         {action}
@@ -8379,10 +8378,10 @@ function PortfolioHub({ data, update, mobile }) {
   return (
     <div>
       {/* Tab bar */}
-      <div className="ft-tab-bar" style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: "10px 22px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1, whiteSpace: "nowrap", flexShrink: 0 }}>
+            style={{ padding: "10px 22px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1 }}>
             {t.label}
           </button>
         ))}
