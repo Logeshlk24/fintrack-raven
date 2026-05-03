@@ -32,17 +32,18 @@ const LIGHT_MODE_STYLE = `
   }
 
   /* CSS-driven mobile responsive — works even if JS matchMedia returns wrong value */
-  @media (max-width: 767px) {
+  @media (max-width: 1024px) {
     .ft-sidebar { display: none !important; }
     .ft-bottom-nav { display: flex !important; }
     .ft-main { padding: 1rem !important; padding-bottom: 80px !important; }
     .ft-money-grid { grid-template-columns: 1fr !important; }
+    .ft-overview-grid { grid-template-columns: 1fr !important; }
     .ft-period-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .ft-period-bar::-webkit-scrollbar { display: none; }
     .ft-tab-bar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .ft-tab-bar::-webkit-scrollbar { display: none; }
   }
-  @media (min-width: 768px) {
+  @media (min-width: 1025px) {
     .ft-bottom-nav { display: none !important; }
   }
 `;
@@ -300,14 +301,21 @@ function useDrive() { return React.useContext(DriveContext); }
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function App() {
-  // ── Mobile detection ──────────────────────────────────────────────────────
-  const [mobile, setMobile] = useState(() =>
-    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
-  );
+  // ── Mobile detection — checks UA + matchMedia with wide breakpoint ─────────
+  function isMobileDevice() {
+    if (typeof window === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    const isMobileUA = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(ua);
+    const isNarrow = window.matchMedia("(max-width: 1024px)").matches;
+    // If UA says mobile OR screen is narrow → mobile layout
+    return isMobileUA || isNarrow;
+  }
+  const [mobile, setMobile] = useState(() => isMobileDevice());
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const handler = (e) => setMobile(e.matches);
+    // Re-check on resize
+    const mq = window.matchMedia("(max-width: 1024px)");
+    const handler = () => setMobile(isMobileDevice());
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
@@ -587,7 +595,7 @@ export default function App() {
 
       {/* Main */}
       <main className="ft-main" style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
-        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
+        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} mobile={mobile} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} mobile={mobile} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
         {page === "portfolio" && portfolioOn && <PortfolioHub data={data} update={update} />}
@@ -1028,7 +1036,7 @@ function ProfilePage({ data, update }) {
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
-function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfolioOn }) {
+function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfolioOn, mobile }) {
   const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const [period, setPeriod] = useState(data.overviewDefaultPeriod || "all");
@@ -1157,14 +1165,14 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Top stat row — F&O card hidden when toggle is off */}
-      <div style={{ display: "grid", gridTemplateColumns: foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div className="ft-overview-grid" style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : (foOn ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr"), gap: 12, marginBottom: 12 }}>
         <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
         {/* Income card with period toggle */}
         <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
             <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
-            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1, flexWrap: "wrap" }}>
               {PERIODS.map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)}
                   style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
@@ -1198,7 +1206,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       </div>
 
       {/* Portfolio + To-Do row */}
-      <div style={{ display: "grid", gridTemplateColumns: portfolioOn ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
+      <div className="ft-overview-grid" style={{ display: "grid", gridTemplateColumns: (mobile || !portfolioOn) ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
 
         {/* ── Portfolio Summary ── */}
         {portfolioOn && (() => {
@@ -1358,7 +1366,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       {/* Bank balances */}
       {bankBalances.length > 0 && (
         <Card title="Bank Balances" action={<button onClick={() => setPage("money")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>Manage →</button>}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 }}>
             {bankBalances.map(b => (
               <div key={b.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>{b.name}</div>
