@@ -8230,7 +8230,6 @@ function PortfolioHub({ data, update }) {
     { id: "mf",        label: "💼 Mutual Funds"          },
     { id: "analysis",  label: "📊 Analysis"              },
     { id: "compare",   label: "🔍 Comparative Analysis"  },
-    { id: "dividend",  label: "💰 Dividend"              },
   ];
 
   return (
@@ -8416,7 +8415,6 @@ function PortfolioHub({ data, update }) {
       {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
       {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
       {tab === "compare"  && <ComparativeAnalysisView data={data} />}
-      {tab === "dividend" && <DividendView data={data} />}
     </div>
   );
 }
