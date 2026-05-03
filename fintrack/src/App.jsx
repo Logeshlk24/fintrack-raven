@@ -285,6 +285,18 @@ function useDrive() { return React.useContext(DriveContext); }
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function App() {
+  // ── Mobile detection ──────────────────────────────────────────────────────
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+  );
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e) => setMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   // ── Firebase auth state ───────────────────────────────────────────────────
   // undefined = still checking  |  null = signed out  |  object = signed in
   const [firebaseUser, setFirebaseUser] = useState(undefined);
@@ -429,25 +441,7 @@ export default function App() {
     navDragIdx.current = null; setNavDragOver(null);
   }
 
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-  const [mobile, setMobile] = React.useState(isMobile);
-  React.useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const handler = (e) => setMobile(e.matches);
-    mq.addEventListener("change", handler);
-    setMobile(mq.matches);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-
-  // Bottom nav items for mobile (max 5)
-  const bottomNavItems = [
-    { id: "overview", label: "Overview", icon: "⊞" },
-    { id: "money",    label: "Money",    icon: "⊕" },
-    { id: "goals",    label: "Goals",    icon: "◎" },
-    { id: "portfolio",label: "Portfolio",icon: "📈" },
-    { id: "more",     label: "More",     icon: "···" },
-  ];
-  const [showMoreMenu, setShowMoreMenu] = React.useState(false);
+  // Mobile: extra nav items for "More" sheet
   const moreItems = navItems.filter(n => !["money","goals","portfolio"].includes(n.id));
 
   return (
