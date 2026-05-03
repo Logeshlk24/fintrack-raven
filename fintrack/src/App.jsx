@@ -429,18 +429,39 @@ export default function App() {
     navDragIdx.current = null; setNavDragOver(null);
   }
 
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  const [mobile, setMobile] = React.useState(isMobile);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e) => setMobile(e.matches);
+    mq.addEventListener("change", handler);
+    setMobile(mq.matches);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  // Bottom nav items for mobile (max 5)
+  const bottomNavItems = [
+    { id: "overview", label: "Overview", icon: "⊞" },
+    { id: "money",    label: "Money",    icon: "⊕" },
+    { id: "goals",    label: "Goals",    icon: "◎" },
+    { id: "portfolio",label: "Portfolio",icon: "📈" },
+    { id: "more",     label: "More",     icon: "···" },
+  ];
+  const [showMoreMenu, setShowMoreMenu] = React.useState(false);
+  const moreItems = navItems.filter(n => !["money","goals","portfolio"].includes(n.id));
+
   return (
     <DriveProvider data={data} update={update}>
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" }}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
 
-      {/* Sidebar */}
+      {/* Sidebar — hidden on mobile */}
       <aside style={{
         width: sidebarCollapsed ? 56 : 200,
         background: "var(--color-background-primary)",
         borderRight: "0.5px solid var(--color-border-tertiary)",
-        display: "flex", flexDirection: "column",
+        display: mobile ? "none" : "flex", flexDirection: "column",
         padding: "1rem 0",
         position: "sticky", top: 0, height: "100vh",
         flexShrink: 0,
@@ -556,7 +577,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, padding: "1.5rem", overflowY: "auto" }}>
+      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", minWidth: 0 }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
@@ -566,6 +587,111 @@ export default function App() {
         {page === "projects" && <ProjectsPage data={data} update={update} />}
         {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} navItems={navItems} navEditMode={navEditMode} setNavEditMode={setNavEditMode} onNavDragStart={onNavDragStart} onNavDragOver={onNavDragOver} onNavDrop={onNavDrop} navDragOver={navDragOver} navDragIdx={navDragIdx} setNavDragOver={setNavDragOver} />}
       </main>
+
+      {/* ── Mobile Bottom Navigation Bar ── */}
+      {mobile && (
+        <>
+          {/* More menu overlay */}
+          {showMoreMenu && (
+            <div onClick={() => setShowMoreMenu(false)} style={{
+              position: "fixed", inset: 0, zIndex: 998, background: "rgba(0,0,0,0.3)"
+            }}>
+              <div onClick={e => e.stopPropagation()} style={{
+                position: "fixed", bottom: 64, left: 0, right: 0, zIndex: 999,
+                background: "var(--color-background-primary)",
+                borderTop: "0.5px solid var(--color-border-tertiary)",
+                borderRadius: "16px 16px 0 0",
+                padding: "1rem",
+                display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8,
+              }}>
+                {moreItems.map(item => (
+                  <button key={item.id} onClick={() => { setPage(item.id); setShowMoreMenu(false); }} style={{
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                    padding: "12px 8px", borderRadius: 12, border: "none",
+                    background: page === item.id ? "var(--color-background-secondary)" : "transparent",
+                    cursor: "pointer", fontSize: 12, color: "var(--color-text-primary)",
+                  }}>
+                    <span style={{ fontSize: 22 }}>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+                {/* Settings */}
+                <button onClick={() => { setPage("settings"); setShowMoreMenu(false); }} style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                  padding: "12px 8px", borderRadius: 12, border: "none",
+                  background: page === "settings" ? "var(--color-background-secondary)" : "transparent",
+                  cursor: "pointer", fontSize: 12, color: "var(--color-text-primary)",
+                }}>
+                  <span style={{ fontSize: 22 }}>⚙️</span>
+                  <span>Settings</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bottom bar */}
+          <nav style={{
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
+            background: "var(--color-background-primary)",
+            borderTop: "0.5px solid var(--color-border-tertiary)",
+            display: "flex", alignItems: "stretch",
+            height: 64,
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}>
+            {/* Overview */}
+            <button onClick={() => { setPage("overview"); setShowMoreMenu(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: page === "overview" ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22 }}>⊞</span>
+              <span>Overview</span>
+            </button>
+            {/* Money */}
+            <button onClick={() => { setPage("money"); setShowMoreMenu(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: page === "money" ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22 }}>⊕</span>
+              <span>Money</span>
+            </button>
+            {/* Goals */}
+            <button onClick={() => { setPage("goals"); setShowMoreMenu(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: page === "goals" ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22 }}>◎</span>
+              <span>Goals</span>
+            </button>
+            {/* Portfolio */}
+            <button onClick={() => { setPage("portfolio"); setShowMoreMenu(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: page === "portfolio" ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22 }}>📈</span>
+              <span>Portfolio</span>
+            </button>
+            {/* More */}
+            <button onClick={() => setShowMoreMenu(p => !p)} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: showMoreMenu || !["overview","money","goals","portfolio"].includes(page)
+                ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22, letterSpacing: 2 }}>•••</span>
+              <span>More</span>
+            </button>
+          </nav>
+        </>
+      )}
     </div>
     </DriveProvider>
   );
