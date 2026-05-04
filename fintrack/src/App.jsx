@@ -7259,6 +7259,8 @@ function BusinessPage({ data, update }) {
   const [monthForm,    setMonthForm]    = useState({ month: "", grossIncome: "", netIncome: "" });
   const [editEntry,    setEditEntry]    = useState(null);
   const [billModal,    setBillModal]    = useState(null);
+  const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
+  const [renamingYear, setRenamingYear] = useState(null); // { year, value }
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -7301,6 +7303,10 @@ function BusinessPage({ data, update }) {
     if (!confirm("Delete this business and all its data?")) return;
     update(p => ({ businesses: (p.businesses || []).filter(b => b.id !== id) }));
     if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); }
+  }
+  function renameBusiness(id, newName) {
+    const n = newName.trim(); if (!n) return;
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, name: n } : b) }));
   }
 
   function addYear() {
@@ -7571,10 +7577,18 @@ function BusinessPage({ data, update }) {
           {selectedYear && (
             <button onClick={() => setSelectedYear(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
           )}
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
             {!selectedBiz ? "Business"
-              : !selectedYear ? `${activeBiz?.name}`
-              : `${activeBiz?.name} · ${selectedYear}`}
+              : !selectedYear
+                ? (renamingBiz?.id === selectedBiz
+                    ? <input autoFocus value={renamingBiz.value}
+                        onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") { renameBusiness(selectedBiz, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
+                        onBlur={() => { renameBusiness(selectedBiz, renamingBiz.value); setRenamingBiz(null); }}
+                        style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 }} />
+                    : <><span>{activeBiz?.name}</span><button onClick={() => setRenamingBiz({ id: selectedBiz, value: activeBiz?.name || "" })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Rename">✏️</button></>
+                  )
+                : `${activeBiz?.name} · ${selectedYear}`}
           </h1>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -7621,14 +7635,27 @@ function BusinessPage({ data, update }) {
                 const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
                 const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
                 return (
-                  <div key={biz.id} onClick={() => setSelectedBiz(biz.id)}
-                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
+                  <div key={biz.id} onClick={() => { if (!renamingBiz) setSelectedBiz(biz.id); }}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
-                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                      style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                    <button onClick={ev => { ev.stopPropagation(); setRenamingBiz({ id: biz.id, value: biz.name }); }}
+                      style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, opacity: 0.6, padding: 2 }} title="Rename">✏️</button>
                     <div style={{ fontSize: 32, marginBottom: 6 }}>🏢</div>
-                    <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
+                    {renamingBiz?.id === biz.id ? (
+                      <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
+                        <input autoFocus value={renamingBiz.value}
+                          onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
+                          onKeyDown={e => { if (e.key === "Enter") { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
+                          onBlur={() => { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); }}
+                          style={{ width: "100%", boxSizing: "border-box", fontSize: 18, fontWeight: 700, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "'DM Serif Display', serif", background: "var(--color-background-secondary)" }} />
+                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
+                    )}
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                       <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
@@ -7667,8 +7694,8 @@ function BusinessPage({ data, update }) {
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
                 {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
-                  <div key={s.year} onClick={() => setSelectedYear(s.year)}
-                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
+                  <div key={s.year} onClick={() => { if (!renamingYear) setSelectedYear(s.year); }}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingYear?.year === s.year ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteYear(s.year); }}
@@ -7855,6 +7882,7 @@ function ProjectsPage({ data, update }) {
   const [selectedProject, setSelectedProject] = useState(null);
   const [showAddProject, setShowAddProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [renamingProject, setRenamingProject] = useState(null); // { id, value }
 
   // Left panel tab: "tasks" | "files" | "notes"
   const [leftTab, setLeftTab] = useState("tasks");
@@ -7910,6 +7938,10 @@ function ProjectsPage({ data, update }) {
     if (!confirm("Delete this project and all its data?")) return;
     update(p => ({ projectsData: (p.projectsData || []).filter(pr => pr.id !== id) }));
     if (selectedProject === id) setSelectedProject(null);
+  }
+  function renameProject(id, newName) {
+    const n = newName.trim(); if (!n) return;
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === id ? { ...pr, name: n } : pr) }));
   }
 
   function addTask() {
@@ -8077,8 +8109,17 @@ function ProjectsPage({ data, update }) {
               ← Back
             </button>
           )}
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>
-            {project ? project.name : "Projects"}
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
+            {project
+              ? (renamingProject?.id === project.id
+                  ? <input autoFocus value={renamingProject.value}
+                      onChange={e => setRenamingProject(p => ({ ...p, value: e.target.value }))}
+                      onKeyDown={e => { if (e.key === "Enter") { renameProject(project.id, renamingProject.value); setRenamingProject(null); } if (e.key === "Escape") setRenamingProject(null); }}
+                      onBlur={() => { renameProject(project.id, renamingProject.value); setRenamingProject(null); }}
+                      style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 }} />
+                  : <><span>{project.name}</span><button onClick={() => setRenamingProject({ id: project.id, value: project.name })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }}>✏️</button></>
+                )
+              : "Projects"}
           </h1>
         </div>
         {!project && (
@@ -8122,15 +8163,28 @@ function ProjectsPage({ data, update }) {
                 const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                 return (
                   <div key={pr.id}
-                    onClick={() => setSelectedProject(pr.id)}
-                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "1.2rem", cursor: "pointer", position: "relative", transition: "box-shadow 0.15s" }}
+                    onClick={() => { if (!renamingProject) setSelectedProject(pr.id); }}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "1.2rem", cursor: renamingProject?.id === pr.id ? "default" : "pointer", position: "relative", transition: "box-shadow 0.15s" }}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
                   >
                     <button onClick={ev => { ev.stopPropagation(); deleteProject(pr.id); }}
-                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>🗑</button>
+                      style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>🗑</button>
+                    <button onClick={ev => { ev.stopPropagation(); setRenamingProject({ id: pr.id, value: pr.name }); }}
+                      style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.55, padding: 2 }} title="Rename">✏️</button>
                     <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
-                    <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 }}>{pr.name}</div>
+                    {renamingProject?.id === pr.id ? (
+                      <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
+                        <input autoFocus value={renamingProject.value}
+                          onChange={e => setRenamingProject(p => ({ ...p, value: e.target.value }))}
+                          onKeyDown={e => { if (e.key === "Enter") { renameProject(pr.id, renamingProject.value); setRenamingProject(null); } if (e.key === "Escape") setRenamingProject(null); }}
+                          onBlur={() => { renameProject(pr.id, renamingProject.value); setRenamingProject(null); }}
+                          style={{ width: "100%", boxSizing: "border-box", fontSize: 15, fontWeight: 600, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)" }} />
+                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 }}>{pr.name}</div>
+                    )}
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
                       {total} task{total !== 1 ? "s" : ""} · {(pr.files || []).length} file{(pr.files || []).length !== 1 ? "s" : ""}
                     </div>
@@ -8382,69 +8436,95 @@ function ProjectsPage({ data, update }) {
 
             {/* ── FILES TAB ── */}
             {leftTab === "files" && (() => {
-              return (
-              <div>
-                {filePreview && (
-                  <div onClick={() => setFilePreview(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.78)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
-                    <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"92vw", maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
-                      <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
-                        <span style={{ fontWeight:600, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{filePreview.name}</span>
-                        <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
-                          {filePreview.dataUrl && <a href={filePreview.dataUrl} download={filePreview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇ Download</a>}
-                          <button onClick={() => setFilePreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
+              function fileIcon2(t) { if (!t) return "📄"; if (t.startsWith("image/")) return "🖼"; if (t === "application/pdf") return "📕"; if (t.includes("word")) return "📝"; if (t.includes("sheet") || t.includes("excel") || t.includes("csv")) return "📊"; return "📄"; }
+              function fmtSz(b) { if (!b) return ""; if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; return (b / 1048576).toFixed(1) + " MB"; }
+
+              function ProjectFileRow({ f }) {
+                const [expanded, setExpanded] = React.useState(false);
+                const canPreview = f.dataUrl || f.previewUrl || f.webViewLink;
+                const isImg = f.type?.startsWith("image/") || f.dataUrl?.startsWith("data:image");
+                const isPdf = f.type === "application/pdf" || f.dataUrl?.startsWith("data:application/pdf");
+                return (
+                  <div style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px" }}>
+                      {/* Thumbnail */}
+                      <div onClick={() => canPreview && setExpanded(p => !p)}
+                        style={{ width: 40, height: 40, borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: canPreview ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 22 }}>
+                        {isImg && f.dataUrl
+                          ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : <span>{fileIcon2(f.type)}</span>}
+                      </div>
+                      {/* Name + size */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div onClick={() => canPreview && setExpanded(p => !p)} style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: canPreview ? "pointer" : "default" }}>{f.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "flex", gap: 6, alignItems: "center" }}>
+                          {fmtSz(f.size)}
+                          {f.source === "gdrive" && <span style={{ background: "#dbeafe", color: "#1d4ed8", borderRadius: 3, padding: "0 4px", fontSize: 9 }}>☁ Drive</span>}
                         </div>
                       </div>
-                      <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
-                        {filePreview.dataUrl?.startsWith("data:image")
-                          ? <img src={filePreview.dataUrl} alt={filePreview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
-                          : filePreview.dataUrl?.startsWith("data:application/pdf") || filePreview.type === "application/pdf"
-                            ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                            : filePreview.dataUrl
-                              ? <iframe src={filePreview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                              : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
-                        }
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "flex-end" }}>
-                  <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-                    + Upload
-                    <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
-                  </label>
-                </div>
-                {files.length === 0 ? (
-                  <label style={{ display: "block", cursor: "pointer" }}>
-                    <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
-                    <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                      <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
-                      Drop files here or click to upload
-                    </div>
-                  </label>
-                ) : (
-                  <div style={{ padding: "0.5rem 0" }}>
-                    {files.map(f => (
-                      <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                        <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ width: 36, height: 36, borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: f.dataUrl ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 20 }}>
-                          {f.type?.startsWith("image/") && f.dataUrl
-                            ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : <span>{fileIcon(f.type)}</span>
-                          }
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div onClick={() => f.dataUrl && setFilePreview(f)} style={{ fontSize: 13, fontWeight: 500, color: "#1a6b3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: f.dataUrl ? "pointer" : "default" }}>{f.name}</div>
-                          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatFileSize(f.size)}</div>
-                        </div>
-                        {f.dataUrl && (
-                          <button onClick={() => setFilePreview(f)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)", flexShrink: 0 }}>👁 Preview</button>
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                        {canPreview && (
+                          <button onClick={() => setExpanded(p => !p)}
+                            style={{ fontSize: 11, color: expanded ? "#1a6b3c" : "var(--color-text-secondary)", padding: "3px 9px", border: `0.5px solid ${expanded ? "#1a6b3c" : "var(--color-border-secondary)"}`, borderRadius: 6, background: expanded ? "#e8f5ee" : "none", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            {expanded ? "▲ Hide" : "▼ Preview"}
+                          </button>
                         )}
-                        <a href={f.dataUrl} download={f.name} style={{ background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "#1a6b3c", textDecoration: "none", flexShrink: 0 }}>⬇</a>
+                        {f.webViewLink
+                          ? <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6, whiteSpace: "nowrap" }}>☁ Open</a>
+                          : f.dataUrl && <a href={f.dataUrl} download={f.name} style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6 }}>⬇</a>}
                         <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
                       </div>
-                    ))}
+                    </div>
+                    {/* Inline preview panel */}
+                    {expanded && (
+                      <div style={{ background: "var(--color-background-secondary)", padding: 12, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                        {isImg && f.dataUrl
+                          ? <img src={f.dataUrl} alt={f.name} style={{ maxWidth: "100%", maxHeight: 400, objectFit: "contain", borderRadius: 8, display: "block", margin: "0 auto" }} />
+                          : isPdf && f.dataUrl
+                            ? <object data={f.dataUrl} type="application/pdf" style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }}>
+                                <div style={{ textAlign: "center", padding: 28, color: "var(--color-text-secondary)" }}>
+                                  <div style={{ fontSize: 36, marginBottom: 8 }}>📕</div>
+                                  <a href={f.dataUrl} download={f.name} style={{ color: "#1a6b3c", fontWeight: 500 }}>⬇ Download PDF</a>
+                                </div>
+                              </object>
+                            : f.previewUrl
+                              ? <iframe src={f.previewUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} allow="autoplay" />
+                              : f.dataUrl
+                                ? <iframe src={f.dataUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} />
+                                : f.webViewLink
+                                  ? <div style={{ textAlign: "center", padding: 24 }}>
+                                      <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ color: "#1a6b3c", fontWeight: 500 }}>Open in Google Drive ↗</a>
+                                    </div>
+                                  : <div style={{ textAlign: "center", padding: 24, color: "var(--color-text-secondary)", fontSize: 13 }}>No preview available</div>}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              }
+
+              return (
+                <div>
+                  <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "flex-end" }}>
+                    <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
+                      + Upload
+                      <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+                    </label>
+                  </div>
+                  {files.length === 0 ? (
+                    <label style={{ display: "block", cursor: "pointer" }}>
+                      <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+                      <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                        <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
+                        Drop files here or click to upload
+                      </div>
+                    </label>
+                  ) : (
+                    <div>
+                      {files.map(f => <ProjectFileRow key={f.id} f={f} />)}
+                    </div>
+                  )}
+                </div>
               );
             })()}
             {/* ── NOTES TAB — Merged Note + MindMap + Undo/Redo ── */}
