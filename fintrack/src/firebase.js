@@ -44,11 +44,18 @@ export const signInWithGoogle = async () => {
   const accessToken = credential?.accessToken;
 
   if (accessToken) {
-    // Save to localStorage — DriveProvider reads these on mount
+    // Save to localStorage — DriveProvider reads these on mount and uses them
+    // for silent token refresh (prompt:"none") on subsequent page loads.
     const expiry = Date.now() + (3600 - 120) * 1000; // ~58 min
     localStorage.setItem("ft_drv_tok",   accessToken);
     localStorage.setItem("ft_drv_exp",   String(expiry));
     localStorage.setItem("ft_drv_email", result.user.email || "");
+    // Also store the OAuth client ID so DriveProvider can do silent refreshes
+    // without the user entering it manually. Firebase uses the same client.
+    // The client ID is embedded in the credential's providerId context.
+    // We derive it from the auth domain: {projectId} → look up in cloud console.
+    // For now, we store a flag so DriveProvider knows sign-in happened fresh.
+    localStorage.setItem("ft_drv_fresh", "1");
   }
 
   return result;
