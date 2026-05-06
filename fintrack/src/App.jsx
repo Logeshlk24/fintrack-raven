@@ -59,7 +59,7 @@ function migrateLocalStorage() {
     const parsed = JSON.parse(raw);
     localStorage.removeItem(STORAGE_KEY); // clear after migration
     return { ...defaultData, ...parsed };
-  } catch { return null; }
+  } catch (e) { return null; }
 }
 
 
@@ -87,7 +87,6 @@ const defaultData = {
   businessData: [],
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
-  liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
 };
 
@@ -239,7 +238,7 @@ function DriveProvider({ children, firebaseUser }) {
         previewUrl:  `https://drive.google.com/file/d/${d.id}/preview`,
         size: file.size, source: "gdrive",
       };
-    } catch { return null; }
+    } catch (e) { return null; }
   }
 
   return (
@@ -11830,7 +11829,7 @@ function PortfolioAnalysisView({ data }) {
         const d = await res.json();
         setFundMap(d);
       }
-    } catch {}
+    } catch (e) {}
     setFundLoading(false);
     setFundLoaded(true);
   }
