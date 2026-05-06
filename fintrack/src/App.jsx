@@ -7,6 +7,7 @@ import {
   loadFromFirestore,
   saveToFirestore,
 } from "./firebase";
+import { getFreshDriveToken } from "./firebase";
 
 // ── Force Light Mode CSS Variables ──────────────────────────────────────────
 const LIGHT_MODE_STYLE = `
@@ -152,187 +153,68 @@ function fmtRate(r) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GOOGLE DRIVE CONTEXT — persistent auth + upload utility used app-wide
+// GOOGLE DRIVE CONTEXT
 // ═══════════════════════════════════════════════════════════════════════════════
 const DriveContext = React.createContext(null);
 
 /*
-  HOW THIS WORKS — "Always Connected, Zero Sign-Out Required"
-  ────────────────────────────────────────────────────────────
-  Problem: Firebase Auth restores the session silently (onAuthStateChanged fires
-  with the user), but never calls signInWithGoogle() again, so the Drive
-  access_token in localStorage is stale/missing after tab close.
+  Drive is connected for exactly as long as the user's Gmail/Google session
+  is alive in Firebase. No GIS, no Client ID, no popups, no timers.
 
-  Solution: When firebaseUser becomes available (Firebase session restored),
-  DriveProvider uses GIS prompt:"none" + the user's email to silently get a
-  fresh Drive access_token from Google — NO popup, NO sign-out, works as long
-  as the user is signed into Google in the browser (which they always are since
-  Firebase keeps them signed in).
-
-  The OAuth Client ID is the Firebase Web Client ID stored in localStorage once
-  (user sees a one-time Client ID input ONLY if ft_drv_cid is not set yet).
-  After that, it's fully automatic forever.
+  How it works:
+  - At sign-in: firebase.js saves the Drive access_token to localStorage.
+  - On tab reopen: DriveProvider sees firebaseUser is present (Firebase
+    restored the session), calls getFreshDriveToken() which uses Firebase's
+    own internal refresh_token via securetoken.googleapis.com to get a fresh
+    Google access_token — completely silent, no UI at all.
+  - If Gmail session is alive → Drive is connected. If not → both are gone.
+    Exactly what you asked for.
 */
-function DriveProvider({ children, data, update, firebaseUser }) {
-  const LS_TOK   = "ft_drv_tok";
-  const LS_EXP   = "ft_drv_exp";
-  const LS_EMAIL = "ft_drv_email";
-  const LS_CID   = "ft_drv_cid";
-  const SCOPE    = "https://www.googleapis.com/auth/drive.file";
+function DriveProvider({ children, firebaseUser }) {
+  const [token,  setToken]  = useState(() => {
+    const t = localStorage.getItem("ft_drv_tok");
+    const e = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    return (t && Date.now() < e) ? t : null;
+  });
+  const [email,   setEmail]   = useState(() => localStorage.getItem("ft_drv_email") || null);
+  const [loading, setLoading] = useState(false);
 
-  function readLS() {
-    const tok    = localStorage.getItem(LS_TOK)  || null;
-    const expiry = parseInt(localStorage.getItem(LS_EXP) || "0");
-    const valid  = tok && Date.now() < expiry;
-    return { tok: valid ? tok : null, expiry, email: localStorage.getItem(LS_EMAIL) || null, cid: localStorage.getItem(LS_CID) || data.driveClientId || "" };
-  }
-
-  const init = readLS();
-  const [token,    setToken]    = useState(init.tok);
-  const [email,    setEmail]    = useState(init.email);
-  const [cid,      setCid]      = useState(init.cid);
-  const [status,   setStatus]   = useState(init.tok ? "connected" : "idle");
-  // status: "connected" | "idle" | "refreshing" | "need_cid" | "uploading" | "error"
-  const [errorMsg, setErrorMsg] = useState("");
-  const refreshTimer = React.useRef(null);
-  const gisTimer     = React.useRef(null);
-
-  // ── Load GIS script once ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!document.querySelector('script[src*="accounts.google.com/gsi"]')) {
-      const s = document.createElement("script");
-      s.src = "https://accounts.google.com/gsi/client"; s.async = true;
-      document.head.appendChild(s);
-    }
-  }, []);
-
-  // ── Core: silent Drive token via GIS prompt:none ─────────────────────────
-  function silentGetToken(clientId, hint, onSuccess, onFail) {
-    function attempt() {
-      try {
-        window.google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: SCOPE,
-          hint,
-          callback: (resp) => {
-            if (resp?.access_token) { onSuccess(resp.access_token, resp.expires_in || 3600); }
-            else                    { onFail(resp?.error || "silent_failed"); }
-          },
-        }).requestAccessToken({ prompt: "none" });
-      } catch (e) { onFail(e.message); }
-    }
-    if (window.google?.accounts?.oauth2) { attempt(); return; }
-    let w = 0;
-    gisTimer.current = setInterval(() => {
-      w += 200;
-      if (window.google?.accounts?.oauth2) { clearInterval(gisTimer.current); attempt(); }
-      else if (w > 12000) { clearInterval(gisTimer.current); onFail("gis_timeout"); }
-    }, 200);
-  }
-
-  // ── Persist token + schedule next refresh ────────────────────────────────
-  function saveToken(tok, expiresIn, em) {
-    const expiry = Date.now() + Math.max(expiresIn - 120, 60) * 1000;
-    localStorage.setItem(LS_TOK,   tok);
-    localStorage.setItem(LS_EXP,   String(expiry));
-    if (em) { localStorage.setItem(LS_EMAIL, em); setEmail(em); }
-    setToken(tok); setStatus("connected"); setErrorMsg("");
-    // Schedule next silent refresh 55 min from now
-    if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    refreshTimer.current = setTimeout(() => triggerSilentRefresh(), Math.max(expiresIn - 120, 60) * 1000);
-  }
-
-  function triggerSilentRefresh() {
-    const s = readLS();
-    const effectiveCid   = s.cid   || cid;
-    const effectiveEmail = s.email || email || firebaseUser?.email;
-    if (!effectiveCid || !effectiveEmail) { setStatus("need_cid"); return; }
-    setStatus("refreshing");
-    silentGetToken(effectiveCid, effectiveEmail,
-      (tok, exp) => saveToken(tok, exp, effectiveEmail),
-      ()         => { setStatus("connected"); } // keep old token, retry next cycle
-    );
-  }
-
-  // ── React to firebaseUser — auto-connect when Firebase session is ready ──
+  // When Firebase confirms user is signed in → silently get fresh Drive token
   useEffect(() => {
     if (!firebaseUser) return;
-    const s = readLS();
     // Already have a valid token — nothing to do
-    if (s.tok) { scheduleExpiry(s.expiry); return; }
-    // Need a fresh token
-    const effectiveCid   = s.cid || cid;
-    const effectiveEmail = firebaseUser.email || s.email;
-    if (effectiveEmail) localStorage.setItem(LS_EMAIL, effectiveEmail);
-    if (!effectiveCid) { setStatus("need_cid"); return; }
-    setStatus("refreshing");
-    silentGetToken(effectiveCid, effectiveEmail,
-      (tok, exp) => saveToken(tok, exp, effectiveEmail),
-      (err)      => {
-        // Silent failed — most likely 3rd-party cookies blocked in Brave/Firefox
-        // Show a one-click manual button (no sign-out needed, just a brief popup)
-        setStatus("need_click"); setErrorMsg(err);
+    const saved  = localStorage.getItem("ft_drv_tok");
+    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    if (saved && Date.now() < expiry) {
+      setToken(saved);
+      setEmail(localStorage.getItem("ft_drv_email") || firebaseUser.email);
+      return;
+    }
+    // Token expired or missing — get a fresh one using Firebase's refresh token
+    setLoading(true);
+    getFreshDriveToken().then(tok => {
+      setLoading(false);
+      if (tok) {
+        setToken(tok);
+        setEmail(firebaseUser.email || localStorage.getItem("ft_drv_email"));
       }
-    );
+    });
   }, [firebaseUser?.uid]); // eslint-disable-line
 
-  function scheduleExpiry(expiry) {
-    if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    const delay = Math.max(expiry - Date.now() - 120000, 5000);
-    refreshTimer.current = setTimeout(() => triggerSilentRefresh(), delay);
-  }
-
-  // ── Manual one-click connect (shown only when silent fails) ─────────────
-  function manualConnect() {
-    const s = readLS();
-    const effectiveCid   = s.cid || cid;
-    const effectiveEmail = firebaseUser?.email || s.email;
-    if (!effectiveCid) { setStatus("need_cid"); return; }
-    setStatus("refreshing");
-    function doManual() {
-      try {
-        window.google.accounts.oauth2.initTokenClient({
-          client_id: effectiveCid, scope: SCOPE,
-          hint: effectiveEmail,
-          callback: (resp) => {
-            if (resp?.access_token) { saveToken(resp.access_token, resp.expires_in || 3600, effectiveEmail); }
-            else { setStatus("error"); setErrorMsg("Authorisation cancelled. Please try again."); }
-          },
-        }).requestAccessToken({ prompt: "" }); // empty = reuse session, no account picker
-      } catch (e) { setStatus("error"); setErrorMsg(e.message); }
-    }
-    if (window.google?.accounts?.oauth2) { doManual(); }
-    else { let w = 0; const iv = setInterval(() => { w+=200; if (window.google?.accounts?.oauth2) { clearInterval(iv); doManual(); } else if (w>8000) { clearInterval(iv); setStatus("error"); } }, 200); }
-  }
-
-  // ── Save Client ID entered by user ──────────────────────────────────────
-  function saveCid(newCid) {
-    const n = newCid.trim(); if (!n) return;
-    localStorage.setItem(LS_CID, n); setCid(n);
-    update(p => ({ driveClientId: n }));
-    // Immediately attempt connection
-    const effectiveEmail = firebaseUser?.email || email;
-    if (effectiveEmail) {
-      setStatus("refreshing");
-      silentGetToken(n, effectiveEmail,
-        (tok, exp) => saveToken(tok, exp, effectiveEmail),
-        ()         => { setStatus("need_click"); }
-      );
-    }
-  }
-
-  // ── Disconnect ───────────────────────────────────────────────────────────
   function clearDrive() {
-    if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    [LS_TOK, LS_EXP, LS_EMAIL, LS_CID].forEach(k => localStorage.removeItem(k));
-    setToken(null); setEmail(null); setCid(""); setStatus("idle"); setErrorMsg("");
+    ["ft_drv_tok", "ft_drv_exp", "ft_drv_email"].forEach(k => localStorage.removeItem(k));
+    setToken(null); setEmail(null);
   }
 
-  // ── Upload ───────────────────────────────────────────────────────────────
   async function uploadToDrive(file, driveFolderId) {
-    const tok = localStorage.getItem(LS_TOK);
+    // Always get the freshest token before uploading
+    let tok = localStorage.getItem("ft_drv_tok");
+    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    if (!tok || Date.now() >= expiry) {
+      tok = await getFreshDriveToken();
+      if (tok) setToken(tok);
+    }
     if (!tok) return null;
-    setStatus("uploading");
     try {
       const ab   = await file.arrayBuffer();
       const meta = JSON.stringify({ name: file.name, ...(driveFolderId ? { parents: [driveFolderId] } : {}) });
@@ -343,8 +225,6 @@ function DriveProvider({ children, data, update, firebaseUser }) {
         "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink,size",
         { method: "POST", headers: { Authorization: "Bearer " + tok }, body: form }
       );
-      setStatus("connected");
-      if (res.status === 401) { triggerSilentRefresh(); return null; }
       if (!res.ok) return null;
       const d = await res.json();
       await fetch(`https://www.googleapis.com/drive/v3/files/${d.id}/permissions`, {
@@ -352,14 +232,18 @@ function DriveProvider({ children, data, update, firebaseUser }) {
         headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" },
         body: JSON.stringify({ role: "reader", type: "anyone" }),
       }).catch(() => {});
-      return { id: d.id, name: d.name, mimeType: d.mimeType, webViewLink: d.webViewLink, downloadUrl: `https://drive.google.com/uc?export=download&id=${d.id}`, previewUrl: `https://drive.google.com/file/d/${d.id}/preview`, size: file.size, source: "gdrive" };
-    } catch { setStatus("connected"); return null; }
+      return {
+        id: d.id, name: d.name, mimeType: d.mimeType,
+        webViewLink: d.webViewLink,
+        downloadUrl: `https://drive.google.com/uc?export=download&id=${d.id}`,
+        previewUrl:  `https://drive.google.com/file/d/${d.id}/preview`,
+        size: file.size, source: "gdrive",
+      };
+    } catch { return null; }
   }
 
-  useEffect(() => () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); if (gisTimer.current) clearInterval(gisTimer.current); }, []);
-
   return (
-    <DriveContext.Provider value={{ connected: !!token, token, email, cid, status, errorMsg, clearDrive, uploadToDrive, saveCid, manualConnect }}>
+    <DriveContext.Provider value={{ connected: !!token, token, email, loading, clearDrive, uploadToDrive }}>
       {children}
     </DriveContext.Provider>
   );
@@ -529,7 +413,7 @@ export default function App() {
   const moreItems = navItems.filter(n => !["money","goals","portfolio"].includes(n.id));
 
   return (
-    <DriveProvider data={data} update={update} firebaseUser={firebaseUser}>
+    <DriveProvider firebaseUser={firebaseUser}>
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" }}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
@@ -3846,78 +3730,29 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
       {/* Google Drive — auto-connected via Gmail login */}
       <div style={{ ...cardStyle, marginBottom: 16,
         background: drive?.connected ? "#f0fdf4" : "var(--color-background-primary)",
-        border:     drive?.connected ? "1px solid #bbf7d0" : drive?.status === "need_cid" || drive?.status === "need_click" ? "1px solid #fde68a" : "0.5px solid var(--color-border-tertiary)" }}>
-        {sectionTitle("☁", "Google Drive", "Automatically connected when you sign in with Google — no separate setup needed.")}
+        border:     drive?.connected ? "1px solid #bbf7d0" : "0.5px solid var(--color-border-tertiary)" }}>
+        {sectionTitle("☁", "Google Drive", "Connected automatically using your Google sign-in — same session as Gmail.")}
         <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, flexWrap:"wrap" }}>
           <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt=""
             style={{ width:40, height:40, flexShrink:0 }} onError={e=>e.target.style.display="none"} />
           <div style={{ flex:1, minWidth:0 }}>
-
-            {/* ── CONNECTED ── */}
-            {drive?.connected && (
+            {drive?.connected ? (
               <>
                 <div style={{ fontWeight:600, fontSize:14, color:"#166534", marginBottom:3 }}>✅ Connected as {drive.email}</div>
-                <div style={{ fontSize:12, color:"#4a9a6a" }}>Drive is always connected as long as you're signed in. Files upload directly to your Google Drive.</div>
+                <div style={{ fontSize:12, color:"#4a9a6a" }}>Drive is connected as long as you're signed in with Google. Files upload directly to your Drive.</div>
               </>
-            )}
-
-            {/* ── REFRESHING / UPLOADING ── */}
-            {(drive?.status === "refreshing" || drive?.status === "uploading") && !drive?.connected && (
+            ) : drive?.loading ? (
               <>
-                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>⏳ {drive?.status === "uploading" ? "Uploading…" : "Connecting…"}</div>
-                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Connecting to Google Drive using your signed-in account…</div>
+                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>⏳ Connecting…</div>
+                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Getting Drive access from your Google session…</div>
               </>
-            )}
-
-            {/* ── NEED CLIENT ID (first time only) ── */}
-            {drive?.status === "need_cid" && (() => {
-              const [cidInput, setCidInput] = React.useState(drive?.cid || "");
-              return (
-                <>
-                  <div style={{ fontWeight:600, fontSize:14, color:"#92400e", marginBottom:6 }}>🔑 One-time setup — enter your OAuth Client ID</div>
-                  <div style={{ fontSize:12, color:"var(--color-text-secondary)", marginBottom:8, lineHeight:1.5 }}>
-                    This is needed once to enable silent Drive reconnection. Use the Web Client ID from your Firebase project — same one you use for Google Sign-In.<br/>
-                    📌 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color:"#1a6b3c" }}>Google Cloud Console</a> → APIs & Services → Credentials → your Web OAuth Client ID (ends in .apps.googleusercontent.com)
-                  </div>
-                  <div style={{ display:"flex", gap:8 }}>
-                    <input value={cidInput} onChange={e => setCidInput(e.target.value)}
-                      placeholder="xxxx.apps.googleusercontent.com"
-                      style={{ flex:1, border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"7px 11px", fontSize:12, fontFamily:"monospace", outline:"none", background:"var(--color-background-primary)" }} />
-                    <button onClick={() => drive?.saveCid(cidInput)}
-                      style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:500, whiteSpace:"nowrap" }}>Connect</button>
-                  </div>
-                </>
-              );
-            })()}
-
-            {/* ── NEED ONE CLICK (Brave / Firefox blocks silent cookie) ── */}
-            {drive?.status === "need_click" && (
+            ) : (
               <>
-                <div style={{ fontWeight:600, fontSize:14, color:"#92400e", marginBottom:4 }}>⚡ One tap to connect Drive</div>
-                <div style={{ fontSize:12, color:"var(--color-text-secondary)", marginBottom:8 }}>
-                  Your browser's privacy settings blocked the silent auto-connect. Click the button — it uses your existing Google account ({drive?.email || "already signed in"}), no password needed.
-                </div>
-                <button onClick={drive?.manualConnect}
-                  style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 20px", cursor:"pointer", fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
-                  <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt="" style={{ width:16, height:16 }} onError={e=>e.target.style.display="none"} />
-                  Connect Drive
-                </button>
+                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>Not connected</div>
+                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Sign in with Google to connect Drive automatically.</div>
               </>
-            )}
-
-            {/* ── IDLE (no cid stored yet and no firebaseUser yet) ── */}
-            {drive?.status === "idle" && !drive?.connected && (
-              <>
-                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>⏳ Waiting for sign-in…</div>
-                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Drive will connect automatically once you sign in with Google.</div>
-              </>
-            )}
-
-            {drive?.errorMsg && drive?.status === "error" && (
-              <div style={{ fontSize:12, color:"#dc2626", marginTop:6 }}>⚠ {drive.errorMsg}</div>
             )}
           </div>
-
           {drive?.connected && (
             <button onClick={drive?.clearDrive}
               style={{ background:"none", border:"0.5px solid #ccc", borderRadius:8, padding:"7px 16px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)", flexShrink:0 }}>
