@@ -6006,14 +6006,14 @@ function AnalysisTab({ data, update, accounts }) {
 function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
   const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
-  const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", customWeekDays: [], tenure: "", notes: "", accountId: "" });
+  const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startDate: new Date().toISOString().slice(0, 10), freq: "monthly", customEveryN: "1", customUnit: "months", customWeekDays: [], autoTime: "", tenure: "", notes: "", accountId: "" });
   const [view, setView] = useState("list");
   const [editingPayment, setEditingPayment] = useState(null); // holds the payment being edited
   const [editForm, setEditForm] = useState(null);
 
   function startEdit(p) {
     setEditingPayment(p.id);
-    setEditForm({ name: p.name, flowType: p.flowType, type: p.type, amount: String(p.amount), day: String(p.day), startMonth: p.startMonth, freq: p.freq, customEveryN: p.customEveryN || "1", customUnit: p.customUnit || "months", customWeekDays: p.customWeekDays || [], tenure: p.tenure ? String(p.tenure) : "", notes: p.notes || "", accountId: p.accountId || "" });
+    setEditForm({ name: p.name, flowType: p.flowType, type: p.type, amount: String(p.amount), day: String(p.day), startDate: p.startDate || p.startMonth + "-01", freq: p.freq, customEveryN: p.customEveryN || "1", customUnit: p.customUnit || "months", customWeekDays: p.customWeekDays || [], autoTime: p.autoTime || "", tenure: p.tenure ? String(p.tenure) : "", notes: p.notes || "", accountId: p.accountId || "" });
   }
 
   function saveEdit() {
@@ -6029,25 +6029,50 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   function addPayment() {
     const needsDay = !(form.freq === 'custom' && form.customUnit === 'weeks');
     if (!form.name.trim() || !form.amount || (needsDay && !form.day)) return;
-    update(p => ({ scheduledPayments: [...(p.scheduledPayments || []), { id: Date.now(), ...form, amount: parseFloat(form.amount), day: parseInt(form.day), tenure: form.tenure ? parseInt(form.tenure) : null, paid: [] }] }));
+    const isWeekly = form.freq === "custom" && form.customUnit === "weeks";
+    const sd = new Date(form.startDate);
+    update(p => ({ scheduledPayments: [...(p.scheduledPayments || []), {
+      id: Date.now(), ...form,
+      amount: parseFloat(form.amount),
+      day: isWeekly ? (sd.getDate()) : parseInt(form.day),
+      startMonth: form.startDate.slice(0, 7),
+      startDate: form.startDate,
+      autoTime: form.autoTime || "",
+      tenure: form.tenure ? parseInt(form.tenure) : null,
+      paid: []
+    }] }));
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
   }
 
   // ── Auto-pay: mark due/overdue payments as paid and log transactions ────────
   useEffect(() => {
     if (!payments.length) return;
-    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const nowDate = new Date(now); nowDate.setHours(0,0,0,0);
+    const nowHHMM = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 
     const updates = [];
     payments.forEach(pay => {
       const key = getNextDueKey(pay);
       if (!key) return;
-      const [ky, km] = key.split("-").map(Number);
-      const dueDate = new Date(ky, km - 1, pay.day);
-      // Auto-pay if due date is today or in the past AND not already paid
-      if (dueDate <= now && !pay.paid.includes(key)) {
-        updates.push({ pay, key });
+      // Determine due date from key
+      let dueDate;
+      if (pay.freq === "custom" && pay.customUnit === "weeks") {
+        const parts = key.split("-").map(Number);
+        dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
+      } else {
+        const [ky, km] = key.split("-").map(Number);
+        dueDate = new Date(ky, km-1, pay.day);
       }
+      if (!dueDate) return;
+      dueDate.setHours(0,0,0,0);
+      if (dueDate > nowDate) return; // not due yet
+      if (pay.paid.includes(key)) return; // already paid
+      // If autoTime set, only trigger after that time today (or if overdue from past days)
+      if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
+        if (nowHHMM < pay.autoTime) return; // not time yet
+      }
+      updates.push({ pay, key });
     });
 
     if (!updates.length) return;
@@ -6057,15 +6082,19 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       let transactions = p.transactions || [];
 
       updates.forEach(({ pay, key }) => {
-        // Skip if already paid (check current state inside update)
         const current = scheduledPayments.find(x => x.id === pay.id);
         if (!current || current.paid.includes(key)) return;
 
-        const [ky, km] = key.split("-").map(Number);
-        const txDate = `${ky}-${String(km).padStart(2,"0")}-${String(pay.day).padStart(2,"0")}`;
+        // Derive txDate from key
+        let txDate;
+        if (pay.freq === "custom" && pay.customUnit === "weeks" && key.split("-").length === 3) {
+          txDate = key;
+        } else {
+          const [ky, km] = key.split("-").map(Number);
+          txDate = `${ky}-${pad2(km)}-${pad2(pay.day)}`;
+        }
         const txType = pay.flowType === "income" ? "income" : "expense";
 
-        // Check no duplicate transaction already exists for this period
         const alreadyLogged = transactions.some(t => t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key);
         if (!alreadyLogged) {
           transactions = [...transactions, {
@@ -6075,6 +6104,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
             category: pay.type || (txType === "income" ? "Income" : "EMI"),
             note: pay.name + (pay.notes ? ` — ${pay.notes}` : "") + " (auto)",
             date: txDate,
+            time: pay.autoTime || "",
             bankId: pay.accountId || "",
             scheduledPaymentId: pay.id,
             scheduledPeriodKey: key,
@@ -6090,6 +6120,71 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Run once on mount — catches any overdue/today payments immediately
+
+  // Per-minute interval: auto-add scheduled payments with autoTime set
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Re-run the same auto-pay logic every minute for time-based triggers
+      const payments = data.scheduledPayments || [];
+      if (!payments.some(p => p.autoTime)) return; // skip if no timed payments
+      const now = new Date();
+      const nowDate = new Date(now); nowDate.setHours(0,0,0,0);
+      const nowHHMM = pad2(now.getHours()) + ":" + pad2(now.getMinutes());
+
+      const updates = [];
+      payments.forEach(pay => {
+        if (!pay.autoTime) return;
+        const key = getNextDueKey(pay);
+        if (!key) return;
+        let dueDate;
+        if (pay.freq === "custom" && pay.customUnit === "weeks") {
+          const parts = key.split("-").map(Number);
+          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
+        } else {
+          const [ky, km] = key.split("-").map(Number);
+          dueDate = new Date(ky, km-1, pay.day);
+        }
+        if (!dueDate) return;
+        dueDate.setHours(0,0,0,0);
+        if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
+        if (pay.paid.includes(key)) return;
+        if (nowHHMM < pay.autoTime) return;
+        updates.push({ pay, key });
+      });
+
+      if (!updates.length) return;
+
+      update(p => {
+        let scheduledPayments = p.scheduledPayments || [];
+        let transactions = p.transactions || [];
+        updates.forEach(({ pay, key }) => {
+          const current = scheduledPayments.find(x => x.id === pay.id);
+          if (!current || current.paid.includes(key)) return;
+          let txDate;
+          if (pay.freq === "custom" && pay.customUnit === "weeks" && key.split("-").length === 3) {
+            txDate = key;
+          } else {
+            const [ky, km] = key.split("-").map(Number);
+            txDate = ky + "-" + pad2(km) + "-" + pad2(pay.day);
+          }
+          const txType = pay.flowType === "income" ? "income" : "expense";
+          const alreadyLogged = transactions.some(t => t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key);
+          if (!alreadyLogged) {
+            transactions = [...transactions, {
+              id: Date.now() + Math.random(), type: txType, amount: pay.amount,
+              category: pay.type || (txType === "income" ? "Income" : "EMI"),
+              note: pay.name + (pay.notes ? " — " + pay.notes : "") + " (auto)",
+              date: txDate, time: pay.autoTime, bankId: pay.accountId || "",
+              scheduledPaymentId: pay.id, scheduledPeriodKey: key,
+            }];
+          }
+          scheduledPayments = scheduledPayments.map(x => x.id === pay.id ? { ...x, paid: [...x.paid, key] } : x);
+        });
+        return { scheduledPayments, transactions };
+      });
+    }, 60000);
+    return () => clearInterval(interval);
+  }); // eslint-disable-line
 
   function deletePayment(id) {
     // Keep all past transactions including current month — only drop strictly future ones
@@ -6151,26 +6246,46 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     });
   }
 
+  function pad2(n) { return String(n).padStart(2,"0"); }
+  function dateKey(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+
   function getNextDueKey(p) {
-    const now = new Date();
-    const [sy, sm] = p.startMonth.split("-").map(Number);
-    if (p.freq === "once") return p.startMonth;
+    const now = new Date(); now.setHours(0,0,0,0);
+    const startStr = p.startDate || (p.startMonth + "-01");
+    const [sy, sm, sd] = startStr.split("-").map(Number);
+
+    // Custom weekly with specific days
+    if (p.freq === "custom" && p.customUnit === "weeks" && (p.customWeekDays||[]).length > 0) {
+      let d = new Date(sy, sm-1, sd);
+      const everyN = parseInt(p.customEveryN||1);
+      let ct = 0;
+      while (ct < 500) {
+        if (d.getDay && p.customWeekDays.includes(d.getDay()===0?7:d.getDay())) {
+          const k = dateKey(d);
+          if (!p.paid.includes(k)) return k;
+        }
+        d.setDate(d.getDate() + 1); ct++;
+      }
+      return null;
+    }
+
+    if (p.freq === "once") return startStr.slice(0,7);
     if (p.freq === "annually") {
       let y = sy;
-      while (new Date(y, sm - 1, p.day) < new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) y++;
-      return `${y}-${String(sm).padStart(2, "0")}`;
+      while (new Date(y, sm-1, p.day) < now) y++;
+      return `${y}-${pad2(sm)}`;
     }
     if (p.freq === "quarterly") {
-      let d = new Date(sy, sm - 1, p.day);
-      while (d < new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) d.setMonth(d.getMonth() + 3);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      let d = new Date(sy, sm-1, p.day);
+      while (d < now) d.setMonth(d.getMonth()+3);
+      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
     }
-    // monthly — find first unpaid from start
-    let d = new Date(sy, sm - 1, p.day), ct = 0;
+    // monthly
+    let d = new Date(sy, sm-1, p.day), ct = 0;
     while (ct < 300) {
-      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const k = `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
       if (!p.paid.includes(k)) return k;
-      d.setMonth(d.getMonth() + 1); ct++;
+      d.setMonth(d.getMonth()+1); ct++;
     }
     return null;
   }
@@ -6178,8 +6293,13 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   function getDueDate(p) {
     const key = getNextDueKey(p);
     if (!key) return null;
+    // weekly custom returns full date key YYYY-MM-DD
+    if (p.freq === "custom" && p.customUnit === "weeks") {
+      const parts = key.split("-").map(Number);
+      return parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
+    }
     const [y, m] = key.split("-").map(Number);
-    return new Date(y, m - 1, p.day);
+    return new Date(y, m-1, p.day);
   }
 
   function daysDiff(d) {
@@ -6238,9 +6358,15 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={editForm.day} onChange={v => setEditForm(p => ({ ...p, day: v }))} />
               )}
             </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
-              <input type="month" value={editForm.startMonth} onChange={e => setEditForm(p => ({ ...p, startMonth: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label>
+                <input type="date" value={editForm.startDate || ""} onChange={e => setEditForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Auto-add Time (optional)</label>
+                <input type="time" value={editForm.autoTime || ""} onChange={e => setEditForm(p => ({ ...p, autoTime: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
             </div>
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Repeat</label>
@@ -6337,9 +6463,15 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
             )}
           </div>
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
-            <input type="month" value={form.startMonth} onChange={e => setForm(p => ({ ...p, startMonth: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label>
+              <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Auto-add Time (optional)</label>
+              <input type="time" value={form.autoTime} onChange={e => setForm(p => ({ ...p, autoTime: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
           </div>
           {/* Fully customizable repeat */}
           <div style={{ marginBottom: 10 }}>
