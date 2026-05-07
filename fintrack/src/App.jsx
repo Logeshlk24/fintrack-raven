@@ -4791,6 +4791,7 @@ function LiabilityTypesSettings({ data, update, cardStyle, sectionTitle }) {
 function TransferTab({ data, update, accounts }) {
   const [form, setForm] = useState({ fromId: "", toId: "", amount: "", note: "", date: today() });
   const [error, setError] = useState("");
+  const [editTransfer, setEditTransfer] = useState(null); // { pairId, fromId, toId, amount, note, date }
 
   const transfers = (data.transactions || [])
     .filter(t => t.isTransfer && t.transferRole === "out")
@@ -4835,6 +4836,26 @@ function TransferTab({ data, update, accounts }) {
     update(p => ({ transactions: p.transactions.filter(t => t.transferPairId !== pairId) }));
   }
 
+  function openEditTransfer(t) {
+    setEditTransfer({ pairId: t.transferPairId, fromId: String(t.bankId), toId: String(t.transferToId), amount: String(t.amount), note: t.note === "Account Transfer" ? "" : (t.note || ""), date: t.date });
+  }
+
+  function saveEditTransfer() {
+    if (!editTransfer) return;
+    const amt = parseFloat(editTransfer.amount);
+    if (!amt || amt <= 0) return;
+    const note = editTransfer.note.trim() || "Account Transfer";
+    update(p => ({
+      transactions: p.transactions.map(t => {
+        if (t.transferPairId !== editTransfer.pairId) return t;
+        if (t.transferRole === "out") return { ...t, bankId: editTransfer.fromId, transferToId: editTransfer.toId, amount: amt, note, date: editTransfer.date };
+        if (t.transferRole === "in")  return { ...t, bankId: editTransfer.toId, transferFromId: editTransfer.fromId, amount: amt, note, date: editTransfer.date };
+        return t;
+      })
+    }));
+    setEditTransfer(null);
+  }
+
   const acctGroups = [
     { label: "🏦 Bank Accounts", list: accounts.filter(a => a.type === "Bank") },
     { label: "💳 Credit Cards",  list: accounts.filter(a => a.type === "Credit Card") },
@@ -4842,6 +4863,45 @@ function TransferTab({ data, update, accounts }) {
   ].filter(g => g.list.length > 0);
 
   return (
+    <div>
+      {/* Edit Transfer Modal */}
+      {editTransfer && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(400px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Transfer</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>From Account</label>
+                <select value={editTransfer.fromId} onChange={e => setEditTransfer(p => ({ ...p, fromId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                  {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>To Account</label>
+                <select value={editTransfer.toId} onChange={e => setEditTransfer(p => ({ ...p, toId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                  {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
+                <input type="number" value={editTransfer.amount} onChange={e => setEditTransfer(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontWeight: 600 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
+                <input type="date" value={editTransfer.date} onChange={e => setEditTransfer(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Note (optional)</label>
+                <input value={editTransfer.note} onChange={e => setEditTransfer(p => ({ ...p, note: e.target.value }))} placeholder="e.g. Savings transfer" style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setEditTransfer(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEditTransfer} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, marginTop: 16 }}>
 
       {/* Left: form */}
@@ -4960,6 +5020,9 @@ function TransferTab({ data, update, accounts }) {
                   <div style={{ fontWeight: 700, fontSize: 14, color: "#1a6b3c", flexShrink: 0 }}>
                     ₹{Number(t.amount).toLocaleString("en-IN")}
                   </div>
+                  {/* Edit */}
+                  <button onClick={() => openEditTransfer(t)}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.5, padding: "2px 4px", flexShrink: 0 }} title="Edit transfer">✏️</button>
                   {/* Delete */}
                   <button onClick={() => deleteTransfer(t.transferPairId)}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, opacity: 0.6, padding: "2px 4px", flexShrink: 0 }}>🗑</button>
@@ -4969,6 +5032,7 @@ function TransferTab({ data, update, accounts }) {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
@@ -7897,8 +7961,8 @@ function ProjectsPage({ data, update }) {
       id: Date.now(),
       text: taskForm.name.trim(),
       taskTypes: taskForm.types.length > 0 ? taskForm.types : [],
-      // keep legacy taskType for backwards compat
       taskType: taskForm.types.length === 1 ? taskForm.types[0] : (taskForm.types.length > 1 ? taskForm.types.join(", ") : ""),
+      completedTypes: [], // tracks which subtypes are done
       eta: taskForm.eta,
       done: false,
       createdAt: new Date().toISOString(),
@@ -7939,11 +8003,29 @@ function ProjectsPage({ data, update }) {
           text: editTaskForm.name.trim(),
           taskTypes: editTaskForm.types,
           taskType: editTaskForm.types.length === 1 ? editTaskForm.types[0] : (editTaskForm.types.join(", ")),
+          completedTypes: (t.completedTypes || []).filter(ct => editTaskForm.types.includes(ct)), // remove any no longer valid
           eta: editTaskForm.eta
         } : t) }
       : pr
     )}));
     setEditTaskId(null);
+  }
+
+  function toggleTaskType(todoId, typeName) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).map(t => {
+          if (t.id !== todoId) return t;
+          const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+          const completed = t.completedTypes || [];
+          const newCompleted = completed.includes(typeName)
+            ? completed.filter(x => x !== typeName)
+            : [...completed, typeName];
+          // Auto-mark task as done when all types are completed
+          const allDone = types.length > 0 && types.every(tp => newCompleted.includes(tp));
+          return { ...t, completedTypes: newCompleted, done: allDone };
+        }) }
+      : pr
+    )}));
   }
 
   const drive = useDrive();
@@ -8037,6 +8119,19 @@ function ProjectsPage({ data, update }) {
   const pendingTodos = todos.filter(t => !t.done);
   const completedTodos = todos.filter(t => t.done);
 
+  // Subtask-level progress: count completed types across all tasks
+  const totalSubtasks = todos.reduce((s, t) => {
+    const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+    return s + (types.length > 0 ? types.length : 1);
+  }, 0);
+  const doneSubtasks = todos.reduce((s, t) => {
+    const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+    if (types.length === 0) return s + (t.done ? 1 : 0);
+    const completed = t.completedTypes || [];
+    return s + completed.filter(ct => types.includes(ct)).length;
+  }, 0);
+  const subtaskPctOverall = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
+
   // Tab styles helper
   const tabStyle = (active) => ({
     padding: "7px 16px", background: "none", border: "none", cursor: "pointer",
@@ -8107,7 +8202,18 @@ function ProjectsPage({ data, update }) {
               {projects.map(pr => {
                 const done = (pr.todos || []).filter(t => t.done).length;
                 const total = (pr.todos || []).length;
-                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                // Subtask-level progress
+                const prTotalSub = (pr.todos || []).reduce((s, t) => {
+                  const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+                  return s + (types.length > 0 ? types.length : 1);
+                }, 0);
+                const prDoneSub = (pr.todos || []).reduce((s, t) => {
+                  const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+                  if (types.length === 0) return s + (t.done ? 1 : 0);
+                  const completed = t.completedTypes || [];
+                  return s + completed.filter(ct => types.includes(ct)).length;
+                }, 0);
+                const pct = prTotalSub > 0 ? Math.round((prDoneSub / prTotalSub) * 100) : 0;
                 return (
                   <div key={pr.id}
                     onClick={() => { if (!renamingProject) setSelectedProject(pr.id); }}
@@ -8275,32 +8381,55 @@ function ProjectsPage({ data, update }) {
                               >{t.done ? "✓" : ""}</button>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, wordBreak: "break-word" }}>{t.text}</div>
-                                {/* Task types with % breakdown */}
+                                {/* Task types — clickable to mark each as done */}
                                 {(() => {
                                   const types = t.taskTypes && t.taskTypes.length > 0
                                     ? t.taskTypes
                                     : (t.taskType ? [t.taskType] : []);
                                   if (types.length === 0) return null;
-                                  const pctEach = Math.round(100 / types.length);
+                                  const completedTypes = t.completedTypes || [];
+                                  const doneCnt = completedTypes.filter(ct => types.includes(ct)).length;
+                                  const subtaskPct = types.length > 0 ? Math.round((doneCnt / types.length) * 100) : 0;
                                   return (
-                                    <div style={{ marginBottom: 4 }}>
-                                      {/* Segmented bar */}
+                                    <div style={{ marginBottom: 6 }}>
+                                      {/* Segmented bar showing completion per type */}
                                       <div style={{ display: "flex", borderRadius: 4, overflow: "hidden", height: 5, marginBottom: 5 }}>
                                         {types.map((tp, i) => {
                                           const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
-                                          return <div key={tp} style={{ flex: 1, background: colors[i % colors.length] }} />;
+                                          const isDone = completedTypes.includes(tp);
+                                          return <div key={tp} style={{ flex: 1, background: isDone ? colors[i % colors.length] : colors[i % colors.length] + "33" }} />;
                                         })}
                                       </div>
+                                      {/* Clickable type chips */}
                                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                                         {types.map((tp, i) => {
                                           const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                          const isDone = completedTypes.includes(tp);
+                                          const pctEach = Math.round(100 / types.length);
                                           return (
-                                            <span key={tp} style={{ fontSize: 10, padding: "1px 7px", borderRadius: 10, background: colors[i % colors.length] + "18", border: `0.5px solid ${colors[i % colors.length]}44`, color: colors[i % colors.length], fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}>
-                                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: colors[i % colors.length], display: "inline-block" }} />
-                                              {tp} · {pctEach}%
-                                            </span>
+                                            <button key={tp} onClick={() => toggleTaskType(t.id, tp)}
+                                              title={isDone ? "Click to unmark" : "Click to mark done"}
+                                              style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10,
+                                                background: isDone ? colors[i % colors.length] : colors[i % colors.length] + "18",
+                                                border: `0.5px solid ${colors[i % colors.length]}${isDone ? "" : "44"}`,
+                                                color: isDone ? "#fff" : colors[i % colors.length],
+                                                fontWeight: 600, cursor: "pointer",
+                                                display: "inline-flex", alignItems: "center", gap: 3,
+                                                textDecoration: isDone ? "line-through" : "none", opacity: isDone ? 0.85 : 1 }}>
+                                              {isDone ? "✓ " : ""}{tp} · {pctEach}%
+                                            </button>
                                           );
                                         })}
+                                      </div>
+                                      {/* Subtask progress bar */}
+                                      <div style={{ marginTop: 5 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
+                                          <span>Subtask Progress</span>
+                                          <span style={{ fontWeight: 600, color: subtaskPct === 100 ? "#1a6b3c" : "var(--color-text-secondary)" }}>{doneCnt}/{types.length} · {subtaskPct}%</span>
+                                        </div>
+                                        <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+                                          <div style={{ width: subtaskPct + "%", height: "100%", background: subtaskPct === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 3, transition: "width 0.4s" }} />
+                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -8311,7 +8440,7 @@ function ProjectsPage({ data, update }) {
                                     : <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>
                                   }
                                 </div>
-                                {/* Timeline progress bar — only shown when ETA is set */}
+                                {/* Time timeline progress bar — only shown when ETA is set */}
                                 {t.eta && (() => {
                                   const created = new Date(t.createdAt || t.id);
                                   const due = new Date(t.eta);
@@ -8323,7 +8452,7 @@ function ProjectsPage({ data, update }) {
                                   return (
                                     <div>
                                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
-                                        <span>Timeline</span>
+                                        <span>Time Elapsed</span>
                                         <span style={{ color: barColor, fontWeight: 600 }}>{pct}%</span>
                                       </div>
                                       <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
@@ -8582,41 +8711,25 @@ function ProjectsPage({ data, update }) {
               </div>
               {todos.length > 0 && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
-                    <span>Progress</span>
-                    <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{Math.round(doneTodos / todos.length * 100)}%</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+                    <span>Subtask Progress</span>
+                    <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{doneSubtasks}/{totalSubtasks} · {subtaskPctOverall}%</span>
                   </div>
-                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 8, overflow: "hidden" }}>
-                    <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#4da6ff", borderRadius: 6, transition: "width 0.4s" }} />
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 6 }}>
+                    <div style={{ width: subtaskPctOverall + "%", height: "100%", background: subtaskPctOverall === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 6, transition: "width 0.4s" }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+                    <span>Tasks Done</span>
+                    <span>{doneTodos}/{todos.length} ({Math.round(doneTodos / todos.length * 100)}%)</span>
+                  </div>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 4, overflow: "hidden" }}>
+                    <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#b6ddc2", borderRadius: 4, transition: "width 0.4s" }} />
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Task type breakdown */}
-            {todos.length > 0 && (() => {
-              const typeMap = {};
-              todos.forEach(t => { const k = t.taskType || "Other"; typeMap[k] = (typeMap[k] || 0) + 1; });
-              const entries = Object.entries(typeMap).sort((a, b) => b[1] - a[1]);
-              return entries.length > 1 ? (
-                <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                  <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 14 }}>Tasks by Type</div>
-                  <div style={{ padding: "0.6rem 1.1rem" }}>
-                    {entries.map(([type, count]) => (
-                      <div key={type} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)", width: 90, flexShrink: 0 }}>{type}</span>
-                        <div style={{ flex: 1, background: "var(--color-background-secondary)", borderRadius: 4, height: 6, overflow: "hidden" }}>
-                          <div style={{ width: (count / todos.length * 100) + "%", height: "100%", background: "#4da6ff", borderRadius: 4 }} />
-                        </div>
-                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)", width: 20, textAlign: "right" }}>{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null;
-            })()}
-
-            {/* ── DAY TRACKING ── */}
+            {/* ── DAY TRACKING (now just a simple work log, no date picker header) ── */}
             {(() => {
               const todayStr = new Date().toISOString().split("T")[0];
               // Group dayLog entries by date
@@ -8632,24 +8745,11 @@ function ProjectsPage({ data, update }) {
 
               return (
                 <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                  {/* Header */}
+                  {/* Header — simplified, no date picker */}
                   <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontWeight: 500, fontSize: 14 }}>🗓 Day Tracking</span>
-                    <input
-                      type="date"
-                      value={dayTrackDate}
-                      onChange={e => setDayTrackDate(e.target.value)}
-                      style={{ fontSize: 12, padding: "3px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", cursor: "pointer" }}
-                    />
-                  </div>
-
-                  {/* Date label */}
-                  <div style={{ padding: "7px 14px", background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>
-                      {dayTrackDate === todayStr ? "Today" : new Date(dayTrackDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", year: "numeric" })}
-                    </span>
+                    <span style={{ fontWeight: 500, fontSize: 14 }}>📋 Work Log</span>
                     {totalDayEntries > 0 && (
-                      <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{doneDayEntries}/{totalDayEntries} done</span>
+                      <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{doneDayEntries}/{totalDayEntries} done today</span>
                     )}
                   </div>
 
@@ -8665,21 +8765,21 @@ function ProjectsPage({ data, update }) {
                     <button onClick={addDayEntry} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
                   </div>
 
-                  {/* Entries for selected date */}
-                  {(grouped[dayTrackDate] || []).length === 0 ? (
+                  {/* Today's Entries */}
+                  {(grouped[todayStr] || []).length === 0 ? (
                     <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
                       No entries for this day yet.
                     </div>
                   ) : (
                     <div>
-                      {(grouped[dayTrackDate] || []).filter(e => !e.done).map(e => (
+                      {(grouped[todayStr] || []).filter(e => !e.done).map(e => (
                         <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                           <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0 }} />
                           <span style={{ flex: 1, fontSize: 13 }}>{e.text}</span>
                           <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
                         </div>
                       ))}
-                      {(grouped[dayTrackDate] || []).filter(e => e.done).map(e => (
+                      {(grouped[todayStr] || []).filter(e => e.done).map(e => (
                         <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
                           <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
                           <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{e.text}</span>
@@ -8690,18 +8790,15 @@ function ProjectsPage({ data, update }) {
                   )}
 
                   {/* Past days log */}
-                  {sortedDates.filter(d => d !== dayTrackDate).length > 0 && (
+                  {sortedDates.filter(d => d !== todayStr).length > 0 && (
                     <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)" }}>
                       <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)" }}>PAST DAYS</div>
-                      {sortedDates.filter(d => d !== dayTrackDate).slice(0, 5).map(d => {
+                      {sortedDates.filter(d => d !== todayStr).slice(0, 5).map(d => {
                         const entries = grouped[d];
                         const done = entries.filter(e => e.done).length;
                         return (
                           <div key={d}
-                            onClick={() => setDayTrackDate(d)}
-                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", cursor: "pointer" }}
-                            onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
-                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}
                           >
                             <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
                               {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
@@ -11005,6 +11102,8 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
   // ── local UI state ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: defaultExchange, yahooOverride: "", buyDate: "" });
+  const [showSellForm, setShowSellForm] = useState(false);
+  const [sellForm, setSellForm] = useState({ holdingId: "", symbol: "", qty: "", sellPrice: "", sellDate: today() });
   const [editId, setEditId]     = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [prices, setPrices]     = useState({});
@@ -11261,6 +11360,44 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
 
   function deleteHolding(id) { update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(h => h.id !== id) })); }
 
+  function recordSell() {
+    const qty = Number(sellForm.qty);
+    const sellPrice = Number(sellForm.sellPrice);
+    if (!sellForm.holdingId || !qty || !sellPrice || !sellForm.sellDate) return;
+    // Find the original holding to get buy price
+    const h = (data[holdingsKey] || []).find(x => String(x.id) === String(sellForm.holdingId)) ||
+              mergedHoldings.find(x => String(x.id) === String(sellForm.holdingId));
+    if (!h) return;
+    const buyPriceInr = h.buyPrice; // stored in INR
+    const sellPriceInr = (isUS && showUSD) ? sellPrice * usdRate : sellPrice;
+    const realizedProfit = (sellPriceInr - buyPriceInr) * qty;
+    const soldEntry = {
+      id: Date.now(),
+      symbol: h.symbol,
+      name: h.name || h.symbol,
+      exchange: h.exchange || "NSE",
+      buyPrice: buyPriceInr,
+      sellPrice: sellPriceInr,
+      qty,
+      sellDate: sellForm.sellDate,
+      buyDate: h.buyDate || "",
+      realizedProfit,
+      soldAt: new Date().toISOString(),
+    };
+    const soldKey = holdingsKey + "_sold";
+    update(p => ({
+      [soldKey]: [...(p[soldKey] || []), soldEntry],
+      // Reduce qty from holding or remove if fully sold
+      [holdingsKey]: (p[holdingsKey] || []).map(hh => {
+        if (String(hh.id) !== String(sellForm.holdingId)) return hh;
+        const remaining = hh.qty - qty;
+        return remaining <= 0 ? null : { ...hh, qty: remaining };
+      }).filter(Boolean)
+    }));
+    setSellForm({ holdingId: "", symbol: "", qty: "", sellPrice: "", sellDate: today() });
+    setShowSellForm(false);
+  }
+
   // ── enriched rows using mergedHoldings ──────────────────────────────────────
   const rows = mergedHoldings.map(h => {
     const ticker = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
@@ -11397,6 +11534,10 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
             style={{ padding: "7px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.6 : 1 }}>
             <span style={{ display: "inline-block", animation: loading ? "spin 1s linear infinite" : "none" }}>↻</span>
             {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button onClick={() => { setShowSellForm(p => !p); setShowForm(false); }}
+            style={{ background: showSellForm ? "#e8f5ee" : "var(--color-background-secondary)", color: showSellForm ? "#1a6b3c" : "var(--color-text-secondary)", border: "0.5px solid " + (showSellForm ? "#1a6b3c" : "var(--color-border-secondary)"), borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            💰 Record Sell
           </button>
           <button onClick={openAdd}
             style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
@@ -11567,6 +11708,61 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
           <div style={{ display: "flex", gap: 8 }}>
             <GreenBtn onClick={saveHolding} label={editId ? "Save Changes" : "Add Holding"} />
             <button onClick={closeForm} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Sell / Realize Profit Form */}
+      {showSellForm && (
+        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid #b6ddc2", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
+          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14, color: "#1a6b3c" }}>💰 Record Realized Profit</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Select Holding *</label>
+              <select value={sellForm.holdingId} onChange={e => {
+                const h = mergedHoldings.find(x => String(x.id) === e.target.value) || mergedHoldings.find(x => String(x._ids?.[0]) === e.target.value);
+                setSellForm(f => ({ ...f, holdingId: e.target.value, symbol: h?.symbol || "", qty: "", sellPrice: "" }));
+              }} style={{ width: "100%", boxSizing: "border-box" }}>
+                <option value="">— Select stock —</option>
+                {mergedHoldings.map(h => (
+                  <option key={h.id} value={String(h._ids?.[0] ?? h.id)}>{h.symbol} ({h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + h.buyPrice})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Qty Sold *</label>
+              <input type="number" placeholder="e.g. 5" value={sellForm.qty} onChange={e => setSellForm(f => ({ ...f, qty: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{isUS && showUSD ? "Sell Price ($) *" : "Sell Price (₹) *"}</label>
+              <input type="number" placeholder={isUS && showUSD ? "e.g. 25.00" : "e.g. 1800"} value={sellForm.sellPrice} onChange={e => setSellForm(f => ({ ...f, sellPrice: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Sell Date *</label>
+              <input type="date" value={sellForm.sellDate} onChange={e => setSellForm(f => ({ ...f, sellDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+          </div>
+          {/* Live profit preview */}
+          {sellForm.holdingId && sellForm.qty && sellForm.sellPrice && (() => {
+            const h = mergedHoldings.find(x => String(x._ids?.[0] ?? x.id) === sellForm.holdingId);
+            if (!h) return null;
+            const buyPriceInr = h.buyPrice;
+            const sellPriceInr = (isUS && showUSD) ? Number(sellForm.sellPrice) * usdRate : Number(sellForm.sellPrice);
+            const profit = (sellPriceInr - buyPriceInr) * Number(sellForm.qty);
+            const pct = ((sellPriceInr - buyPriceInr) / buyPriceInr) * 100;
+            return (
+              <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: profit >= 0 ? "#e8f5ee" : "#fff0f0", border: "0.5px solid " + (profit >= 0 ? "#b6ddc2" : "#f5c0c0") }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: profit >= 0 ? "#1a6b3c" : "#cc2222" }}>
+                  {profit >= 0 ? "📈 Realized Gain: " : "📉 Realized Loss: "}
+                  {fmtCur(Math.abs(profit))}
+                  <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>({pct >= 0 ? "+" : ""}{pct.toFixed(2)}%)</span>
+                </span>
+              </div>
+            );
+          })()}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <GreenBtn onClick={recordSell} label="✓ Record Sale" />
+            <button onClick={() => setShowSellForm(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
           </div>
         </div>
       )}
@@ -11770,6 +11966,94 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       )}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+      {/* ── Realized Profit Section ── */}
+      {(() => {
+        const soldKey = holdingsKey + "_sold";
+        const soldEntries = (data[soldKey] || []).slice().sort((a, b) => b.sellDate?.localeCompare(a.sellDate));
+        if (soldEntries.length === 0) return null;
+        const totalRealized = soldEntries.reduce((s, e) => s + (e.realizedProfit || 0), 0);
+        const totalGains  = soldEntries.filter(e => e.realizedProfit >= 0).reduce((s, e) => s + e.realizedProfit, 0);
+        const totalLosses = soldEntries.filter(e => e.realizedProfit < 0).reduce((s, e) => s + e.realizedProfit, 0);
+        return (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              💰 Realized Profit / Loss
+              <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>({soldEntries.length} sale{soldEntries.length !== 1 ? "s" : ""})</span>
+            </div>
+            {/* Summary row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+              <div style={{ background: totalRealized >= 0 ? "#e8f5ee" : "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid " + (totalRealized >= 0 ? "#b6ddc2" : "#f5c0c0") }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Net Realized P&L</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: totalRealized >= 0 ? "#1a6b3c" : "#cc2222" }}>{totalRealized >= 0 ? "+" : ""}{fmtCur(totalRealized)}</div>
+              </div>
+              <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #b6ddc2" }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Gains</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: "#1a6b3c" }}>+{fmtCur(totalGains)}</div>
+              </div>
+              <div style={{ background: "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #f5c0c0" }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Losses</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: "#cc2222" }}>{fmtCur(totalLosses)}</div>
+              </div>
+            </div>
+            {/* Table */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600 }}>Symbol</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Qty</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Buy Price</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Sell Price</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Sell Date</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Realized P&L</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {soldEntries.map((e, i) => {
+                      const pct = e.buyPrice > 0 ? ((e.sellPrice - e.buyPrice) / e.buyPrice) * 100 : 0;
+                      const isGain = e.realizedProfit >= 0;
+                      return (
+                        <tr key={e.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                          onMouseEnter={ev => ev.currentTarget.style.background = "var(--color-background-secondary)"}
+                          onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
+                          <td style={{ padding: "9px 12px", fontWeight: 600 }}>
+                            <div>{e.symbol}</div>
+                            {e.name && e.name !== e.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 400 }}>{e.name}</div>}
+                          </td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>{e.qty}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{isUS && showUSD ? "$" + (e.buyPrice / usdRate).toFixed(2) : fmtCur(e.buyPrice)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{isUS && showUSD ? "$" + (e.sellPrice / usdRate).toFixed(2) : fmtCur(e.sellPrice)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)", fontSize: 12 }}>{e.sellDate}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                            <div style={{ fontWeight: 700, color: isGain ? "#1a6b3c" : "#cc2222" }}>
+                              {isGain ? "+" : ""}{fmtCur(e.realizedProfit)}
+                            </div>
+                            <div style={{ fontSize: 11, color: isGain ? "#1a6b3c" : "#cc2222", opacity: 0.8 }}>
+                              {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
+                            </div>
+                          </td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                            <button onClick={() => {
+                              if (window.confirm("Remove this realized entry?")) {
+                                update(p => ({ [soldKey]: (p[soldKey] || []).filter(x => x.id !== e.id) }));
+                              }
+                            }} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, padding: "2px 4px" }}
+                              onMouseEnter={ev => ev.currentTarget.style.opacity = "1"}
+                              onMouseLeave={ev => ev.currentTarget.style.opacity = "0.5"}>🗑</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
