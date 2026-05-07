@@ -1889,6 +1889,109 @@ function CategoryBreakdownCard({ transactions, type, period }) {
   );
 }
 
+// ─── Reusable Transfer History Row (used in both Transactions tab and Transfer tab) ──
+function TransferHistoryRow({ t, idx, total, fromAcct, toAcct, accounts, badgeStyle, BG, BG2, BORDER, GREEN, onDelete, onSaveEdit }) {
+  const [editing, setEditing] = React.useState(false);
+  const [ef, setEf] = React.useState(null);
+
+  function openEdit() {
+    setEf({
+      pairId: t.transferPairId,
+      fromId: String(t.bankId),
+      toId: String(t.transferToId),
+      amount: String(t.amount),
+      date: t.date,
+      note: t.note === "Account Transfer" ? "" : (t.note || ""),
+    });
+    setEditing(true);
+  }
+
+  function save() {
+    onSaveEdit(ef);
+    setEditing(false);
+  }
+
+  if (editing && ef) {
+    return (
+      <div style={{ padding: "14px 16px", borderBottom: idx < total - 1 ? `0.5px solid ${BORDER}` : "none", background: BG2 }}>
+        <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 10, color: GREEN }}>✏️ Edit Transfer</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>From Account</label>
+            <select value={ef.fromId} onChange={e => setEf(p => ({ ...p, fromId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }}>
+              {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>To Account</label>
+            <select value={ef.toId} onChange={e => setEf(p => ({ ...p, toId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }}>
+              {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Amount (₹)</label>
+            <input type="number" value={ef.amount} onChange={e => setEf(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12, fontWeight: 600 }} autoFocus />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
+            <input type="date" value={ef.date} onChange={e => setEf(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+          </div>
+          <div style={{ gridColumn: "span 2" }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Note (optional)</label>
+            <input value={ef.note} onChange={e => setEf(p => ({ ...p, note: e.target.value }))} placeholder="e.g. Savings transfer" style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+          <button onClick={save} style={{ background: GREEN, color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Save Changes</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: idx < total - 1 ? `0.5px solid ${BORDER}` : "none", transition: "background 0.12s" }}
+      onMouseEnter={e => e.currentTarget.style.background = BG2}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+    >
+      {/* Icon */}
+      <div style={{ width: 44, height: 44, borderRadius: 13, background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, border: "0.5px solid #b6ddc233" }}>↔</div>
+      {/* Details */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+          <span style={{ ...badgeStyle(t.bankId), borderRadius: 5, padding: "2px 9px", fontSize: 12, fontWeight: 600 }}>{fromAcct?.name || "—"}</span>
+          <span style={{ fontWeight: 800, color: GREEN, fontSize: 14 }}>→</span>
+          <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : {}), borderRadius: 5, padding: "2px 9px", fontSize: 12, fontWeight: 600, color: toAcct ? undefined : "var(--color-text-secondary)" }}>{toAcct?.name || "—"}</span>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+          {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
+        </div>
+      </div>
+      {/* Amount + pill */}
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ marginBottom: 3 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, background: "#e8f5ee", color: GREEN, borderRadius: 5, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transfer</span>
+        </div>
+        <div style={{ fontWeight: 700, fontSize: 15, color: GREEN }}>₹{Number(t.amount).toLocaleString("en-IN")}</div>
+      </div>
+      {/* Edit */}
+      <button onClick={openEdit}
+        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.45 }}
+        title="Edit transfer"
+        onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = "0.45"; }}
+      >✏️</button>
+      {/* Delete */}
+      <button onClick={onDelete}
+        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
+        title="Delete transfer"
+        onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
+      >🗑</button>
+    </div>
+  );
+}
+
 // ─── Transactions Dashboard Tab ──────────────────────────────────────────────
 function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
   const [search, setSearch]           = useState("");
@@ -2202,6 +2305,19 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
           if (!window.confirm("Delete this transfer? Both entries will be removed.")) return;
           update(p => ({ transactions: p.transactions.filter(t => t.transferPairId !== pairId) }));
         }
+        function saveInlineEdit(ef) {
+          const amt = parseFloat(ef.amount);
+          if (!amt || amt <= 0) return;
+          const note = ef.note.trim() || "Account Transfer";
+          update(p => ({
+            transactions: p.transactions.map(t => {
+              if (t.transferPairId !== ef.pairId) return t;
+              if (t.transferRole === "out") return { ...t, bankId: ef.fromId, transferToId: ef.toId, amount: amt, note, date: ef.date };
+              if (t.transferRole === "in")  return { ...t, bankId: ef.toId, transferFromId: ef.fromId, amount: amt, note, date: ef.date };
+              return t;
+            })
+          }));
+        }
         return (
           <div style={{ marginTop: 28 }}>
             {/* Section header */}
@@ -2217,38 +2333,19 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                 const toAcct = getAcct(t.transferToId);
                 const fromAcct = getAcct(t.bankId);
                 return (
-                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: idx < transfers.length - 1 ? `0.5px solid ${BORDER}` : "none", transition: "background 0.12s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = BG2}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                  >
-                    {/* Icon */}
-                    <div style={{ width: 44, height: 44, borderRadius: 13, background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, border: "0.5px solid #b6ddc233" }}>↔</div>
-                    {/* Details */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-                        <span style={{ ...badgeStyle(t.bankId), borderRadius: 5, padding: "2px 9px", fontSize: 12, fontWeight: 600 }}>{fromAcct?.name || "—"}</span>
-                        <span style={{ fontWeight: 800, color: GREEN, fontSize: 14 }}>→</span>
-                        <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : {}), borderRadius: 5, padding: "2px 9px", fontSize: 12, fontWeight: 600, color: toAcct ? undefined : "var(--color-text-secondary)" }}>{toAcct?.name || "—"}</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-                        {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
-                      </div>
-                    </div>
-                    {/* Amount + type pill */}
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ marginBottom: 3 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, background: "#e8f5ee", color: GREEN, borderRadius: 5, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transfer</span>
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: GREEN }}>₹{Number(t.amount).toLocaleString("en-IN")}</div>
-                    </div>
-                    {/* Delete */}
-                    <button onClick={() => deleteTransfer(t.transferPairId)}
-                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
-                      title="Delete transfer"
-                      onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
-                    >🗑</button>
-                  </div>
+                  <TransferHistoryRow
+                    key={t.id}
+                    t={t}
+                    idx={idx}
+                    total={transfers.length}
+                    fromAcct={fromAcct}
+                    toAcct={toAcct}
+                    accounts={accounts}
+                    badgeStyle={badgeStyle}
+                    BG={BG} BG2={BG2} BORDER={BORDER} GREEN={GREEN}
+                    onDelete={() => deleteTransfer(t.transferPairId)}
+                    onSaveEdit={saveInlineEdit}
+                  />
                 );
               })}
             </div>
@@ -4996,37 +5093,45 @@ function TransferTab({ data, update, accounts }) {
             No transfers yet.<br/>Use the form to move money between accounts.
           </div>
         ) : (
-          <div>
-            {transfers.map(t => {
+          <div style={{ margin: "0 -1.2rem -1.2rem" }}>
+            {transfers.map((t, idx) => {
               const toAcct = accounts.find(a => String(a.id) === String(t.transferToId));
+              const fromAcct = accounts.find(a => String(a.id) === String(t.bankId));
+              function bStyle(id) {
+                const type = accounts.find(a => String(a.id) === String(id))?.type;
+                if (type === "Credit Card") return { background: "#fff3e0", color: "#e65100" };
+                if (type === "Cash") return { background: "#f0fdf4", color: "#166534" };
+                return { background: "#e8f5ee", color: "#1a6b3c" };
+              }
               return (
-                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 4px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                  {/* Icon */}
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>↔</div>
-                  {/* Details */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 3 }}>
-                      <span style={{ ...badgeStyle(t.bankId), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>{getAcctName(t.bankId)}</span>
-                      <span style={{ color: "#1a6b3c", fontWeight: 700 }}>→</span>
-                      <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : { color: "var(--color-text-secondary)" }), borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
-                        {toAcct ? toAcct.name : "—"}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-                      {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
-                    </div>
-                  </div>
-                  {/* Amount */}
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "#1a6b3c", flexShrink: 0 }}>
-                    ₹{Number(t.amount).toLocaleString("en-IN")}
-                  </div>
-                  {/* Edit */}
-                  <button onClick={() => openEditTransfer(t)}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.5, padding: "2px 4px", flexShrink: 0 }} title="Edit transfer">✏️</button>
-                  {/* Delete */}
-                  <button onClick={() => deleteTransfer(t.transferPairId)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, opacity: 0.6, padding: "2px 4px", flexShrink: 0 }}>🗑</button>
-                </div>
+                <TransferHistoryRow
+                  key={t.id}
+                  t={t}
+                  idx={idx}
+                  total={transfers.length}
+                  fromAcct={fromAcct}
+                  toAcct={toAcct}
+                  accounts={accounts}
+                  badgeStyle={bStyle}
+                  BG="var(--color-background-primary)"
+                  BG2="var(--color-background-secondary)"
+                  BORDER="var(--color-border-tertiary)"
+                  GREEN="#1a6b3c"
+                  onDelete={() => deleteTransfer(t.transferPairId)}
+                  onSaveEdit={(ef) => {
+                    const amt = parseFloat(ef.amount);
+                    if (!amt || amt <= 0) return;
+                    const note = ef.note.trim() || "Account Transfer";
+                    update(p => ({
+                      transactions: p.transactions.map(tx => {
+                        if (tx.transferPairId !== ef.pairId) return tx;
+                        if (tx.transferRole === "out") return { ...tx, bankId: ef.fromId, transferToId: ef.toId, amount: amt, note, date: ef.date };
+                        if (tx.transferRole === "in")  return { ...tx, bankId: ef.toId, transferFromId: ef.fromId, amount: amt, note, date: ef.date };
+                        return tx;
+                      })
+                    }));
+                  }}
+                />
               );
             })}
           </div>
