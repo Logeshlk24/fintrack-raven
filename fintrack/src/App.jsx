@@ -5274,7 +5274,7 @@ function TransferTab({ data, update, accounts }) {
 
 // ═══════════════════════════ ANALYSIS TAB ═══════════════════════════════════
 function AnalysisTab({ data, update, accounts }) {
-  const [view,     setView]     = useState("graph");
+  const [view,     setView]     = useState("calendar");
   const [period,   setPeriod]   = useState("6M");
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
@@ -5686,15 +5686,6 @@ function AnalysisTab({ data, update, accounts }) {
     }
 
     const GREEN = "#1a6b3c";
-    const monthWorkingDays = (() => {
-      let c=0;
-      for(let d=1;d<=daysCount;d++){
-        const key=dateKey(calYear,calMonth,d);
-        const dow=new Date(calYear,calMonth,d).getDay();
-        if(dow!==0&&dow!==6&&!commuteLeaves.includes(key)) c++;
-      }
-      return c;
-    })();
 
     return (
       <div>
@@ -5873,8 +5864,8 @@ function AnalysisTab({ data, update, accounts }) {
 
   // ── Main render ────────────────────────────────────────────────────────────
   const views=[
-    {id:"graph",     label:"📈 Income vs Expense"},
     {id:"calendar",  label:"📅 Calendar"},
+    {id:"graph",     label:"📈 Income vs Expense"},
   ];
   return (
     <div style={{marginTop:16}}>
