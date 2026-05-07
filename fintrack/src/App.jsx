@@ -83,7 +83,7 @@ const defaultData = {
   snapshots: [],
   scheduledPayments: [],
   needsWants: [],
-  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare", time: "" },
+  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare", timeLogs: [] },
   commuteLeaves: [],
   featureToggles: { fo: true, portfolio: true },
   businessData: [],
@@ -5512,7 +5512,7 @@ function AnalysisTab({ data, update, accounts }) {
     const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 
     // local commute setup form state
-    const [setupForm, setSetupForm] = useState({ ...commuteSettings });
+    const [setupForm, setSetupForm] = useState({ timeLogs: [], ...commuteSettings });
 
     const pad = n => String(n).padStart(2,"0");
     const dateKey = (y,m,d) => `${y}-${pad(m+1)}-${pad(d)}`;
@@ -5554,59 +5554,68 @@ function AnalysisTab({ data, update, accounts }) {
       }));
     }
 
-    // Add bus fare transaction for a working day
-    function addBusFare(day) {
+    // Add bus fare transaction for a working day (with optional timeLog slot)
+    function addBusFare(day, timeLog) {
       const key = dateKey(calYear, calMonth, day);
       const fare = Number(commuteSettings.busFare||0);
       if(!fare) { alert("Please set your daily bus fare in the commute settings first."); return; }
       if(!commuteSettings.bankId) { alert("Please select an account in commute settings."); return; }
-      // Check if already added for this day
-      const alreadyExists = txns.some(t =>
-        t.date === key && t._busfare === true
-      );
-      if(alreadyExists) { alert("Bus fare already added for this day."); return; }
+      // If timeLog provided, check if that specific slot already added for this day
+      if(timeLog) {
+        const slotExists = txns.some(t => t.date===key && t._busfare===true && t._timeLogId===timeLog.id);
+        if(slotExists) { alert("Bus fare for \"" + timeLog.label + "\" already added for this day."); return; }
+      }
       const newTx = {
         id: Date.now(),
         date: key,
-        time: commuteSettings.time || "",
         type: "expense",
         amount: fare,
         category: commuteSettings.category || "Transport",
-        note: commuteSettings.note || "Bus fare",
+        note: (commuteSettings.note || "Bus fare") + (timeLog ? " – " + timeLog.label : ""),
         bankId: commuteSettings.bankId,
         _busfare: true,
+        _timeLogId: timeLog ? timeLog.id : null,
+        time: timeLog ? timeLog.time : "",
       };
       update(p => ({ transactions: [...(p.transactions||[]), newTx] }));
     }
 
-    // Bulk add bus fare for all working days in month
+    // Bulk add bus fare for all working days in month (per timelog slot)
     function addBusFareForMonth() {
       const fare = Number(commuteSettings.busFare||0);
       if(!fare) { alert("Please set your daily bus fare first."); return; }
       if(!commuteSettings.bankId) { alert("Please select an account."); return; }
+      const timeLogs = (commuteSettings.timeLogs||[]);
+      const slots = timeLogs.length > 0 ? timeLogs : [null];
       const newTxns = [];
       for(let d=1; d<=daysCount; d++) {
         const key = dateKey(calYear, calMonth, d);
         const dow = new Date(calYear, calMonth, d).getDay();
-        // Skip weekends (Sat=6, Sun=0) and leaves
         if(dow===0||dow===6) continue;
         if(commuteLeaves.includes(key)) continue;
-        // Skip if already added
-        if(txns.some(t=>t.date===key&&t._busfare===true)) continue;
-        newTxns.push({
-          id: Date.now() + d,
-          date: key,
-          time: commuteSettings.time || "",
-          type: "expense",
-          amount: fare,
-          category: commuteSettings.category || "Transport",
-          note: commuteSettings.note || "Bus fare",
-          bankId: commuteSettings.bankId,
-          _busfare: true,
+        slots.forEach((tl, si) => {
+          // Skip if this slot already added for this day
+          if(tl) {
+            if(txns.some(t=>t.date===key&&t._busfare===true&&t._timeLogId===tl.id)) return;
+          } else {
+            if(txns.some(t=>t.date===key&&t._busfare===true&&!t._timeLogId)) return;
+          }
+          newTxns.push({
+            id: Date.now() + d * 100 + si,
+            date: key,
+            type: "expense",
+            amount: fare,
+            category: commuteSettings.category || "Transport",
+            note: (commuteSettings.note || "Bus fare") + (tl ? " – " + tl.label : ""),
+            bankId: commuteSettings.bankId,
+            _busfare: true,
+            _timeLogId: tl ? tl.id : null,
+            time: tl ? tl.time : "",
+          });
         });
       }
       if(newTxns.length===0) { alert("No working days to add (all already added or all on leave)."); return; }
-      if(!window.confirm(`Add bus fare (₹${fare}) for ${newTxns.length} working days in ${MONTHS[calMonth]}?`)) return;
+      if(!window.confirm("Add bus fare (₹" + fare + ") for " + newTxns.length + " entries in " + MONTHS[calMonth] + "?")) return;
       update(p => ({ transactions: [...(p.transactions||[]), ...newTxns] }));
     }
 
@@ -5684,12 +5693,30 @@ function AnalysisTab({ data, update, accounts }) {
                 <input value={setupForm.note} onChange={e=>setSetupForm(p=>({...p,note:e.target.value}))}
                   placeholder="Bus fare" style={{width:"100%"}}/>
               </div>
-              <div>
-                <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Default Time (optional)</label>
-                <input type="time" value={setupForm.time||""} onChange={e=>setSetupForm(p=>({...p,time:e.target.value}))}
-                  style={{width:"100%"}}/>
-              </div>
             </div>
+
+            {/* ── Time Log Slots ── */}
+            <div style={{marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)"}}>🕐 Time Log Slots</span>
+                <span style={{fontSize:10,color:"var(--color-text-secondary)"}}>(Add multiple per day — e.g. Morning, Evening)</span>
+              </div>
+              {(setupForm.timeLogs||[]).map((tl,i)=>(
+                <div key={tl.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                  <input value={tl.label} onChange={e=>setSetupForm(p=>({...p,timeLogs:p.timeLogs.map((x,j)=>j===i?{...x,label:e.target.value}:x)}))}
+                    placeholder="Label (e.g. Morning)" style={{flex:1,minWidth:0}}/>
+                  <input type="time" value={tl.time} onChange={e=>setSetupForm(p=>({...p,timeLogs:p.timeLogs.map((x,j)=>j===i?{...x,time:e.target.value}:x)}))}
+                    style={{width:110}}/>
+                  <button onClick={()=>setSetupForm(p=>({...p,timeLogs:p.timeLogs.filter((_,j)=>j!==i)}))}
+                    style={{padding:"4px 10px",borderRadius:6,border:"none",background:"#fee2e2",color:"#ef4444",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+                </div>
+              ))}
+              <button onClick={()=>setSetupForm(p=>({...p,timeLogs:[...(p.timeLogs||[]),{id:Date.now(),label:"",time:""}]}))}
+                style={{padding:"5px 14px",borderRadius:7,border:"0.5px dashed var(--color-border-primary)",background:"none",cursor:"pointer",fontSize:12,color:GREEN,fontWeight:600}}>
+                + Add Time Slot
+              </button>
+            </div>
+
             <div style={{display:"flex",gap:8}}>
               <button onClick={saveCommuteSettings}
                 style={{padding:"6px 18px",borderRadius:7,border:"none",background:GREEN,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600}}>
@@ -5723,7 +5750,11 @@ function AnalysisTab({ data, update, accounts }) {
                 const isLeave=commuteLeaves.includes(key);
                 const dow=new Date(calYear,calMonth,day).getDay();
                 const isWeekend=dow===0||dow===6;
-                const busFareAdded=txns.some(t=>t.date===key&&t._busfare===true);
+                const dayBusFares=txns.filter(t=>t.date===key&&t._busfare===true);
+                const timeLogs=commuteSettings.timeLogs||[];
+                const allSlotsAdded=timeLogs.length>0
+                  ? timeLogs.every(tl=>dayBusFares.some(t=>t._timeLogId===tl.id))
+                  : dayBusFares.length>0;
                 return (
                   <div key={day}
                     style={{borderRadius:8,padding:"4px 3px",minHeight:58,cursor:"pointer",
@@ -5749,19 +5780,19 @@ function AnalysisTab({ data, update, accounts }) {
                           {isLeave?"🏖 Leave":"+ leave"}
                         </span>
                       )}
-                      {!isWeekend && !isLeave && commuteSettings.busFare>0 && !busFareAdded && (
-                        <span onClick={e=>{e.stopPropagation();addBusFare(day);}}
-                          title="Add bus fare"
+                      {!isWeekend && !isLeave && commuteSettings.busFare>0 && !allSlotsAdded && (
+                        <span onClick={e=>{e.stopPropagation();setCalDay(day);}}
+                          title="Click to add bus fare"
                           style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer",
                             background:"transparent",color:isSel?"rgba(255,255,255,0.7)":"#9ca3af",
                             border:`0.5px dashed ${isSel?"rgba(255,255,255,0.4)":"#d1d5db"}`}}>
                           🚌+
                         </span>
                       )}
-                      {busFareAdded && (
+                      {dayBusFares.length>0 && (
                         <span style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",
                           background:isSel?"rgba(255,255,255,0.2)":"#e0f2fe",color:isSel?"#fff":"#0369a1",fontWeight:600}}>
-                          🚌
+                          🚌{dayBusFares.length>1?` ×${dayBusFares.length}`:""}
                         </span>
                       )}
                     </div>
@@ -5790,27 +5821,50 @@ function AnalysisTab({ data, update, accounts }) {
                   {calDay} {MONTHS[calMonth]} {calYear}
                   <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>{selTxns.length} transaction{selTxns.length!==1?"s":""}</span>
                 </div>
-                {/* Leave toggle for selected day */}
+                {/* Leave toggle + per-slot bus fare buttons */}
                 {(() => {
                   const key=dateKey(calYear,calMonth,calDay);
                   const dow=new Date(calYear,calMonth,calDay).getDay();
                   const isLeave=commuteLeaves.includes(key);
-                  const busFareAdded=txns.some(t=>t.date===key&&t._busfare===true);
+                  const timeLogs=commuteSettings.timeLogs||[];
                   if(dow===0||dow===6) return <div style={{fontSize:12,color:"#9ca3af",marginBottom:8}}>Weekend — no commute</div>;
                   return (
-                    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-                      <button onClick={()=>toggleLeave(calDay)}
-                        style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",
-                          background:isLeave?"#fed7aa":"#f3f4f6",color:isLeave?"#c2410c":"var(--color-text-secondary)"}}>
-                        {isLeave?"🏖 On Leave (click to remove)":"Mark as Leave 🏖"}
-                      </button>
-                      {!isLeave && commuteSettings.busFare>0 && !busFareAdded && (
-                        <button onClick={()=>addBusFare(calDay)}
-                          style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",background:"#e0f2fe",color:"#0369a1"}}>
-                          🚌 Add Bus Fare (₹{commuteSettings.busFare})
+                    <div style={{marginBottom:12}}>
+                      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                        <button onClick={()=>toggleLeave(calDay)}
+                          style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",
+                            background:isLeave?"#fed7aa":"#f3f4f6",color:isLeave?"#c2410c":"var(--color-text-secondary)"}}>
+                          {isLeave?"🏖 On Leave (click to remove)":"Mark as Leave 🏖"}
                         </button>
+                      </div>
+                      {!isLeave && commuteSettings.busFare>0 && (
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {timeLogs.length===0 ? (
+                            // No time slots defined — simple single add button
+                            <button onClick={()=>addBusFare(calDay,null)}
+                              style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",background:"#e0f2fe",color:"#0369a1",alignSelf:"flex-start"}}>
+                              🚌 Add Bus Fare (₹{commuteSettings.busFare})
+                            </button>
+                          ) : (
+                            timeLogs.map(tl=>{
+                              const slotAdded=txns.some(t=>t.date===key&&t._busfare===true&&t._timeLogId===tl.id);
+                              return (
+                                <div key={tl.id} style={{display:"flex",alignItems:"center",gap:8}}>
+                                  {slotAdded
+                                    ? <span style={{fontSize:12,color:"#0369a1",padding:"5px 0",display:"flex",alignItems:"center",gap:4}}>
+                                        🚌 <b>{tl.label||tl.time}</b>{tl.time&&<span style={{color:"#64748b"}}> {tl.time}</span>} ✓
+                                      </span>
+                                    : <button onClick={()=>addBusFare(calDay,tl)}
+                                        style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",background:"#e0f2fe",color:"#0369a1"}}>
+                                        🚌 {tl.label||"Add"}{tl.time&&<span style={{fontWeight:400,marginLeft:4,color:"#64748b"}}>{tl.time}</span>} — ₹{commuteSettings.busFare}
+                                      </button>
+                                  }
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
                       )}
-                      {busFareAdded && <span style={{fontSize:12,color:"#0369a1",padding:"5px 0"}}>🚌 Bus fare added ✓</span>}
                     </div>
                   );
                 })()}
@@ -5822,7 +5876,7 @@ function AnalysisTab({ data, update, accounts }) {
                         <div style={{flex:1}}>
                           <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}{t._busfare?" 🚌":""}</div>
                           {t.note&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
-                          {t.time&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>🕐 {t.time}</div>}
+                          {t.time&&<div style={{fontSize:11,color:"#0369a1"}}>🕐 {t.time}</div>}
                         </div>
                         <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
                           {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
