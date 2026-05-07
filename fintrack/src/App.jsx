@@ -1126,9 +1126,9 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   // ── Quick To-Do ───────────────────────────────────────────────────────────
   const todos = data.overviewTodos || [];
   const [newTodo,    setNewTodo]    = useState("");
-  const [repeatMode, setRepeatMode] = useState("none"); // "none"|"daily"|"weekly"|"monthly"
+  const [repeatMode, setRepeatMode] = useState("none");
   const [showRepeat, setShowRepeat] = useState(false);
-  const [weeklyDays, setWeeklyDays] = useState([]); // e.g. [1,3,5] = Mon,Wed,Fri
+  const [weeklyDays, setWeeklyDays] = useState([]);
 
   function toggleWeeklyDay(d) {
     setWeeklyDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
@@ -1139,10 +1139,10 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
     if (!text) return;
     update(p => ({ overviewTodos: [...(p.overviewTodos || []), {
       id: Date.now(), text, done: false,
-      repeat: repeatMode, // "none"|"daily"|"weekly"|"monthly"
+      repeat: repeatMode,
       weeklyDays: repeatMode === "weekly" && weeklyDays.length > 0 ? weeklyDays : null,
       createdAt: new Date().toISOString(),
-      lastReset: new Date().toDateString(), // track when it was last auto-reset
+      lastReset: new Date().toDateString(),
     }]}));
     setNewTodo(""); setRepeatMode("none"); setShowRepeat(false); setWeeklyDays([]);
   }
@@ -5602,7 +5602,6 @@ function AnalysisTab({ data, update, accounts }) {
     const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 
     const pad = n => String(n).padStart(2,"0");
-    const dateKey = (y,m,d) => `${y}-${pad(m+1)}-${pad(d)}`;
 
     const dayMap={};
     txns.forEach(t=>{
@@ -5634,6 +5633,7 @@ function AnalysisTab({ data, update, accounts }) {
     return (
       <div>
         <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}}>
+          {/* Calendar grid */}
           <div style={{flex:"1 1 auto",minWidth:0,maxWidth:"100%"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
               <button onClick={prev} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>‹</button>
@@ -5657,7 +5657,8 @@ function AnalysisTab({ data, update, accounts }) {
                       background:isSel?"#1a6b3c":isToday?"#f0fdf4":isWeekend?"#f8f8f8":"var(--color-background-secondary)",
                       border:isSel?"2px solid #1a6b3c":isToday?"1.5px solid #bbf7d0":isWeekend?"1px solid #e5e7eb":"1px solid var(--color-border-tertiary)",
                       display:"flex",flexDirection:"column",alignItems:"center",gap:1,transition:"background 0.1s"}}>
-                    <span style={{fontSize:11,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isWeekend?"#9ca3af":isToday?"#1a6b3c":"var(--color-text-primary)"}}>
+                    <span style={{fontSize:11,fontWeight:isToday||isSel?700:400,
+                      color:isSel?"#fff":isWeekend?"#9ca3af":isToday?"#1a6b3c":"var(--color-text-primary)"}}>
                       {day}
                     </span>
                     {info?.income>0&&<span style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#dcfce7",color:isSel?"#fff":"#166534",borderRadius:3,padding:"0 3px",lineHeight:"13px"}}>+{fmtCur(info.income)}</span>}
@@ -5673,7 +5674,7 @@ function AnalysisTab({ data, update, accounts }) {
             </div>
           </div>
 
-          {/* Right panel — selected day detail */}
+          {/* Right panel — selected day transactions */}
           <div style={{flex:1,minWidth:220}}>
             {calDay ? (
               <>
