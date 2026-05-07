@@ -1062,19 +1062,55 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
   // ── Quick To-Do ───────────────────────────────────────────────────────────
   const todos = data.overviewTodos || [];
-  const [newTodo, setNewTodo] = useState("");
+  const [newTodo,    setNewTodo]    = useState("");
+  const [repeatMode, setRepeatMode] = useState("none"); // "none"|"daily"|"weekly"|"monthly"
+  const [showRepeat, setShowRepeat] = useState(false);
+
   function addTodo() {
     const text = newTodo.trim();
     if (!text) return;
-    update(p => ({ overviewTodos: [...(p.overviewTodos || []), { id: Date.now(), text, done: false }] }));
-    setNewTodo("");
+    update(p => ({ overviewTodos: [...(p.overviewTodos || []), {
+      id: Date.now(), text, done: false,
+      repeat: repeatMode, // "none"|"daily"|"weekly"|"monthly"
+      createdAt: new Date().toISOString(),
+      lastReset: new Date().toDateString(), // track when it was last auto-reset
+    }]}));
+    setNewTodo(""); setRepeatMode("none"); setShowRepeat(false);
   }
+
   function toggleTodo(id) {
     update(p => ({ overviewTodos: (p.overviewTodos || []).map(t => t.id === id ? { ...t, done: !t.done } : t) }));
   }
+
   function deleteTodo(id) {
     update(p => ({ overviewTodos: (p.overviewTodos || []).filter(t => t.id !== id) }));
   }
+
+  // Auto-reset repeated tasks based on their schedule
+  useEffect(() => {
+    const now = new Date();
+    const todayStr   = now.toDateString();
+    const thisWeek   = `${now.getFullYear()}-W${Math.ceil((now.getDate() + new Date(now.getFullYear(), now.getMonth(), 1).getDay()) / 7)}`;
+    const thisMonth  = `${now.getFullYear()}-${now.getMonth()}`;
+
+    const needsReset = (t) => {
+      if (!t.done || t.repeat === "none" || !t.repeat) return false;
+      const last = t.lastReset || "";
+      if (t.repeat === "daily")   return last !== todayStr;
+      if (t.repeat === "weekly")  return last !== thisWeek;
+      if (t.repeat === "monthly") return last !== thisMonth;
+      return false;
+    };
+
+    const toReset = todos.filter(needsReset);
+    if (toReset.length === 0) return;
+
+    update(p => ({ overviewTodos: (p.overviewTodos || []).map(t =>
+      toReset.find(r => r.id === t.id)
+        ? { ...t, done: false, lastReset: todayStr }
+        : t
+    )}));
+  }, []); // eslint-disable-line — runs once on mount to catch overnight resets
 
   const thisYear  = new Date().getFullYear();
   const thisMonth = new Date().getMonth();
@@ -1292,8 +1328,8 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
             </span>
           </div>
 
-          {/* Input */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {/* Input row */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <input
               value={newTodo}
               onChange={e => setNewTodo(e.target.value)}
@@ -1301,25 +1337,49 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
               placeholder="Add a task…"
               style={{ flex: 1, fontSize: 13, padding: "6px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" }}
             />
+            {/* Repeat toggle button */}
+            <button onClick={() => setShowRepeat(p => !p)}
+              title="Set repeat"
+              style={{ background: repeatMode !== "none" ? "#e8f5ee" : "var(--color-background-secondary)", color: repeatMode !== "none" ? "#1a6b3c" : "var(--color-text-secondary)", border: `0.5px solid ${repeatMode !== "none" ? "#1a6b3c" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
+              🔁
+            </button>
             <button onClick={addTodo}
               style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
               +
             </button>
           </div>
 
-          {/* List */}
+          {/* Repeat picker */}
+          {showRepeat && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+              {[["none","No repeat"], ["daily","Daily"], ["weekly","Weekly"], ["monthly","Monthly"]].map(([v, l]) => (
+                <button key={v} onClick={() => setRepeatMode(v)}
+                  style={{ fontSize: 11, padding: "4px 11px", borderRadius: 20, border: `0.5px solid ${repeatMode === v ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: repeatMode === v ? "#1a6b3c" : "var(--color-background-secondary)", color: repeatMode === v ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: repeatMode === v ? 600 : 400 }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Task list */}
           {todos.length === 0 ? (
             <div style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12, padding: "1rem 0", fontStyle: "italic" }}>
               No tasks yet — add one above
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
-              {/* Pending first */}
+              {/* Pending */}
               {todos.filter(t => !t.done).map(t => (
                 <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
                   <button onClick={() => toggleTodo(t.id)}
                     style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }} />
                   <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-primary)", wordBreak: "break-word" }}>{t.text}</span>
+                  {/* Repeat badge */}
+                  {t.repeat && t.repeat !== "none" && (
+                    <span style={{ fontSize: 10, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
+                      🔁 {t.repeat}
+                    </span>
+                  )}
                   <button onClick={() => deleteTodo(t.id)}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.45, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
                 </div>
@@ -1330,6 +1390,11 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   <button onClick={() => toggleTodo(t.id)}
                     style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 11 }}>✓</button>
                   <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-secondary)", textDecoration: "line-through", wordBreak: "break-word" }}>{t.text}</span>
+                  {t.repeat && t.repeat !== "none" && (
+                    <span style={{ fontSize: 10, background: "#f0fdf4", color: "#4a9a6a", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
+                      🔁 {t.repeat}
+                    </span>
+                  )}
                   <button onClick={() => deleteTodo(t.id)}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.45, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
                 </div>
