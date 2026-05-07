@@ -83,6 +83,8 @@ const defaultData = {
   snapshots: [],
   scheduledPayments: [],
   needsWants: [],
+  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare" },
+  commuteLeaves: [],
   featureToggles: { fo: true, portfolio: true },
   businessData: [],
   projectsData: [],
@@ -1064,8 +1066,6 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   const todos = data.overviewTodos || [];
   const [newTodo,    setNewTodo]    = useState("");
   const [repeatMode, setRepeatMode] = useState("none"); // "none"|"daily"|"weekly"|"monthly"
-  const [weeklyDay,  setWeeklyDay]  = useState(1);   // 0=Sun … 6=Sat
-  const [monthlyDate, setMonthlyDate] = useState(1); // 1–31
   const [showRepeat, setShowRepeat] = useState(false);
 
   function addTodo() {
@@ -1074,12 +1074,10 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
     update(p => ({ overviewTodos: [...(p.overviewTodos || []), {
       id: Date.now(), text, done: false,
       repeat: repeatMode, // "none"|"daily"|"weekly"|"monthly"
-      weeklyDay:   repeatMode === "weekly"  ? weeklyDay  : null,
-      monthlyDate: repeatMode === "monthly" ? monthlyDate : null,
       createdAt: new Date().toISOString(),
       lastReset: new Date().toDateString(), // track when it was last auto-reset
     }]}));
-    setNewTodo(""); setRepeatMode("none"); setWeeklyDay(1); setMonthlyDate(1); setShowRepeat(false);
+    setNewTodo(""); setRepeatMode("none"); setShowRepeat(false);
   }
 
   function toggleTodo(id) {
@@ -1101,20 +1099,8 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       if (!t.done || t.repeat === "none" || !t.repeat) return false;
       const last = t.lastReset || "";
       if (t.repeat === "daily")   return last !== todayStr;
-      if (t.repeat === "weekly") {
-        // Reset on the configured day of week; fall back to any new week if not set
-        if (t.weeklyDay != null) {
-          return now.getDay() === t.weeklyDay && last !== todayStr;
-        }
-        return last !== thisWeek;
-      }
-      if (t.repeat === "monthly") {
-        // Reset on the configured date of month; fall back to any new month if not set
-        if (t.monthlyDate != null) {
-          return now.getDate() === t.monthlyDate && last !== todayStr;
-        }
-        return last !== thisMonth;
-      }
+      if (t.repeat === "weekly")  return last !== thisWeek;
+      if (t.repeat === "monthly") return last !== thisMonth;
       return false;
     };
 
@@ -1367,40 +1353,13 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
           {/* Repeat picker */}
           {showRepeat && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-              {/* Mode chips */}
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {[["none","No repeat"], ["daily","Daily"], ["weekly","Weekly"], ["monthly","Monthly"]].map(([v, l]) => (
-                  <button key={v} onClick={() => setRepeatMode(v)}
-                    style={{ fontSize: 11, padding: "4px 11px", borderRadius: 20, border: `0.5px solid ${repeatMode === v ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: repeatMode === v ? "#1a6b3c" : "var(--color-background-secondary)", color: repeatMode === v ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: repeatMode === v ? 600 : 400 }}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-              {/* Weekly — day of week picker */}
-              {repeatMode === "weekly" && (
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginRight: 2 }}>On:</span>
-                  {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d, i) => (
-                    <button key={i} onClick={() => setWeeklyDay(i)}
-                      style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, border: `0.5px solid ${weeklyDay === i ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: weeklyDay === i ? "#1a6b3c" : "var(--color-background-secondary)", color: weeklyDay === i ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: weeklyDay === i ? 600 : 400 }}>
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Monthly — date picker */}
-              {repeatMode === "monthly" && (
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginRight: 2 }}>On date:</span>
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                    <button key={d} onClick={() => setMonthlyDate(d)}
-                      style={{ fontSize: 11, width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${monthlyDate === d ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: monthlyDate === d ? "#1a6b3c" : "var(--color-background-secondary)", color: monthlyDate === d ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: monthlyDate === d ? 600 : 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+              {[["none","No repeat"], ["daily","Daily"], ["weekly","Weekly"], ["monthly","Monthly"]].map(([v, l]) => (
+                <button key={v} onClick={() => setRepeatMode(v)}
+                  style={{ fontSize: 11, padding: "4px 11px", borderRadius: 20, border: `0.5px solid ${repeatMode === v ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: repeatMode === v ? "#1a6b3c" : "var(--color-background-secondary)", color: repeatMode === v ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: repeatMode === v ? 600 : 400 }}>
+                  {l}
+                </button>
+              ))}
             </div>
           )}
 
@@ -1420,11 +1379,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   {/* Repeat badge */}
                   {t.repeat && t.repeat !== "none" && (
                     <span style={{ fontSize: 10, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
-                      🔁 {t.repeat === "weekly" && t.weeklyDay != null
-                        ? `Every ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][t.weeklyDay]}`
-                        : t.repeat === "monthly" && t.monthlyDate != null
-                        ? `Monthly · ${t.monthlyDate}${[,"st","nd","rd"][t.monthlyDate] || "th"}`
-                        : t.repeat}
+                      🔁 {t.repeat}
                     </span>
                   )}
                   <button onClick={() => deleteTodo(t.id)}
@@ -1439,11 +1394,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-secondary)", textDecoration: "line-through", wordBreak: "break-word" }}>{t.text}</span>
                   {t.repeat && t.repeat !== "none" && (
                     <span style={{ fontSize: 10, background: "#f0fdf4", color: "#4a9a6a", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
-                      🔁 {t.repeat === "weekly" && t.weeklyDay != null
-                        ? `Every ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][t.weeklyDay]}`
-                        : t.repeat === "monthly" && t.monthlyDate != null
-                        ? `Monthly · ${t.monthlyDate}${[,"st","nd","rd"][t.monthlyDate] || "th"}`
-                        : t.repeat}
+                      🔁 {t.repeat}
                     </span>
                   )}
                   <button onClick={() => deleteTodo(t.id)}
@@ -1866,7 +1817,7 @@ function MoneyPage({ data, update, tab, setTab }) {
 
       {/* ── Liabilities Tab ── */}
       {tab === "liabilities" && <LiabilitiesTab data={data} update={update} />}
-      {tab === "analysis" && <AnalysisTab data={data} />}
+      {tab === "analysis" && <AnalysisTab data={data} update={update} accounts={accounts} />}
     </div>
   );
 }
@@ -5261,12 +5212,18 @@ function TransferTab({ data, update, accounts }) {
 // ─── Scheduled Payments Tab ──────────────────────────────────────────────────
 
 // ═══════════════════════════ ANALYSIS TAB ═══════════════════════════════════
-function AnalysisTab({ data }) {
+function AnalysisTab({ data, update, accounts }) {
   const [view,     setView]     = useState("graph");
   const [period,   setPeriod]   = useState("6M");
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calDay,   setCalDay]   = useState(null);
+
+  // ── Office / commute settings ──────────────────────────────────────────────
+  const [showCommuteSetup, setShowCommuteSetup] = useState(false);
+  const commuteSettings = data.commuteSettings || { busFare: 0, bankId: "", category: "Transport", note: "Bus fare" };
+  // leaves: Set of date strings "YYYY-MM-DD" stored in data.commuteLeaves
+  const commuteLeaves = data.commuteLeaves || [];
 
   const txns = data.transactions || [];
   const fmtCur = n => "₹" + Math.abs(Number(n)||0).toLocaleString("en-IN", {maximumFractionDigits:0});
@@ -5553,9 +5510,16 @@ function AnalysisTab({ data }) {
   function CalendarView() {
     const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+    // local commute setup form state
+    const [setupForm, setSetupForm] = useState({ ...commuteSettings });
+
+    const pad = n => String(n).padStart(2,"0");
+    const dateKey = (y,m,d) => `${y}-${pad(m+1)}-${pad(d)}`;
+
     const dayMap={};
     txns.forEach(t=>{
-      if(t.isTransfer) return; // exclude internal transfers — not real income/expense
+      if(t.isTransfer) return;
       const d=new Date(t.date);
       if(d.getFullYear()!==calYear||d.getMonth()!==calMonth) return;
       const k=d.getDate();
@@ -5564,82 +5528,310 @@ function AnalysisTab({ data }) {
       if(t.type==="expense") dayMap[k].expense+=Number(t.amount||0);
       dayMap[k].txns.push(t);
     });
+
     const firstDay=new Date(calYear,calMonth,1).getDay();
     const daysCount=new Date(calYear,calMonth+1,0).getDate();
     const cells=[];
     for(let i=0;i<firstDay;i++) cells.push(null);
     for(let d=1;d<=daysCount;d++) cells.push(d);
+
     const selTxns=calDay?(dayMap[calDay]?.txns||[]).filter(t=>!t.isTransfer):[];
     const today=new Date();
+
     function prev(){if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);setCalDay(null);}
     function next(){if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);setCalDay(null);}
+
     const mIncome=Object.values(dayMap).reduce((s,d)=>s+d.income,0);
     const mExpense=Object.values(dayMap).reduce((s,d)=>s+d.expense,0);
+
+    // Toggle a leave day
+    function toggleLeave(day) {
+      const key = dateKey(calYear, calMonth, day);
+      const isLeave = commuteLeaves.includes(key);
+      update(p => ({ commuteLeaves: isLeave
+        ? (p.commuteLeaves||[]).filter(x=>x!==key)
+        : [...(p.commuteLeaves||[]), key]
+      }));
+    }
+
+    // Add bus fare transaction for a working day
+    function addBusFare(day) {
+      const key = dateKey(calYear, calMonth, day);
+      const fare = Number(commuteSettings.busFare||0);
+      if(!fare) { alert("Please set your daily bus fare in the commute settings first."); return; }
+      if(!commuteSettings.bankId) { alert("Please select an account in commute settings."); return; }
+      // Check if already added for this day
+      const alreadyExists = txns.some(t =>
+        t.date === key && t._busfare === true
+      );
+      if(alreadyExists) { alert("Bus fare already added for this day."); return; }
+      const newTx = {
+        id: Date.now(),
+        date: key,
+        type: "expense",
+        amount: fare,
+        category: commuteSettings.category || "Transport",
+        note: commuteSettings.note || "Bus fare",
+        bankId: commuteSettings.bankId,
+        _busfare: true,
+      };
+      update(p => ({ transactions: [...(p.transactions||[]), newTx] }));
+    }
+
+    // Bulk add bus fare for all working days in month
+    function addBusFareForMonth() {
+      const fare = Number(commuteSettings.busFare||0);
+      if(!fare) { alert("Please set your daily bus fare first."); return; }
+      if(!commuteSettings.bankId) { alert("Please select an account."); return; }
+      const newTxns = [];
+      for(let d=1; d<=daysCount; d++) {
+        const key = dateKey(calYear, calMonth, d);
+        const dow = new Date(calYear, calMonth, d).getDay();
+        // Skip weekends (Sat=6, Sun=0) and leaves
+        if(dow===0||dow===6) continue;
+        if(commuteLeaves.includes(key)) continue;
+        // Skip if already added
+        if(txns.some(t=>t.date===key&&t._busfare===true)) continue;
+        newTxns.push({
+          id: Date.now() + d,
+          date: key,
+          type: "expense",
+          amount: fare,
+          category: commuteSettings.category || "Transport",
+          note: commuteSettings.note || "Bus fare",
+          bankId: commuteSettings.bankId,
+          _busfare: true,
+        });
+      }
+      if(newTxns.length===0) { alert("No working days to add (all already added or all on leave)."); return; }
+      if(!window.confirm(`Add bus fare (₹${fare}) for ${newTxns.length} working days in ${MONTHS[calMonth]}?`)) return;
+      update(p => ({ transactions: [...(p.transactions||[]), ...newTxns] }));
+    }
+
+    function saveCommuteSettings() {
+      update(p => ({ commuteSettings: { ...setupForm } }));
+      setShowCommuteSetup(false);
+    }
+
+    const GREEN = "#1a6b3c";
+    const monthWorkingDays = (() => {
+      let c=0;
+      for(let d=1;d<=daysCount;d++){
+        const key=dateKey(calYear,calMonth,d);
+        const dow=new Date(calYear,calMonth,d).getDay();
+        if(dow!==0&&dow!==6&&!commuteLeaves.includes(key)) c++;
+      }
+      return c;
+    })();
+
     return (
-      <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}}>
-        <div style={{flex:"1 1 auto",minWidth:0,maxWidth:"100%"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-            <button onClick={prev} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>‹</button>
-            <span style={{fontWeight:700,fontSize:15}}>{MONTHS[calMonth]} {calYear}</span>
-            <button onClick={next} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>›</button>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-            {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600,padding:"4px 0"}}>{d}</div>)}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-            {cells.map((day,i)=>{
-              if(!day) return <div key={i}/>;
-              const info=dayMap[day];
-              const isToday=day===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
-              const isSel=day===calDay;
-              return (
-                <div key={day} onClick={()=>setCalDay(isSel?null:day)}
-                  style={{borderRadius:8,padding:"5px 3px",minHeight:52,cursor:info?"pointer":"default",
-                    background:isSel?"#1a6b3c":isToday?"#f0fdf4":"var(--color-background-secondary)",
-                    border:isSel?"2px solid #1a6b3c":isToday?"1.5px solid #bbf7d0":"1px solid var(--color-border-tertiary)",
-                    display:"flex",flexDirection:"column",alignItems:"center",gap:2,transition:"background 0.1s"}}>
-                  <span style={{fontSize:12,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isToday?"#1a6b3c":"var(--color-text-primary)"}}>{day}</span>
-                  {info?.income>0&&<span style={{fontSize:8,background:isSel?"rgba(255,255,255,0.2)":"#dcfce7",color:isSel?"#fff":"#166534",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>+{fmtCur(info.income)}</span>}
-                  {info?.expense>0&&<span style={{fontSize:8,background:isSel?"rgba(255,255,255,0.2)":"#fee2e2",color:isSel?"#fff":"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"14px"}}>-{fmtCur(info.expense)}</span>}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:10}}>
-            <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(mIncome)}</span>
-            <span style={{color:"#ef4444",fontWeight:600}}>Expense: {fmtCur(mExpense)}</span>
-            <span style={{color:(mIncome-mExpense)>=0?"#1a6b3c":"#ef4444",fontWeight:600}}>Net: {(mIncome-mExpense)>=0?"+":""}{fmtCur(mIncome-mExpense)}</span>
+      <div>
+        {/* ── Commute Settings Bar ── */}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:"#f0fdf4",borderRadius:10,border:"0.5px solid #bbf7d0",flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:600,color:GREEN}}>🚌 Commute Tracker</span>
+          {commuteSettings.busFare ? (
+            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>
+              ₹{commuteSettings.busFare}/day · {monthWorkingDays} working days this month
+              <span style={{color:GREEN,fontWeight:600,marginLeft:6}}>= ₹{(Number(commuteSettings.busFare)*monthWorkingDays).toLocaleString("en-IN")}</span>
+            </span>
+          ) : (
+            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>Set your daily bus fare to get started</span>
+          )}
+          <div style={{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setShowCommuteSetup(v=>!v)}
+              style={{padding:"5px 12px",borderRadius:7,border:`0.5px solid ${GREEN}`,background:"#fff",color:GREEN,cursor:"pointer",fontSize:12,fontWeight:600}}>
+              ⚙️ Settings
+            </button>
+            {commuteSettings.busFare>0 && (
+              <button onClick={addBusFareForMonth}
+                style={{padding:"5px 12px",borderRadius:7,border:"none",background:GREEN,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}}>
+                ➕ Add all working days
+              </button>
+            )}
           </div>
         </div>
-        <div style={{flex:1,minWidth:220}}>
-          {calDay ? (
-            <>
-              <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>
-                {calDay} {MONTHS[calMonth]} {calYear}
-                <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>{selTxns.length} transaction{selTxns.length!==1?"s":""}</span>
+
+        {/* ── Commute Settings Panel ── */}
+        {showCommuteSetup && (
+          <div style={{marginBottom:14,padding:"14px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)"}}>
+            <div style={{fontWeight:600,fontSize:13,marginBottom:12}}>⚙️ Commute Settings</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:12}}>
+              <div>
+                <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Daily Bus Fare (₹)</label>
+                <input type="number" value={setupForm.busFare} onChange={e=>setSetupForm(p=>({...p,busFare:e.target.value}))}
+                  placeholder="e.g. 40" style={{width:"100%"}}/>
               </div>
-              {selTxns.length===0
-                ? <div style={{color:"var(--color-text-secondary)",fontSize:13}}>No transactions.</div>
-                : selTxns.map(t=>(
-                    <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,marginBottom:6,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
-                      <span style={{width:8,height:8,borderRadius:"50%",background:t.type==="income"?"#1a6b3c":"#ef4444",flexShrink:0}}/>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}</div>
-                        {t.note&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
-                      </div>
-                      <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
-                        {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
-                      </span>
-                    </div>
-                  ))
-              }
-            </>
-          ) : (
-            <div style={{color:"var(--color-text-secondary)",fontSize:13,paddingTop:8,display:"flex",flexDirection:"column",gap:6}}>
-              <div style={{fontSize:28,marginBottom:4}}>📅</div>
-              Click any day with transactions to see details.
+              <div>
+                <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Deduct from Account</label>
+                <select value={setupForm.bankId} onChange={e=>setSetupForm(p=>({...p,bankId:e.target.value}))} style={{width:"100%"}}>
+                  <option value="">Select account…</option>
+                  {(accounts||[]).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Category</label>
+                <input value={setupForm.category} onChange={e=>setSetupForm(p=>({...p,category:e.target.value}))}
+                  placeholder="Transport" style={{width:"100%"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Note</label>
+                <input value={setupForm.note} onChange={e=>setSetupForm(p=>({...p,note:e.target.value}))}
+                  placeholder="Bus fare" style={{width:"100%"}}/>
+              </div>
             </div>
-          )}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={saveCommuteSettings}
+                style={{padding:"6px 18px",borderRadius:7,border:"none",background:GREEN,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600}}>
+                Save
+              </button>
+              <button onClick={()=>setShowCommuteSetup(false)}
+                style={{padding:"6px 14px",borderRadius:7,border:"0.5px solid var(--color-border-secondary)",background:"none",cursor:"pointer",fontSize:13,color:"var(--color-text-secondary)"}}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}}>
+          <div style={{flex:"1 1 auto",minWidth:0,maxWidth:"100%"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <button onClick={prev} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>‹</button>
+              <span style={{fontWeight:700,fontSize:15}}>{MONTHS[calMonth]} {calYear}</span>
+              <button onClick={next} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>›</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+              {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600,padding:"4px 0"}}>{d}</div>)}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+              {cells.map((day,i)=>{
+                if(!day) return <div key={i}/>;
+                const key = dateKey(calYear,calMonth,day);
+                const info=dayMap[day];
+                const isToday=day===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
+                const isSel=day===calDay;
+                const isLeave=commuteLeaves.includes(key);
+                const dow=new Date(calYear,calMonth,day).getDay();
+                const isWeekend=dow===0||dow===6;
+                const busFareAdded=txns.some(t=>t.date===key&&t._busfare===true);
+                return (
+                  <div key={day}
+                    style={{borderRadius:8,padding:"4px 3px",minHeight:58,cursor:"pointer",
+                      background:isSel?"#1a6b3c":isLeave?"#fff7ed":isToday?"#f0fdf4":isWeekend?"#f8f8f8":"var(--color-background-secondary)",
+                      border:isSel?"2px solid #1a6b3c":isLeave?"1.5px solid #fdba74":isToday?"1.5px solid #bbf7d0":isWeekend?"1px solid #e5e7eb":"1px solid var(--color-border-tertiary)",
+                      display:"flex",flexDirection:"column",alignItems:"center",gap:1,transition:"background 0.1s",position:"relative"}}>
+                    {/* Day number */}
+                    <span style={{fontSize:11,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isLeave?"#ea580c":isWeekend?"#9ca3af":isToday?"#1a6b3c":"var(--color-text-primary)"}}
+                      onClick={()=>setCalDay(isSel?null:day)}>{day}</span>
+                    {/* Income / expense chips */}
+                    {info?.income>0&&<span onClick={()=>setCalDay(isSel?null:day)} style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#dcfce7",color:isSel?"#fff":"#166534",borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer"}}>+{fmtCur(info.income)}</span>}
+                    {info?.expense>0&&<span onClick={()=>setCalDay(isSel?null:day)} style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#fee2e2",color:isSel?"#fff":"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer"}}>-{fmtCur(info.expense)}</span>}
+                    {/* Leave / bus badge row */}
+                    <div style={{display:"flex",gap:2,marginTop:1,flexWrap:"wrap",justifyContent:"center"}}>
+                      {!isWeekend && (
+                        <span onClick={e=>{e.stopPropagation();toggleLeave(day);}}
+                          title={isLeave?"Remove leave":"Mark as leave"}
+                          style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer",
+                            background:isLeave?(isSel?"rgba(255,255,255,0.3)":"#fed7aa"):"transparent",
+                            color:isLeave?(isSel?"#fff":"#c2410c"):"transparent",
+                            border:isLeave?"none":`0.5px dashed ${isSel?"rgba(255,255,255,0.4)":"#d1d5db"}`,
+                            fontWeight:600}}>
+                          {isLeave?"🏖 Leave":"+ leave"}
+                        </span>
+                      )}
+                      {!isWeekend && !isLeave && commuteSettings.busFare>0 && !busFareAdded && (
+                        <span onClick={e=>{e.stopPropagation();addBusFare(day);}}
+                          title="Add bus fare"
+                          style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer",
+                            background:"transparent",color:isSel?"rgba(255,255,255,0.7)":"#9ca3af",
+                            border:`0.5px dashed ${isSel?"rgba(255,255,255,0.4)":"#d1d5db"}`}}>
+                          🚌+
+                        </span>
+                      )}
+                      {busFareAdded && (
+                        <span style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",
+                          background:isSel?"rgba(255,255,255,0.2)":"#e0f2fe",color:isSel?"#fff":"#0369a1",fontWeight:600}}>
+                          🚌
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Legend */}
+            <div style={{marginTop:8,display:"flex",gap:12,fontSize:11,color:"var(--color-text-secondary)",flexWrap:"wrap"}}>
+              <span>🏖 <span style={{background:"#fed7aa",borderRadius:3,padding:"1px 5px",color:"#c2410c"}}>Leave</span></span>
+              <span>🚌 Bus fare added</span>
+              <span style={{color:"#9ca3af"}}>Sat/Sun = Weekend</span>
+            </div>
+            <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:10}}>
+              <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(mIncome)}</span>
+              <span style={{color:"#ef4444",fontWeight:600}}>Expense: {fmtCur(mExpense)}</span>
+              <span style={{color:(mIncome-mExpense)>=0?"#1a6b3c":"#ef4444",fontWeight:600}}>Net: {(mIncome-mExpense)>=0?"+":""}{fmtCur(mIncome-mExpense)}</span>
+            </div>
+          </div>
+
+          {/* Right panel — selected day detail */}
+          <div style={{flex:1,minWidth:220}}>
+            {calDay ? (
+              <>
+                <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>
+                  {calDay} {MONTHS[calMonth]} {calYear}
+                  <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>{selTxns.length} transaction{selTxns.length!==1?"s":""}</span>
+                </div>
+                {/* Leave toggle for selected day */}
+                {(() => {
+                  const key=dateKey(calYear,calMonth,calDay);
+                  const dow=new Date(calYear,calMonth,calDay).getDay();
+                  const isLeave=commuteLeaves.includes(key);
+                  const busFareAdded=txns.some(t=>t.date===key&&t._busfare===true);
+                  if(dow===0||dow===6) return <div style={{fontSize:12,color:"#9ca3af",marginBottom:8}}>Weekend — no commute</div>;
+                  return (
+                    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                      <button onClick={()=>toggleLeave(calDay)}
+                        style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",
+                          background:isLeave?"#fed7aa":"#f3f4f6",color:isLeave?"#c2410c":"var(--color-text-secondary)"}}>
+                        {isLeave?"🏖 On Leave (click to remove)":"Mark as Leave 🏖"}
+                      </button>
+                      {!isLeave && commuteSettings.busFare>0 && !busFareAdded && (
+                        <button onClick={()=>addBusFare(calDay)}
+                          style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",background:"#e0f2fe",color:"#0369a1"}}>
+                          🚌 Add Bus Fare (₹{commuteSettings.busFare})
+                        </button>
+                      )}
+                      {busFareAdded && <span style={{fontSize:12,color:"#0369a1",padding:"5px 0"}}>🚌 Bus fare added ✓</span>}
+                    </div>
+                  );
+                })()}
+                {selTxns.length===0
+                  ? <div style={{color:"var(--color-text-secondary)",fontSize:13}}>No transactions.</div>
+                  : selTxns.map(t=>(
+                      <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,marginBottom:6,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
+                        <span style={{width:8,height:8,borderRadius:"50%",background:t.type==="income"?"#1a6b3c":"#ef4444",flexShrink:0}}/>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}{t._busfare?" 🚌":""}</div>
+                          {t.note&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
+                        </div>
+                        <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
+                          {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
+                        </span>
+                      </div>
+                    ))
+                }
+              </>
+            ) : (
+              <div style={{color:"var(--color-text-secondary)",fontSize:13,paddingTop:8,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{fontSize:28,marginBottom:4}}>📅</div>
+                <div>Click any day to see transactions.</div>
+                <div style={{fontSize:12,lineHeight:1.6}}>
+                  <b>How to use:</b><br/>
+                  • Click <b>"+ leave"</b> on a day to mark it as leave<br/>
+                  • Click <b>🚌+</b> to add bus fare for that day<br/>
+                  • Or use <b>"Add all working days"</b> to bulk-add the whole month
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
