@@ -5504,6 +5504,7 @@ function AnalysisTab({ data }) {
     const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
     const dayMap={};
     txns.forEach(t=>{
+      if(t.isTransfer) return; // exclude internal transfers — not real income/expense
       const d=new Date(t.date);
       if(d.getFullYear()!==calYear||d.getMonth()!==calMonth) return;
       const k=d.getDate();
@@ -5517,7 +5518,7 @@ function AnalysisTab({ data }) {
     const cells=[];
     for(let i=0;i<firstDay;i++) cells.push(null);
     for(let d=1;d<=daysCount;d++) cells.push(d);
-    const selTxns=calDay?(dayMap[calDay]?.txns||[]):[];
+    const selTxns=calDay?(dayMap[calDay]?.txns||[]).filter(t=>!t.isTransfer):[];
     const today=new Date();
     function prev(){if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);setCalDay(null);}
     function next(){if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);setCalDay(null);}
