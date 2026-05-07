@@ -5702,68 +5702,23 @@ function AnalysisTab({ data, update, accounts }) {
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
               {cells.map((day,i)=>{
                 if(!day) return <div key={i}/>;
-                const key = dateKey(calYear,calMonth,day);
                 const info=dayMap[day];
                 const isToday=day===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
                 const isSel=day===calDay;
-                const isLeave=commuteLeaves.includes(key);
                 const dow=new Date(calYear,calMonth,day).getDay();
                 const isWeekend=dow===0||dow===6;
-                const dayBusFares=txns.filter(t=>t.date===key&&t._busfare===true);
-                const timeLogs=commuteSettings.timeLogs||[];
-                const allSlotsAdded=timeLogs.length>0
-                  ? timeLogs.every(tl=>dayBusFares.some(t=>t._timeLogId===tl.id))
-                  : dayBusFares.length>0;
                 return (
-                  <div key={day}
+                  <div key={day} onClick={()=>setCalDay(isSel?null:day)}
                     style={{borderRadius:8,padding:"4px 3px",minHeight:58,cursor:"pointer",
-                      background:isSel?"#1a6b3c":isLeave?"#fff7ed":isToday?"#f0fdf4":isWeekend?"#f8f8f8":"var(--color-background-secondary)",
-                      border:isSel?"2px solid #1a6b3c":isLeave?"1.5px solid #fdba74":isToday?"1.5px solid #bbf7d0":isWeekend?"1px solid #e5e7eb":"1px solid var(--color-border-tertiary)",
-                      display:"flex",flexDirection:"column",alignItems:"center",gap:1,transition:"background 0.1s",position:"relative"}}>
-                    {/* Day number */}
-                    <span style={{fontSize:11,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isLeave?"#ea580c":isWeekend?"#9ca3af":isToday?"#1a6b3c":"var(--color-text-primary)"}}
-                      onClick={()=>setCalDay(isSel?null:day)}>{day}</span>
-                    {/* Income / expense chips */}
-                    {info?.income>0&&<span onClick={()=>setCalDay(isSel?null:day)} style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#dcfce7",color:isSel?"#fff":"#166534",borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer"}}>+{fmtCur(info.income)}</span>}
-                    {info?.expense>0&&<span onClick={()=>setCalDay(isSel?null:day)} style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#fee2e2",color:isSel?"#fff":"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer"}}>-{fmtCur(info.expense)}</span>}
-                    {/* Leave / bus badge row */}
-                    <div style={{display:"flex",gap:2,marginTop:1,flexWrap:"wrap",justifyContent:"center"}}>
-                      {!isWeekend && (
-                        <span onClick={e=>{e.stopPropagation();toggleLeave(day);}}
-                          title={isLeave?"Remove leave":"Mark as leave"}
-                          style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer",
-                            background:isLeave?(isSel?"rgba(255,255,255,0.3)":"#fed7aa"):"transparent",
-                            color:isLeave?(isSel?"#fff":"#c2410c"):"transparent",
-                            border:isLeave?"none":`0.5px dashed ${isSel?"rgba(255,255,255,0.4)":"#d1d5db"}`,
-                            fontWeight:600}}>
-                          {isLeave?"🏖 Leave":"+ leave"}
-                        </span>
-                      )}
-                      {!isWeekend && !isLeave && commuteSettings.busFare>0 && !allSlotsAdded && (
-                        <span onClick={e=>{e.stopPropagation();setCalDay(day);}}
-                          title="Click to add bus fare"
-                          style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",cursor:"pointer",
-                            background:"transparent",color:isSel?"rgba(255,255,255,0.7)":"#9ca3af",
-                            border:`0.5px dashed ${isSel?"rgba(255,255,255,0.4)":"#d1d5db"}`}}>
-                          🚌+
-                        </span>
-                      )}
-                      {dayBusFares.length>0 && (
-                        <span style={{fontSize:7,borderRadius:3,padding:"0 3px",lineHeight:"13px",
-                          background:isSel?"rgba(255,255,255,0.2)":"#e0f2fe",color:isSel?"#fff":"#0369a1",fontWeight:600}}>
-                          🚌{dayBusFares.length>1?` ×${dayBusFares.length}`:""}
-                        </span>
-                      )}
-                    </div>
+                      background:isSel?"#1a6b3c":isToday?"#f0fdf4":isWeekend?"#f8f8f8":"var(--color-background-secondary)",
+                      border:isSel?"2px solid #1a6b3c":isToday?"1.5px solid #bbf7d0":isWeekend?"1px solid #e5e7eb":"1px solid var(--color-border-tertiary)",
+                      display:"flex",flexDirection:"column",alignItems:"center",gap:1,transition:"background 0.1s"}}>
+                    <span style={{fontSize:11,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isWeekend?"#9ca3af":isToday?"#1a6b3c":"var(--color-text-primary)"}}>{day}</span>
+                    {info?.income>0&&<span style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#dcfce7",color:isSel?"#fff":"#166534",borderRadius:3,padding:"0 3px",lineHeight:"13px"}}>+{fmtCur(info.income)}</span>}
+                    {info?.expense>0&&<span style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#fee2e2",color:isSel?"#fff":"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"13px"}}>-{fmtCur(info.expense)}</span>}
                   </div>
                 );
               })}
-            </div>
-            {/* Legend */}
-            <div style={{marginTop:8,display:"flex",gap:12,fontSize:11,color:"var(--color-text-secondary)",flexWrap:"wrap"}}>
-              <span>🏖 <span style={{background:"#fed7aa",borderRadius:3,padding:"1px 5px",color:"#c2410c"}}>Leave</span></span>
-              <span>🚌 Bus fare added</span>
-              <span style={{color:"#9ca3af"}}>Sat/Sun = Weekend</span>
             </div>
             <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:10}}>
               <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(mIncome)}</span>
@@ -5772,7 +5727,7 @@ function AnalysisTab({ data, update, accounts }) {
             </div>
           </div>
 
-          {/* Right panel — selected day detail */}
+          {/* Right panel */}
           <div style={{flex:1,minWidth:220}}>
             {calDay ? (
               <>
@@ -5780,62 +5735,14 @@ function AnalysisTab({ data, update, accounts }) {
                   {calDay} {MONTHS[calMonth]} {calYear}
                   <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>{selTxns.length} transaction{selTxns.length!==1?"s":""}</span>
                 </div>
-                {/* Leave toggle + per-slot bus fare buttons */}
-                {(() => {
-                  const key=dateKey(calYear,calMonth,calDay);
-                  const dow=new Date(calYear,calMonth,calDay).getDay();
-                  const isLeave=commuteLeaves.includes(key);
-                  const timeLogs=commuteSettings.timeLogs||[];
-                  if(dow===0||dow===6) return <div style={{fontSize:12,color:"#9ca3af",marginBottom:8}}>Weekend — no commute</div>;
-                  return (
-                    <div style={{marginBottom:12}}>
-                      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-                        <button onClick={()=>toggleLeave(calDay)}
-                          style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",
-                            background:isLeave?"#fed7aa":"#f3f4f6",color:isLeave?"#c2410c":"var(--color-text-secondary)"}}>
-                          {isLeave?"🏖 On Leave (click to remove)":"Mark as Leave 🏖"}
-                        </button>
-                      </div>
-                      {!isLeave && commuteSettings.busFare>0 && (
-                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                          {timeLogs.length===0 ? (
-                            // No time slots defined — simple single add button
-                            <button onClick={()=>addBusFare(calDay,null)}
-                              style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",background:"#e0f2fe",color:"#0369a1",alignSelf:"flex-start"}}>
-                              🚌 Add Bus Fare (₹{commuteSettings.busFare})
-                            </button>
-                          ) : (
-                            timeLogs.map(tl=>{
-                              const slotAdded=txns.some(t=>t.date===key&&t._busfare===true&&t._timeLogId===tl.id);
-                              return (
-                                <div key={tl.id} style={{display:"flex",alignItems:"center",gap:8}}>
-                                  {slotAdded
-                                    ? <span style={{fontSize:12,color:"#0369a1",padding:"5px 0",display:"flex",alignItems:"center",gap:4}}>
-                                        🚌 <b>{tl.label||tl.time}</b>{tl.time&&<span style={{color:"#64748b"}}> {tl.time}</span>} ✓
-                                      </span>
-                                    : <button onClick={()=>addBusFare(calDay,tl)}
-                                        style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",border:"none",background:"#e0f2fe",color:"#0369a1"}}>
-                                        🚌 {tl.label||"Add"}{tl.time&&<span style={{fontWeight:400,marginLeft:4,color:"#64748b"}}>{tl.time}</span>} — ₹{commuteSettings.busFare}
-                                      </button>
-                                  }
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
                 {selTxns.length===0
                   ? <div style={{color:"var(--color-text-secondary)",fontSize:13}}>No transactions.</div>
                   : selTxns.map(t=>(
                       <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,marginBottom:6,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
                         <span style={{width:8,height:8,borderRadius:"50%",background:t.type==="income"?"#1a6b3c":"#ef4444",flexShrink:0}}/>
                         <div style={{flex:1}}>
-                          <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}{t._busfare?" 🚌":""}</div>
+                          <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}</div>
                           {t.note&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
-                          {t.time&&<div style={{fontSize:11,color:"#0369a1"}}>🕐 {t.time}</div>}
                         </div>
                         <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
                           {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
@@ -5848,15 +5755,9 @@ function AnalysisTab({ data, update, accounts }) {
               <div style={{color:"var(--color-text-secondary)",fontSize:13,paddingTop:8,display:"flex",flexDirection:"column",gap:8}}>
                 <div style={{fontSize:28,marginBottom:4}}>📅</div>
                 <div>Click any day to see transactions.</div>
-                <div style={{fontSize:12,lineHeight:1.6}}>
-                  <b>How to use:</b><br/>
-                  • Click <b>"+ leave"</b> on a day to mark it as leave<br/>
-                  • Click <b>🚌+</b> to add bus fare for that day<br/>
-                  • Or use <b>"Add all working days"</b> to bulk-add the whole month
-                </div>
               </div>
             )}
-          </div>
+          </div>          </div>
         </div>
       </div>
     );
