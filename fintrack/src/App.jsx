@@ -6190,25 +6190,67 @@ function LiabilitiesTab({ data, update }) {
     if (liability.capitalPaid) return;
     const capitalAmt = parseFloat(liability.capitalAmount) || 0;
     if (!capitalAmt) return;
+    const txId = Date.now();
     const newTransaction = {
-      id: Date.now(),
+      id: txId,
       type: "expense",
       amount: capitalAmt,
       category: "EMI",
       note: `${liability.name} - Capital payment`,
       date: today(),
       bankId: liability.accountId,
-      emiId: liability.id
+      emiId: liability.id,
+      _capitalPayment: true
     };
     update(p => ({
-      emis: p.emis.map(e => e.id === liability.id ? { ...e, capitalPaid: true } : e),
+      emis: p.emis.map(e => e.id === liability.id
+        ? { ...e, capitalPaid: true, capitalPaidTxId: txId }
+        : e),
       transactions: [...p.transactions, newTransaction]
+    }));
+  }
+
+  function unmarkCapitalPaid(liability) {
+    if (!window.confirm("Undo capital paid? This will remove the capital payment transaction.")) return;
+    update(p => ({
+      emis: p.emis.map(e => e.id === liability.id
+        ? { ...e, capitalPaid: false, capitalPaidTxId: null }
+        : e),
+      transactions: p.transactions.filter(t => t.id !== liability.capitalPaidTxId)
     }));
   }
 
 
   const activeLiabilities = liabilities.filter(e => e.active && e.paidMonths < e.totalMonths);
   const completedLiabilities = liabilities.filter(e => !e.active || e.paidMonths >= e.totalMonths);
+
+  // ── Auto-sync: if a linked transaction was deleted externally, reset the liability state ──
+  useEffect(() => {
+    const txIds = new Set((data.transactions || []).map(t => t.id));
+    let changed = false;
+    const updatedEmis = liabilities.map(l => {
+      let updated = { ...l };
+      // If capitalPaidTxId is set but the transaction no longer exists → reset capitalPaid
+      if (l.capitalPaid && l.capitalPaidTxId && !txIds.has(l.capitalPaidTxId)) {
+        updated = { ...updated, capitalPaid: false, capitalPaidTxId: null };
+        changed = true;
+      }
+      // If paidMonths > 0, count how many EMI transactions actually exist for this liability
+      if (l.paidMonths > 0) {
+        const actualPaid = (data.transactions || []).filter(
+          t => t.emiId === l.id && !t._capitalPayment && t.type === "expense"
+        ).length;
+        if (actualPaid !== l.paidMonths) {
+          updated = { ...updated, paidMonths: actualPaid };
+          changed = true;
+        }
+      }
+      return updated;
+    });
+    if (changed) {
+      update(p => ({ emis: updatedEmis }));
+    }
+  }, [data.transactions]); // eslint-disable-line
 
   // Summary computations for the liability strip
   const nowL = new Date();
@@ -6753,20 +6795,37 @@ function LiabilitiesTab({ data, update }) {
                     </button>
                   </div>
                   {liability._paymentMode === "interestOnly" && liability.capitalAmount && (
-                    <button
-                      onClick={() => markCapitalPaid(liability)}
-                      disabled={!!liability.capitalPaid}
-                      style={{
-                        width: "100%", marginTop: 8,
-                        background: liability.capitalPaid ? "var(--color-background-secondary)" : "#fffbeb",
-                        color: liability.capitalPaid ? "var(--color-text-secondary)" : "#92400e",
-                        border: `0.5px solid ${liability.capitalPaid ? "var(--color-border-secondary)" : "#f59e0b"}`,
-                        borderRadius: 8, padding: "7px", cursor: liability.capitalPaid ? "not-allowed" : "pointer",
-                        fontSize: 13, fontWeight: 500
-                      }}
-                    >
-                      {liability.capitalPaid ? "✓ Capital Paid" : `💰 Mark Capital Paid (${fmtCur(liability.capitalAmount)})`}
-                    </button>
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <button
+                        onClick={() => markCapitalPaid(liability)}
+                        disabled={!!liability.capitalPaid}
+                        style={{
+                          flex: 1,
+                          background: liability.capitalPaid ? "var(--color-background-secondary)" : "#fffbeb",
+                          color: liability.capitalPaid ? "var(--color-text-secondary)" : "#92400e",
+                          border: `0.5px solid ${liability.capitalPaid ? "var(--color-border-secondary)" : "#f59e0b"}`,
+                          borderRadius: 8, padding: "7px", cursor: liability.capitalPaid ? "not-allowed" : "pointer",
+                          fontSize: 13, fontWeight: 500
+                        }}
+                      >
+                        {liability.capitalPaid ? "✓ Capital Paid" : `💰 Mark Capital Paid (${fmtCur(liability.capitalAmount)})`}
+                      </button>
+                      {liability.capitalPaid && (
+                        <button
+                          onClick={() => unmarkCapitalPaid(liability)}
+                          title="Undo capital paid"
+                          style={{
+                            background: "none",
+                            border: "0.5px solid #d44",
+                            borderRadius: 8, padding: "7px 12px",
+                            cursor: "pointer", fontSize: 12,
+                            color: "#d44", whiteSpace: "nowrap",
+                          }}
+                        >
+                          ↩ Undo
+                        </button>
+                      )}
+                    </div>
                   )}
                   
                   {liability.notes && (
