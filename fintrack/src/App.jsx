@@ -6166,22 +6166,22 @@ function LiabilitiesTab({ data, update }) {
 
   function markPaymentMade(liability) {
     if (liability.paidMonths >= liability.totalMonths) return;
-    
-    // Create expense transaction
+    const txId = Date.now();
     const newTransaction = {
-      id: Date.now(),
+      id: txId,
       type: "expense",
       amount: liability.amount,
       category: "EMI",
       note: `${liability.name} - Manual payment (Month ${liability.paidMonths + 1}/${liability.totalMonths})`,
       date: today(),
       bankId: liability.accountId,
-      emiId: liability.id
+      emiId: liability.id,
+      _emiPayment: true,
     };
-    
-    // Update liability paid months and add transaction
     update(p => ({
-      emis: p.emis.map(e => e.id === liability.id ? { ...e, paidMonths: e.paidMonths + 1 } : e),
+      emis: p.emis.map(e => e.id === liability.id
+        ? { ...e, paidMonths: e.paidMonths + 1, paidTxIds: [...(e.paidTxIds || []), txId] }
+        : e),
       transactions: [...p.transactions, newTransaction]
     }));
   }
@@ -6224,33 +6224,75 @@ function LiabilitiesTab({ data, update }) {
   const activeLiabilities = liabilities.filter(e => e.active && e.paidMonths < e.totalMonths);
   const completedLiabilities = liabilities.filter(e => !e.active || e.paidMonths >= e.totalMonths);
 
-  // ── Auto-sync: if a linked transaction was deleted externally, reset the liability state ──
+  // ── Auto-mark Capital Paid when all interest months are completed ──────────
   useEffect(() => {
-    const txIds = new Set((data.transactions || []).map(t => t.id));
+    const emis = data.emis || [];
+    const existingTxIds = new Set((data.transactions || []).map(t => t.id));
+
+    // Find interestOnly liabilities where all months paid but capital not yet done
+    const ready = emis.filter(l =>
+      l._paymentMode === "interestOnly" &&
+      parseFloat(l.capitalAmount) > 0 &&
+      !l.capitalPaid &&
+      l.paidMonths >= l.totalMonths
+    );
+    if (ready.length === 0) return;
+
+    const newTxs      = [];
+    const emiUpdates  = {};
+
+    ready.forEach(l => {
+      // Deterministic txId — same value every render, never duplicates
+      const txId = Number(String(l.id).slice(-9)) * 10 + 7;
+      if (!existingTxIds.has(txId)) {
+        newTxs.push({
+          id: txId,
+          type: "expense",
+          amount: parseFloat(l.capitalAmount),
+          category: "EMI",
+          note: `${l.name} - Capital payment (auto)`,
+          date: today(),
+          bankId: l.accountId,
+          emiId: l.id,
+          _capitalPayment: true,
+        });
+      }
+      emiUpdates[l.id] = { ...l, capitalPaid: true, capitalPaidTxId: txId };
+    });
+
+    update(p => ({
+      ...p,
+      emis: p.emis.map(e => emiUpdates[e.id] || e),
+      transactions: newTxs.length > 0 ? [...p.transactions, ...newTxs] : p.transactions,
+    }));
+  }, [(data.emis || []).map(e => `${e.id}:${e.paidMonths}:${e.capitalPaid}`).join("|")]); // eslint-disable-line
+  useEffect(() => {
+    const txIdSet = new Set((data.transactions || []).map(t => String(t.id)));
     let changed = false;
-    const updatedEmis = liabilities.map(l => {
+
+    const updatedEmis = (data.emis || []).map(l => {
       let updated = { ...l };
-      // If capitalPaidTxId is set but the transaction no longer exists → reset capitalPaid
-      if (l.capitalPaid && l.capitalPaidTxId && !txIds.has(l.capitalPaidTxId)) {
+
+      // Capital paid: reset if the capital payment transaction no longer exists
+      if (l.capitalPaid && l.capitalPaidTxId && !txIdSet.has(String(l.capitalPaidTxId))) {
         updated = { ...updated, capitalPaid: false, capitalPaidTxId: null };
         changed = true;
       }
-      // If paidMonths > 0, count how many EMI transactions actually exist for this liability
-      if (l.paidMonths > 0) {
-        const actualPaid = (data.transactions || []).filter(
-          t => t.emiId === l.id && !t._capitalPayment && t.type === "expense"
-        ).length;
-        if (actualPaid !== l.paidMonths) {
-          updated = { ...updated, paidMonths: actualPaid };
+
+      // Interest/EMI months: count only paidTxIds that still exist in transactions
+      if (l.paidMonths > 0 && (l.paidTxIds || []).length > 0) {
+        const survivingIds = (l.paidTxIds || []).filter(id => txIdSet.has(String(id)));
+        if (survivingIds.length !== l.paidMonths) {
+          updated = { ...updated, paidMonths: survivingIds.length, paidTxIds: survivingIds };
           changed = true;
         }
       }
+
       return updated;
     });
-    if (changed) {
-      update(p => ({ emis: updatedEmis }));
-    }
-  }, [data.transactions]); // eslint-disable-line
+
+    if (changed) update(p => ({ ...p, emis: updatedEmis }));
+  }, [(data.transactions || []).length]); // re-run whenever a transaction is added or deleted
 
   // Summary computations for the liability strip
   const nowL = new Date();
