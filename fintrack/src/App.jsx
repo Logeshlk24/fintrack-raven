@@ -1064,6 +1064,8 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   const todos = data.overviewTodos || [];
   const [newTodo,    setNewTodo]    = useState("");
   const [repeatMode, setRepeatMode] = useState("none"); // "none"|"daily"|"weekly"|"monthly"
+  const [weeklyDay,  setWeeklyDay]  = useState(1);   // 0=Sun … 6=Sat
+  const [monthlyDate, setMonthlyDate] = useState(1); // 1–31
   const [showRepeat, setShowRepeat] = useState(false);
 
   function addTodo() {
@@ -1072,10 +1074,12 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
     update(p => ({ overviewTodos: [...(p.overviewTodos || []), {
       id: Date.now(), text, done: false,
       repeat: repeatMode, // "none"|"daily"|"weekly"|"monthly"
+      weeklyDay:   repeatMode === "weekly"  ? weeklyDay  : null,
+      monthlyDate: repeatMode === "monthly" ? monthlyDate : null,
       createdAt: new Date().toISOString(),
       lastReset: new Date().toDateString(), // track when it was last auto-reset
     }]}));
-    setNewTodo(""); setRepeatMode("none"); setShowRepeat(false);
+    setNewTodo(""); setRepeatMode("none"); setWeeklyDay(1); setMonthlyDate(1); setShowRepeat(false);
   }
 
   function toggleTodo(id) {
@@ -1097,8 +1101,20 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       if (!t.done || t.repeat === "none" || !t.repeat) return false;
       const last = t.lastReset || "";
       if (t.repeat === "daily")   return last !== todayStr;
-      if (t.repeat === "weekly")  return last !== thisWeek;
-      if (t.repeat === "monthly") return last !== thisMonth;
+      if (t.repeat === "weekly") {
+        // Reset on the configured day of week; fall back to any new week if not set
+        if (t.weeklyDay != null) {
+          return now.getDay() === t.weeklyDay && last !== todayStr;
+        }
+        return last !== thisWeek;
+      }
+      if (t.repeat === "monthly") {
+        // Reset on the configured date of month; fall back to any new month if not set
+        if (t.monthlyDate != null) {
+          return now.getDate() === t.monthlyDate && last !== todayStr;
+        }
+        return last !== thisMonth;
+      }
       return false;
     };
 
@@ -1351,13 +1367,40 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
           {/* Repeat picker */}
           {showRepeat && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-              {[["none","No repeat"], ["daily","Daily"], ["weekly","Weekly"], ["monthly","Monthly"]].map(([v, l]) => (
-                <button key={v} onClick={() => setRepeatMode(v)}
-                  style={{ fontSize: 11, padding: "4px 11px", borderRadius: 20, border: `0.5px solid ${repeatMode === v ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: repeatMode === v ? "#1a6b3c" : "var(--color-background-secondary)", color: repeatMode === v ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: repeatMode === v ? 600 : 400 }}>
-                  {l}
-                </button>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+              {/* Mode chips */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[["none","No repeat"], ["daily","Daily"], ["weekly","Weekly"], ["monthly","Monthly"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setRepeatMode(v)}
+                    style={{ fontSize: 11, padding: "4px 11px", borderRadius: 20, border: `0.5px solid ${repeatMode === v ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: repeatMode === v ? "#1a6b3c" : "var(--color-background-secondary)", color: repeatMode === v ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: repeatMode === v ? 600 : 400 }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              {/* Weekly — day of week picker */}
+              {repeatMode === "weekly" && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginRight: 2 }}>On:</span>
+                  {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d, i) => (
+                    <button key={i} onClick={() => setWeeklyDay(i)}
+                      style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, border: `0.5px solid ${weeklyDay === i ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: weeklyDay === i ? "#1a6b3c" : "var(--color-background-secondary)", color: weeklyDay === i ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: weeklyDay === i ? 600 : 400 }}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Monthly — date picker */}
+              {repeatMode === "monthly" && (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginRight: 2 }}>On date:</span>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                    <button key={d} onClick={() => setMonthlyDate(d)}
+                      style={{ fontSize: 11, width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${monthlyDate === d ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: monthlyDate === d ? "#1a6b3c" : "var(--color-background-secondary)", color: monthlyDate === d ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: monthlyDate === d ? 600 : 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1377,7 +1420,11 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   {/* Repeat badge */}
                   {t.repeat && t.repeat !== "none" && (
                     <span style={{ fontSize: 10, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
-                      🔁 {t.repeat}
+                      🔁 {t.repeat === "weekly" && t.weeklyDay != null
+                        ? `Every ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][t.weeklyDay]}`
+                        : t.repeat === "monthly" && t.monthlyDate != null
+                        ? `Monthly · ${t.monthlyDate}${[,"st","nd","rd"][t.monthlyDate] || "th"}`
+                        : t.repeat}
                     </span>
                   )}
                   <button onClick={() => deleteTodo(t.id)}
@@ -1392,7 +1439,11 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                   <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-secondary)", textDecoration: "line-through", wordBreak: "break-word" }}>{t.text}</span>
                   {t.repeat && t.repeat !== "none" && (
                     <span style={{ fontSize: 10, background: "#f0fdf4", color: "#4a9a6a", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
-                      🔁 {t.repeat}
+                      🔁 {t.repeat === "weekly" && t.weeklyDay != null
+                        ? `Every ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][t.weeklyDay]}`
+                        : t.repeat === "monthly" && t.monthlyDate != null
+                        ? `Monthly · ${t.monthlyDate}${[,"st","nd","rd"][t.monthlyDate] || "th"}`
+                        : t.repeat}
                     </span>
                   )}
                   <button onClick={() => deleteTodo(t.id)}
@@ -2337,18 +2388,12 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                           </div>
                           {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{t.time}</div>}
                         </div>
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            if (window.confirm(`Delete "${t.category || t.note || "this transaction"}" (₹${Number(t.amount).toLocaleString("en-IN")})?`)) {
-                              update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) }));
-                            }
-                          }}
-                          style={{ background: "#fff0f0", border: "1px solid #fca5a5", cursor: "pointer", fontSize: 13, color: "#cc2222", padding: "5px 9px", borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600, transition: "all 0.15s" }}
-                          title="Delete transaction"
-                          onMouseEnter={e => { e.currentTarget.style.background = "#cc2222"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#cc2222"; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = "#fff0f0"; e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.borderColor = "#fca5a5"; }}
-                        >🗑 Delete</button>
+                        <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
+                          title="Delete"
+                          onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
+                        >🗑</button>
                       </div>
                     </div>
                   );
@@ -2885,18 +2930,12 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
                         </div>
                         {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{t.time}</div>}
                       </div>
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (window.confirm(`Delete "${t.category || t.note || "this transaction"}" (₹${Number(t.amount).toLocaleString("en-IN")})?`)) {
-                            update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) }));
-                          }
-                        }}
-                        style={{ background: "#fff0f0", border: "1px solid #fca5a5", cursor: "pointer", fontSize: 13, color: "#cc2222", padding: "5px 9px", borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600, transition: "all 0.15s" }}
-                        title="Delete transaction"
-                        onMouseEnter={e => { e.currentTarget.style.background = "#cc2222"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#cc2222"; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = "#fff0f0"; e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.borderColor = "#fca5a5"; }}
-                      >🗑 Delete</button>
+                      <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
+                        title="Delete"
+                        onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
+                      >🗑</button>
                     </div>
                   );
                 })}
