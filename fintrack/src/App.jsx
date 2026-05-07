@@ -6027,7 +6027,8 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   }
 
   function addPayment() {
-    if (!form.name.trim() || !form.amount || !form.day) return;
+    const needsDay = !(form.freq === 'custom' && form.customUnit === 'weeks');
+    if (!form.name.trim() || !form.amount || (needsDay && !form.day)) return;
     update(p => ({ scheduledPayments: [...(p.scheduledPayments || []), { id: Date.now(), ...form, amount: parseFloat(form.amount), day: parseInt(form.day), tenure: form.tenure ? parseInt(form.tenure) : null, paid: [] }] }));
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
   }
@@ -6231,9 +6232,11 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               </div>
             </div>
             <LabelInput label="Name" placeholder="e.g. HDFC Home Loan" value={editForm.name} onChange={v => setEditForm(p => ({ ...p, name: v }))} />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: editForm.freq === "custom" && editForm.customUnit === "weeks" ? "1fr" : "1fr 1fr", gap: 8 }}>
               <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={editForm.amount} onChange={v => setEditForm(p => ({ ...p, amount: v }))} />
-              <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={editForm.day} onChange={v => setEditForm(p => ({ ...p, day: v }))} />
+              {!(editForm.freq === "custom" && editForm.customUnit === "weeks") && (
+                <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={editForm.day} onChange={v => setEditForm(p => ({ ...p, day: v }))} />
+              )}
             </div>
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
@@ -6328,9 +6331,11 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
             </div>
           </div>
           <LabelInput label="Name" placeholder="e.g. HDFC Home Loan, Netflix, Rent" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: form.freq === "custom" && form.customUnit === "weeks" ? "1fr" : "1fr 1fr", gap: 8 }}>
             <LabelInput label="Amount (₹)" placeholder="e.g. 12500" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
-            <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
+            {!(form.freq === "custom" && form.customUnit === "weeks") && (
+              <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
+            )}
           </div>
           <div style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Month</label>
