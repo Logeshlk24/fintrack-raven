@@ -2337,12 +2337,18 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                           </div>
                           {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{t.time}</div>}
                         </div>
-                        <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
-                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
-                          title="Delete"
-                          onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
-                        >🗑</button>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            if (window.confirm(`Delete "${t.category || t.note || "this transaction"}" (₹${Number(t.amount).toLocaleString("en-IN")})?`)) {
+                              update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) }));
+                            }
+                          }}
+                          style={{ background: "#fff0f0", border: "1px solid #fca5a5", cursor: "pointer", fontSize: 13, color: "#cc2222", padding: "5px 9px", borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600, transition: "all 0.15s" }}
+                          title="Delete transaction"
+                          onMouseEnter={e => { e.currentTarget.style.background = "#cc2222"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#cc2222"; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = "#fff0f0"; e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.borderColor = "#fca5a5"; }}
+                        >🗑 Delete</button>
                       </div>
                     </div>
                   );
@@ -2879,12 +2885,18 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
                         </div>
                         {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{t.time}</div>}
                       </div>
-                      <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
-                        title="Delete"
-                        onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
-                      >🗑</button>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (window.confirm(`Delete "${t.category || t.note || "this transaction"}" (₹${Number(t.amount).toLocaleString("en-IN")})?`)) {
+                            update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) }));
+                          }
+                        }}
+                        style={{ background: "#fff0f0", border: "1px solid #fca5a5", cursor: "pointer", fontSize: 13, color: "#cc2222", padding: "5px 9px", borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600, transition: "all 0.15s" }}
+                        title="Delete transaction"
+                        onMouseEnter={e => { e.currentTarget.style.background = "#cc2222"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#cc2222"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "#fff0f0"; e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.borderColor = "#fca5a5"; }}
+                      >🗑 Delete</button>
                     </div>
                   );
                 })}
