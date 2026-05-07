@@ -287,6 +287,9 @@ export default function App() {
 
   // Debounce timer ref — avoids hammering Firestore on every keystroke
   const saveTimer = useRef(null);
+  // Always-current data ref for use inside intervals
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   // ── 1. Listen to Firebase auth changes ───────────────────────────────────
   useEffect(() => {
@@ -333,6 +336,64 @@ export default function App() {
       return next;
     });
   }, [firebaseUser]);
+
+  // ── Auto Bus Fare: runs on load (catch-up) + every minute (real-time) ────────
+  const autoAddBusFare = useCallback((currentData) => {
+    const settings = currentData.commuteSettings || {};
+    const timeLogs = settings.timeLogs || [];
+    if (!settings.busFare || !settings.bankId || timeLogs.length === 0) return;
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    const dow = now.getDay(); // 0=Sun,6=Sat
+    if (dow === 0 || dow === 6) return; // weekend
+    const leaves = currentData.commuteLeaves || [];
+    if (leaves.includes(todayKey)) return; // on leave
+
+    const nowHHMM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const txns = currentData.transactions || [];
+
+    const toAdd = [];
+    timeLogs.forEach(tl => {
+      if (!tl.time) return;
+      // Add if current time >= slot time and not already added today
+      if (nowHHMM < tl.time) return;
+      const alreadyAdded = txns.some(t => t.date === todayKey && t._busfare === true && t._timeLogId === tl.id);
+      if (alreadyAdded) return;
+      toAdd.push({
+        id: Date.now() + Math.random(),
+        date: todayKey,
+        time: tl.time,
+        type: "expense",
+        amount: Number(settings.busFare),
+        category: settings.category || "Transport",
+        note: (settings.note || "Bus fare") + " – " + tl.label,
+        bankId: settings.bankId,
+        _busfare: true,
+        _timeLogId: tl.id,
+        _autoAdded: true,
+      });
+    });
+
+    if (toAdd.length > 0) {
+      update(p => ({ transactions: [...(p.transactions || []), ...toAdd] }));
+    }
+  }, [update]);
+
+  // Run catch-up when data is ready (handles app-was-closed case)
+  useEffect(() => {
+    if (dataReady) autoAddBusFare(dataRef.current);
+  }, [dataReady]); // eslint-disable-line
+
+  // Run every minute to auto-add at exact time
+  useEffect(() => {
+    if (!dataReady) return;
+    const interval = setInterval(() => {
+      autoAddBusFare(dataRef.current);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [dataReady, autoAddBusFare]);
 
   const totalIncome = data.transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
   const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
