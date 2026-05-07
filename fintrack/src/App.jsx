@@ -6006,14 +6006,14 @@ function AnalysisTab({ data, update, accounts }) {
 function ScheduledPaymentsTab({ data, update, accounts }) {
   const payments = data.scheduledPayments || [];
   const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
-  const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", tenure: "", notes: "", accountId: "" });
+  const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startMonth: new Date().toISOString().slice(0, 7), freq: "monthly", customEveryN: "1", customUnit: "months", customWeekDays: [], tenure: "", notes: "", accountId: "" });
   const [view, setView] = useState("list");
   const [editingPayment, setEditingPayment] = useState(null); // holds the payment being edited
   const [editForm, setEditForm] = useState(null);
 
   function startEdit(p) {
     setEditingPayment(p.id);
-    setEditForm({ name: p.name, flowType: p.flowType, type: p.type, amount: String(p.amount), day: String(p.day), startMonth: p.startMonth, freq: p.freq, customEveryN: p.customEveryN || "1", customUnit: p.customUnit || "months", tenure: p.tenure ? String(p.tenure) : "", notes: p.notes || "", accountId: p.accountId || "" });
+    setEditForm({ name: p.name, flowType: p.flowType, type: p.type, amount: String(p.amount), day: String(p.day), startMonth: p.startMonth, freq: p.freq, customEveryN: p.customEveryN || "1", customUnit: p.customUnit || "months", customWeekDays: p.customWeekDays || [], tenure: p.tenure ? String(p.tenure) : "", notes: p.notes || "", accountId: p.accountId || "" });
   }
 
   function saveEdit() {
@@ -6253,10 +6253,35 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
                   <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Every</span>
                   <input type="number" min="1" value={editForm.customEveryN} onChange={e => setEditForm(p => ({ ...p, customEveryN: e.target.value }))} style={{ width: 60, textAlign: "center" }} />
-                  <select value={editForm.customUnit} onChange={e => setEditForm(p => ({ ...p, customUnit: e.target.value }))} style={{ flex: 1 }}>
+                  <select value={editForm.customUnit} onChange={e => setEditForm(p => ({ ...p, customUnit: e.target.value, customWeekDays: [] }))} style={{ flex: 1 }}>
                     <option value="days">Day(s)</option><option value="weeks">Week(s)</option>
                     <option value="months">Month(s)</option><option value="years">Year(s)</option>
                   </select>
+                </div>
+              )}
+              {editForm.freq === "custom" && editForm.customUnit === "weeks" && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>On which days?</label>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d, i) => {
+                      const val = i + 1;
+                      const selected = (editForm.customWeekDays || []).includes(val);
+                      return (
+                        <button key={d} onClick={() => setEditForm(p => ({
+                          ...p,
+                          customWeekDays: selected
+                            ? (p.customWeekDays || []).filter(x => x !== val)
+                            : [...(p.customWeekDays || []), val]
+                        }))}
+                          style={{ padding: "5px 10px", borderRadius: 6, border: "0.5px solid", fontSize: 12, cursor: "pointer", fontWeight: selected ? 600 : 400,
+                            borderColor: selected ? "#1a6b3c" : "var(--color-border-secondary)",
+                            background: selected ? "#e8f5ee" : "transparent",
+                            color: selected ? "#1a6b3c" : "var(--color-text-secondary)" }}>
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -6326,12 +6351,37 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Every</span>
                 <input type="number" min="1" value={form.customEveryN} onChange={e => setForm(p => ({ ...p, customEveryN: e.target.value }))} style={{ width: 60, boxSizing: "border-box", textAlign: "center" }} />
-                <select value={form.customUnit} onChange={e => setForm(p => ({ ...p, customUnit: e.target.value }))} style={{ flex: 1, boxSizing: "border-box" }}>
+                <select value={form.customUnit} onChange={e => setForm(p => ({ ...p, customUnit: e.target.value, customWeekDays: [] }))} style={{ flex: 1, boxSizing: "border-box" }}>
                   <option value="days">Day(s)</option>
                   <option value="weeks">Week(s)</option>
                   <option value="months">Month(s)</option>
                   <option value="years">Year(s)</option>
                 </select>
+              </div>
+            )}
+            {form.freq === "custom" && form.customUnit === "weeks" && (
+              <div style={{ marginTop: 8 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>On which days?</label>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d, i) => {
+                    const val = i + 1;
+                    const selected = (form.customWeekDays || []).includes(val);
+                    return (
+                      <button key={d} onClick={() => setForm(p => ({
+                        ...p,
+                        customWeekDays: selected
+                          ? (p.customWeekDays || []).filter(x => x !== val)
+                          : [...(p.customWeekDays || []), val]
+                      }))}
+                        style={{ padding: "5px 10px", borderRadius: 6, border: "0.5px solid", fontSize: 12, cursor: "pointer", fontWeight: selected ? 600 : 400,
+                          borderColor: selected ? "#1a6b3c" : "var(--color-border-secondary)",
+                          background: selected ? "#e8f5ee" : "transparent",
+                          color: selected ? "#1a6b3c" : "var(--color-text-secondary)" }}>
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -6385,7 +6435,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                       <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
-                        {p.flowType === "income" ? "📥" : "📤"} {p.type} · {p.freq === "custom" ? `every ${p.customEveryN || 1} ${p.customUnit || "months"}` : p.freq}{p.tenure ? ` · ${p.tenure}mo` : ""}
+                        {p.flowType === "income" ? "📥" : "📤"} {p.type} · {p.freq === "custom" ? `every ${p.customEveryN || 1} ${p.customUnit || "months"}${p.customUnit === "weeks" && p.customWeekDays && p.customWeekDays.length > 0 ? " on " + ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].filter((_,i) => p.customWeekDays.includes(i+1)).join(", ") : ""}` : p.freq}{p.tenure ? ` · ${p.tenure}mo` : ""}
                         {acct ? ` · ${acct.name}` : ""}
                         {p.notes ? ` · ${p.notes}` : ""}
                       </div>
