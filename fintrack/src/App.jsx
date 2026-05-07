@@ -83,7 +83,7 @@ const defaultData = {
   snapshots: [],
   scheduledPayments: [],
   needsWants: [],
-  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare" },
+  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare", time: "" },
   commuteLeaves: [],
   featureToggles: { fo: true, portfolio: true },
   businessData: [],
@@ -5568,6 +5568,7 @@ function AnalysisTab({ data, update, accounts }) {
       const newTx = {
         id: Date.now(),
         date: key,
+        time: commuteSettings.time || "",
         type: "expense",
         amount: fare,
         category: commuteSettings.category || "Transport",
@@ -5595,6 +5596,7 @@ function AnalysisTab({ data, update, accounts }) {
         newTxns.push({
           id: Date.now() + d,
           date: key,
+          time: commuteSettings.time || "",
           type: "expense",
           amount: fare,
           category: commuteSettings.category || "Transport",
@@ -5670,13 +5672,22 @@ function AnalysisTab({ data, update, accounts }) {
               </div>
               <div>
                 <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Category</label>
-                <input value={setupForm.category} onChange={e=>setSetupForm(p=>({...p,category:e.target.value}))}
-                  placeholder="Transport" style={{width:"100%"}}/>
+                <select value={setupForm.category} onChange={e=>setSetupForm(p=>({...p,category:e.target.value}))} style={{width:"100%"}}>
+                  <option value="">Select category…</option>
+                  {((data.categories||{expense:["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"]}).expense||[]).map(c=>(
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Note</label>
                 <input value={setupForm.note} onChange={e=>setSetupForm(p=>({...p,note:e.target.value}))}
                   placeholder="Bus fare" style={{width:"100%"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>Default Time (optional)</label>
+                <input type="time" value={setupForm.time||""} onChange={e=>setSetupForm(p=>({...p,time:e.target.value}))}
+                  style={{width:"100%"}}/>
               </div>
             </div>
             <div style={{display:"flex",gap:8}}>
@@ -5811,6 +5822,7 @@ function AnalysisTab({ data, update, accounts }) {
                         <div style={{flex:1}}>
                           <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}{t._busfare?" 🚌":""}</div>
                           {t.note&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
+                          {t.time&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>🕐 {t.time}</div>}
                         </div>
                         <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
                           {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
