@@ -6791,40 +6791,107 @@ function LiabilitiesTab({ data, update }) {
             {completedLiabilities.map(liability => {
               const isCompleted = liability.paidMonths >= liability.totalMonths;
               const relatedExpenses = data.transactions.filter(t => t.emiId === liability.id);
-              
+              const isEditing = editLiability?.id === liability.id;
+
               return (
-                <div key={liability.id} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, padding: "0.8rem", opacity: 0.7 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>
-                        {isCompleted && "✓ "}{liability.name}
+                <div key={liability.id} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, padding: "0.8rem", opacity: isEditing ? 1 : 0.8 }}>
+                  {/* ── Inline Edit Form ── */}
+                  {isEditing ? (
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 10, color: "#1a6b3c" }}>✏️ Edit Liability</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 8 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name</label>
+                          <input value={editLiability.name} onChange={e => setEditLiability(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Monthly Amount (₹)</label>
+                          <input type="number" value={editLiability.amount} onChange={e => setEditLiability(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Total Months</label>
+                          <input type="number" value={editLiability.totalMonths} onChange={e => setEditLiability(p => ({ ...p, totalMonths: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Paid Months</label>
+                          <input type="number" value={editLiability.paidMonths} onChange={e => setEditLiability(p => ({ ...p, paidMonths: parseInt(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Payment Day</label>
+                          <input type="number" min="1" max="31" value={editLiability.paymentDay} onChange={e => setEditLiability(p => ({ ...p, paymentDay: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes</label>
+                          <input value={editLiability.notes || ""} onChange={e => setEditLiability(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-                        {liability.paidMonths} / {liability.totalMonths} months · {fmtCur(liability.amount * liability.paidMonths)} paid
-                        {relatedExpenses.length > 0 && ` · ${relatedExpenses.length} logged payments`}
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button onClick={() => setEditLiability(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                        <button onClick={saveEditLiability} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Save Changes</button>
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {!isCompleted && (
-                        <button 
-                          onClick={() => toggleLiabilityActive(liability.id)}
-                          style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}
+                  ) : (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>
+                          {isCompleted && "✓ "}{liability.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                          {liability.paidMonths} / {liability.totalMonths} months · {fmtCur(liability.amount * liability.paidMonths)} paid
+                          {relatedExpenses.length > 0 && ` · ${relatedExpenses.length} logged payments`}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {/* Edit */}
+                        <button
+                          onClick={() => setEditLiability({ ...liability })}
+                          style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 4 }}
+                          title="Edit liability"
                         >
-                          Resume
+                          ✏️ Edit
                         </button>
-                      )}
-                      <button 
-                        onClick={() => {
-                          if (confirm(`⚠️ DELETE "${liability.name}"?\n\nThis will permanently remove:\n✗ The liability entry\n✗ All ${relatedExpenses.length} related expense transactions\n\nThis action cannot be undone.`)) {
-                            deleteLiability(liability.id);
-                          }
-                        }}
-                        style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "#d44" }}
-                      >
-                        Delete
-                      </button>
+                        {/* Undo last payment */}
+                        {liability.paidMonths > 0 && (
+                          <button
+                            onClick={() => {
+                              if (!confirm(`Undo last payment for "${liability.name}"?\n\nThis will reduce paid months from ${liability.paidMonths} to ${liability.paidMonths - 1} and remove the most recent logged payment.`)) return;
+                              // Remove most recent related expense
+                              const sorted = [...relatedExpenses].sort((a, b) => b.date?.localeCompare(a.date) || b.id - a.id);
+                              const toRemove = sorted[0];
+                              update(p => ({
+                                emis: p.emis.map(e => e.id === liability.id ? { ...e, paidMonths: Math.max(0, e.paidMonths - 1), active: true } : e),
+                                transactions: toRemove ? p.transactions.filter(t => t.id !== toRemove.id) : p.transactions
+                              }));
+                            }}
+                            style={{ background: "none", border: "0.5px solid #f0a020", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "#f0a020", display: "flex", alignItems: "center", gap: 4 }}
+                            title="Undo last payment"
+                          >
+                            ↩ Undo
+                          </button>
+                        )}
+                        {/* Resume (paused only) */}
+                        {!isCompleted && (
+                          <button
+                            onClick={() => toggleLiabilityActive(liability.id)}
+                            style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}
+                          >
+                            Resume
+                          </button>
+                        )}
+                        {/* Delete */}
+                        <button
+                          onClick={() => {
+                            if (confirm(`⚠️ DELETE "${liability.name}"?\n\nThis will permanently remove:\n✗ The liability entry\n✗ All ${relatedExpenses.length} related expense transactions\n\nThis action cannot be undone.`)) {
+                              deleteLiability(liability.id);
+                            }
+                          }}
+                          style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "#d44" }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
