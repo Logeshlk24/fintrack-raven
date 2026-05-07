@@ -5274,7 +5274,7 @@ function TransferTab({ data, update, accounts }) {
 
 // ═══════════════════════════ ANALYSIS TAB ═══════════════════════════════════
 function AnalysisTab({ data, update, accounts }) {
-  const [view,     setView]     = useState("calendar");
+  const [view,     setView]     = useState("graph");
   const [period,   setPeriod]   = useState("6M");
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
@@ -5572,9 +5572,6 @@ function AnalysisTab({ data, update, accounts }) {
     const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-    // local commute setup form state
-    const [setupForm, setSetupForm] = useState({ timeLogs: [], ...commuteSettings });
-
     const pad = n => String(n).padStart(2,"0");
     const dateKey = (y,m,d) => `${y}-${pad(m+1)}-${pad(d)}`;
 
@@ -5605,88 +5602,6 @@ function AnalysisTab({ data, update, accounts }) {
     const mIncome=Object.values(dayMap).reduce((s,d)=>s+d.income,0);
     const mExpense=Object.values(dayMap).reduce((s,d)=>s+d.expense,0);
 
-    // Toggle a leave day
-    function toggleLeave(day) {
-      const key = dateKey(calYear, calMonth, day);
-      const isLeave = commuteLeaves.includes(key);
-      update(p => ({ commuteLeaves: isLeave
-        ? (p.commuteLeaves||[]).filter(x=>x!==key)
-        : [...(p.commuteLeaves||[]), key]
-      }));
-    }
-
-    // Add bus fare transaction for a working day (with optional timeLog slot)
-    function addBusFare(day, timeLog) {
-      const key = dateKey(calYear, calMonth, day);
-      const fare = Number(commuteSettings.busFare||0);
-      if(!fare) { alert("Please set your daily bus fare in the commute settings first."); return; }
-      if(!commuteSettings.bankId) { alert("Please select an account in commute settings."); return; }
-      // If timeLog provided, check if that specific slot already added for this day
-      if(timeLog) {
-        const slotExists = txns.some(t => t.date===key && t._busfare===true && t._timeLogId===timeLog.id);
-        if(slotExists) { alert("Bus fare for \"" + timeLog.label + "\" already added for this day."); return; }
-      }
-      const newTx = {
-        id: Date.now(),
-        date: key,
-        type: "expense",
-        amount: fare,
-        category: commuteSettings.category || "Transport",
-        note: (commuteSettings.note || "Bus fare") + (timeLog ? " – " + timeLog.label : ""),
-        bankId: commuteSettings.bankId,
-        _busfare: true,
-        _timeLogId: timeLog ? timeLog.id : null,
-        time: timeLog ? timeLog.time : "",
-      };
-      update(p => ({ transactions: [...(p.transactions||[]), newTx] }));
-    }
-
-    // Bulk add bus fare for all working days in month (per timelog slot)
-    function addBusFareForMonth() {
-      const fare = Number(commuteSettings.busFare||0);
-      if(!fare) { alert("Please set your daily bus fare first."); return; }
-      if(!commuteSettings.bankId) { alert("Please select an account."); return; }
-      const timeLogs = (commuteSettings.timeLogs||[]);
-      const slots = timeLogs.length > 0 ? timeLogs : [null];
-      const newTxns = [];
-      for(let d=1; d<=daysCount; d++) {
-        const key = dateKey(calYear, calMonth, d);
-        const dow = new Date(calYear, calMonth, d).getDay();
-        if(dow===0||dow===6) continue;
-        if(commuteLeaves.includes(key)) continue;
-        slots.forEach((tl, si) => {
-          // Skip if this slot already added for this day
-          if(tl) {
-            if(txns.some(t=>t.date===key&&t._busfare===true&&t._timeLogId===tl.id)) return;
-          } else {
-            if(txns.some(t=>t.date===key&&t._busfare===true&&!t._timeLogId)) return;
-          }
-          newTxns.push({
-            id: Date.now() + d * 100 + si,
-            date: key,
-            type: "expense",
-            amount: fare,
-            category: commuteSettings.category || "Transport",
-            note: (commuteSettings.note || "Bus fare") + (tl ? " – " + tl.label : ""),
-            bankId: commuteSettings.bankId,
-            _busfare: true,
-            _timeLogId: tl ? tl.id : null,
-            time: tl ? tl.time : "",
-          });
-        });
-      }
-      if(newTxns.length===0) { alert("No working days to add (all already added or all on leave)."); return; }
-      if(!window.confirm("Add bus fare (₹" + fare + ") for " + newTxns.length + " entries in " + MONTHS[calMonth] + "?")) return;
-      update(p => ({ transactions: [...(p.transactions||[]), ...newTxns] }));
-    }
-
-    function saveCommuteSettings() {
-      update(p => ({ commuteSettings: { ...setupForm } }));
-      setShowCommuteSetup(false);
-    }
-
-    const GREEN = "#1a6b3c";
-
     return (
       <div>
         <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}}>
@@ -5713,7 +5628,9 @@ function AnalysisTab({ data, update, accounts }) {
                       background:isSel?"#1a6b3c":isToday?"#f0fdf4":isWeekend?"#f8f8f8":"var(--color-background-secondary)",
                       border:isSel?"2px solid #1a6b3c":isToday?"1.5px solid #bbf7d0":isWeekend?"1px solid #e5e7eb":"1px solid var(--color-border-tertiary)",
                       display:"flex",flexDirection:"column",alignItems:"center",gap:1,transition:"background 0.1s"}}>
-                    <span style={{fontSize:11,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isWeekend?"#9ca3af":isToday?"#1a6b3c":"var(--color-text-primary)"}}>{day}</span>
+                    <span style={{fontSize:11,fontWeight:isToday||isSel?700:400,color:isSel?"#fff":isWeekend?"#9ca3af":isToday?"#1a6b3c":"var(--color-text-primary)"}}>
+                      {day}
+                    </span>
                     {info?.income>0&&<span style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#dcfce7",color:isSel?"#fff":"#166534",borderRadius:3,padding:"0 3px",lineHeight:"13px"}}>+{fmtCur(info.income)}</span>}
                     {info?.expense>0&&<span style={{fontSize:7,background:isSel?"rgba(255,255,255,0.2)":"#fee2e2",color:isSel?"#fff":"#991b1b",borderRadius:3,padding:"0 3px",lineHeight:"13px"}}>-{fmtCur(info.expense)}</span>}
                   </div>
@@ -5727,7 +5644,7 @@ function AnalysisTab({ data, update, accounts }) {
             </div>
           </div>
 
-          {/* Right panel */}
+          {/* Right panel — selected day detail */}
           <div style={{flex:1,minWidth:220}}>
             {calDay ? (
               <>
@@ -5757,7 +5674,7 @@ function AnalysisTab({ data, update, accounts }) {
                 <div>Click any day to see transactions.</div>
               </div>
             )}
-          </div>          </div>
+          </div>
         </div>
       </div>
     );
@@ -5765,8 +5682,8 @@ function AnalysisTab({ data, update, accounts }) {
 
   // ── Main render ────────────────────────────────────────────────────────────
   const views=[
-    {id:"calendar",  label:"📅 Calendar"},
     {id:"graph",     label:"📈 Income vs Expense"},
+    {id:"calendar",  label:"📅 Calendar"},
   ];
   return (
     <div style={{marginTop:16}}>
