@@ -279,7 +279,7 @@ export default function App() {
   const [foTab, setFoTab]               = useState("trades");
   const [moneyTab, setMoneyTab]         = useState("expenses");
   const [essentialsTab, setEssentialsTab] = useState("essentials");
-  const [settingsTab, setSettingsTab]   = useState("trading");
+  const [settingsTab, setSettingsTab]   = useState("profile");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navDragIdx = useRef(null);
   const [navDragOver, setNavDragOver] = useState(null);
@@ -3902,11 +3902,11 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   const effectiveTab = (!foOn && tab === "trading") ? "profile" : tab;
 
   const settingsTabs = foOn
-    ? ["profile", "trading", "accounts", "categories", "projects", "documents", "features"]
-    : ["profile", "accounts", "categories", "projects", "documents", "features"];
+    ? ["profile", "features", "trading", "accounts", "categories", "projects", "documents"]
+    : ["profile", "features", "accounts", "categories", "projects", "documents"];
   const settingsLabels = foOn
-    ? ["Profile", "Trading Settings", "Account Settings", "Categories", "Projects", "Documents", "Features"]
-    :  ["Profile", "Account Settings", "Categories", "Projects", "Documents", "Features"];
+    ? ["Profile", "Features", "Trading Settings", "Account Settings", "Categories", "Projects", "Documents"]
+    : ["Profile", "Features", "Account Settings", "Categories", "Projects", "Documents"];
 
   return (
     <div>
