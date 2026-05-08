@@ -8909,7 +8909,10 @@ function ProjectsPage({ data, update }) {
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px", flexShrink: 0 }}>
               <button style={tabStyle(leftTab === "tasks")} onClick={() => setLeftTab("tasks")}>
-                ✅ Tasks {todos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({doneTodos}/{todos.length})</span>}
+                ✅ Tasks {pendingTodos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({pendingTodos.length})</span>}
+              </button>
+              <button style={tabStyle(leftTab === "completed")} onClick={() => setLeftTab("completed")}>
+                ☑️ Completed {completedTodos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({completedTodos.length})</span>}
               </button>
               <button style={tabStyle(leftTab === "files")} onClick={() => setLeftTab("files")}>
                 📎 Files {files.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({files.length})</span>}
@@ -9121,37 +9124,43 @@ function ProjectsPage({ data, update }) {
               </div>
             )}
 
-            {/* ── COMPLETED TASKS — shown in left panel below active tasks ── */}
-            {leftTab === "tasks" && completedTodos.length > 0 && (
-              <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span>✅ COMPLETED ({completedTodos.length})</span>
-                  <span style={{ fontSize: 10, color: "#1a6b3c" }}>↩ to reopen</span>
-                </div>
-                {completedTodos.map(t => {
-                  const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
-                  return (
-                    <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
-                      <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word", marginBottom: 3 }}>{t.text}</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 2 }}>
-                          {types.map((tp, i) => {
-                            const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
-                            return (
-                              <span key={tp} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, background: colors[i%colors.length]+"14", color: colors[i%colors.length], fontWeight: 600, opacity: 0.7 }}>{tp} · {Math.round(100/types.length)}%</span>
-                            );
-                          })}
-                          {t.eta && <span style={{ fontSize: 9, color: "var(--color-text-secondary)", opacity: 0.7 }}>📅 {formatEta(t.eta)}</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                        <button onClick={() => toggleTodo(t.id)} style={{ background: "none", border: "0.5px solid #1a6b3c44", borderRadius: 5, cursor: "pointer", fontSize: 10, color: "#1a6b3c", padding: "2px 7px", fontWeight: 500 }} title="Reopen task">↩ Reopen</button>
-                        <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
-                      </div>
+            {/* ── COMPLETED TAB ── */}
+            {leftTab === "completed" && (
+              <div>
+                {completedTodos.length === 0 ? (
+                  <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>No completed tasks yet.</div>
+                ) : (
+                  <>
+                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span>✅ COMPLETED ({completedTodos.length})</span>
+                      <span style={{ fontSize: 10, color: "#1a6b3c" }}>↩ to reopen</span>
                     </div>
-                  );
-                })}
+                    {completedTodos.map(t => {
+                      const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+                      return (
+                        <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+                          <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word", marginBottom: 3 }}>{t.text}</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 2 }}>
+                              {types.map((tp, i) => {
+                                const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                return (
+                                  <span key={tp} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, background: colors[i%colors.length]+"14", color: colors[i%colors.length], fontWeight: 600, opacity: 0.7 }}>{tp} · {Math.round(100/types.length)}%</span>
+                                );
+                              })}
+                              {t.eta && <span style={{ fontSize: 9, color: "var(--color-text-secondary)", opacity: 0.7 }}>📅 {formatEta(t.eta)}</span>}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                            <button onClick={() => toggleTodo(t.id)} style={{ background: "none", border: "0.5px solid #1a6b3c44", borderRadius: 5, cursor: "pointer", fontSize: 10, color: "#1a6b3c", padding: "2px 7px", fontWeight: 500 }} title="Reopen task">↩ Reopen</button>
+                            <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             )}
 
