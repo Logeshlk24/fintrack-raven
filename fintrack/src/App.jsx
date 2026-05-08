@@ -3898,15 +3898,11 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
     </div>
   );
 
-  // If current tab is "trading" but FO is off, redirect to accounts
-  const effectiveTab = (!foOn && tab === "trading") ? "profile" : tab;
+  // Redirect legacy tab values to new names
+  const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
 
-  const settingsTabs = foOn
-    ? ["profile", "features", "trading", "accounts", "categories", "projects", "documents"]
-    : ["profile", "features", "accounts", "categories", "projects", "documents"];
-  const settingsLabels = foOn
-    ? ["Profile", "Features", "Trading Settings", "Account Settings", "Categories", "Projects", "Documents"]
-    : ["Profile", "Features", "Account Settings", "Categories", "Projects", "Documents"];
+  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents"];
+  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents"];
 
   return (
     <div>
@@ -3919,14 +3915,19 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
         labels={settingsLabels}
       />
 
-      {/* ── Profile Settings ── */}
+      {/* ── Profile ── */}
       {effectiveTab === "profile" && <ProfilePage data={data} update={update} />}
 
-      {/* ── Trading Settings — only shown when F&O is on ── */}
-      {foOn && effectiveTab === "trading" && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+      {/* ── Features ── */}
+      {effectiveTab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
-      {/* ── Account Settings ── */}
-      {effectiveTab === "accounts" && <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+      {/* ── Money (Account Settings + Trading Settings if FO on) ── */}
+      {effectiveTab === "money" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />
+          {foOn && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+        </div>
+      )}
 
       {/* ── Categories ── */}
       {effectiveTab === "categories" && <CategoriesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} navItems={navItems} navEditMode={navEditMode} setNavEditMode={setNavEditMode} onNavDragStart={onNavDragStart} onNavDragOver={onNavDragOver} onNavDrop={onNavDrop} navDragOver={navDragOver} navDragIdx={navDragIdx} setNavDragOver={setNavDragOver} />}
@@ -3934,10 +3935,8 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
       {/* ── Projects ── */}
       {effectiveTab === "projects" && <ProjectSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
-      {/* ── Feature Toggles ── */}
+      {/* ── Documents ── */}
       {effectiveTab === "documents" && <DocumentsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
-
-      {effectiveTab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
     </div>
   );
 }
