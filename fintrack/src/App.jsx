@@ -9374,7 +9374,7 @@ function ProjectsPage({ data, update }) {
               )}
             </div>
 
-            {/* ── WORK LOG — side by side layout ── */}
+            {/* ── WORK LOG card ── */}
             {(() => {
               const todayStr = new Date().toISOString().split("T")[0];
               const grouped = {};
@@ -9389,98 +9389,95 @@ function ProjectsPage({ data, update }) {
               const doneTodayCount = todayEntries.filter(e => e.done).length;
 
               return (
-                <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                  {/* Header */}
-                  <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontWeight: 500, fontSize: 14 }}>📋 Work Log</span>
-                    {todayEntries.length > 0 && (
-                      <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{doneTodayCount}/{todayEntries.length} done today</span>
-                    )}
-                  </div>
-
-                  {/* Side-by-side: Today (left) | History (right) */}
-                  <div style={{ display: "grid", gridTemplateColumns: pastDates.length > 0 ? "1fr 1fr" : "1fr", gap: 0, alignItems: "start" }}>
-
-                    {/* LEFT — Today */}
-                    <div style={{ borderRight: pastDates.length > 0 ? "0.5px solid var(--color-border-tertiary)" : "none" }}>
-                      {/* Add entry input */}
-                      <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 }}>
-                        <input
-                          placeholder="What did you work on today?"
-                          value={newDayEntry}
-                          onChange={e => setNewDayEntry(e.target.value)}
-                          onKeyDown={e => e.key === "Enter" && addDayEntry()}
-                          style={{ flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" }}
-                        />
-                        <button onClick={addDayEntry} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
-                      </div>
-                      {todayEntries.length === 0 ? (
-                        <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>No entries for today yet.</div>
-                      ) : (
-                        <div>
-                          {todayEntries.filter(e => !e.done).map(e => (
-                            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                              <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0 }} />
-                              <span style={{ flex: 1, fontSize: 13 }}>{e.text}</span>
-                              <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
-                            </div>
-                          ))}
-                          {todayEntries.filter(e => e.done).map(e => (
-                            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
-                              <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
-                              <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{e.text}</span>
-                              <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
-                            </div>
-                          ))}
-                        </div>
+                <>
+                  {/* ── Card 1: Work Log (today) ── */}
+                  <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                    <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontWeight: 500, fontSize: 14 }}>📋 Work Log</span>
+                      {todayEntries.length > 0 && (
+                        <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{doneTodayCount}/{todayEntries.length} done today</span>
                       )}
                     </div>
-
-                    {/* RIGHT — History */}
-                    {pastDates.length > 0 && (
+                    <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 }}>
+                      <input
+                        placeholder="What did you work on today?"
+                        value={newDayEntry}
+                        onChange={e => setNewDayEntry(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && addDayEntry()}
+                        style={{ flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" }}
+                      />
+                      <button onClick={addDayEntry} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+                    </div>
+                    {todayEntries.length === 0 ? (
+                      <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>No entries for today yet.</div>
+                    ) : (
                       <div>
-                        <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>HISTORY</div>
-                        <div style={{ maxHeight: 320, overflowY: "auto" }}>
-                          {pastDates.map(d => {
-                            const entries = grouped[d];
-                            const done = entries.filter(e => e.done).length;
-                            const isExpanded = expandedDay === d;
-                            return (
-                              <div key={d}>
-                                {/* Day row — click to expand */}
-                                <div
-                                  onClick={() => setExpandedDay(isExpanded ? null : d)}
-                                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", cursor: "pointer", background: isExpanded ? "var(--color-background-secondary)" : "transparent" }}
-                                  onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
-                                  onMouseLeave={e => e.currentTarget.style.background = isExpanded ? "var(--color-background-secondary)" : "transparent"}
-                                >
-                                  <span style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: isExpanded ? 600 : 400 }}>
-                                    {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
-                                  </span>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span style={{ fontSize: 11, color: done === entries.length ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: 500 }}>{done}/{entries.length} done</span>
-                                    <span style={{ fontSize: 10, color: "var(--color-text-secondary)", transition: "transform 0.2s", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
-                                  </div>
-                                </div>
-                                {/* Expanded entries */}
-                                {isExpanded && (
-                                  <div style={{ background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                                    {entries.map(e => (
-                                      <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px 7px 24px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: e.done ? 0.6 : 1 }}>
-                                        <span style={{ width: 14, height: 14, borderRadius: 3, border: e.done ? "1.5px solid #1a6b3c" : "1.5px solid var(--color-border-secondary)", background: e.done ? "#e8f5ee" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 9, flexShrink: 0 }}>{e.done ? "✓" : ""}</span>
-                                        <span style={{ flex: 1, fontSize: 12, textDecoration: e.done ? "line-through" : "none", color: e.done ? "var(--color-text-secondary)" : "var(--color-text-primary)" }}>{e.text}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                        {todayEntries.filter(e => !e.done).map(e => (
+                          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                            <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0 }} />
+                            <span style={{ flex: 1, fontSize: 13 }}>{e.text}</span>
+                            <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                          </div>
+                        ))}
+                        {todayEntries.filter(e => e.done).map(e => (
+                          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
+                            <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
+                            <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{e.text}</span>
+                            <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                </div>
+
+                  {/* ── Card 2: History (past days) ── */}
+                  {pastDates.length > 0 && (
+                    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                      <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontWeight: 500, fontSize: 14 }}>🗂 History</span>
+                        <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{pastDates.length} day{pastDates.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                        {pastDates.map(d => {
+                          const entries = grouped[d];
+                          const done = entries.filter(e => e.done).length;
+                          const isExpanded = expandedDay === d;
+                          return (
+                            <div key={d}>
+                              {/* Day row — click to expand */}
+                              <div
+                                onClick={() => setExpandedDay(isExpanded ? null : d)}
+                                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", cursor: "pointer", background: isExpanded ? "#f0f7f3" : "transparent" }}
+                                onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? "#f0f7f3" : "transparent"; }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▶</span>
+                                  <span style={{ fontSize: 13, color: "var(--color-text-primary)", fontWeight: isExpanded ? 600 : 400 }}>
+                                    {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: 11, color: done === entries.length ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: 500 }}>{done}/{entries.length} done</span>
+                              </div>
+                              {/* Expanded entries with delete */}
+                              {isExpanded && (
+                                <div style={{ background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                                  {entries.map(e => (
+                                    <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px 7px 30px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: e.done ? 0.65 : 1 }}>
+                                      <button onClick={() => toggleDayEntry(e.id)} style={{ width: 16, height: 16, borderRadius: 3, border: e.done ? "1.5px solid #1a6b3c" : "1.5px solid var(--color-border-secondary)", background: e.done ? "#e8f5ee" : "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 9 }}>{e.done ? "✓" : ""}</button>
+                                      <span style={{ flex: 1, fontSize: 12, textDecoration: e.done ? "line-through" : "none", color: e.done ? "var(--color-text-secondary)" : "var(--color-text-primary)" }}>{e.text}</span>
+                                      <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px", flexShrink: 0 }}>✕</button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               );
             })()}
           </div>
