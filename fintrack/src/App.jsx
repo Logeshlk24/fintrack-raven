@@ -6038,40 +6038,55 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     if (p.freq !== "custom" || p.customUnit !== "weeks" || !p.customWeekDays || p.customWeekDays.length === 0) {
       return [];
     }
-    
+
     const startStr = p.startDate || (p.startMonth + "-01");
     const [sy, sm, sd] = startStr.split("-").map(Number);
-    let d = new Date(sy, sm-1, sd);
-    d.setHours(0,0,0,0);
-    
     const everyN = parseInt(p.customEveryN || 1);
+
+    // Find the Monday of the week containing the start date
+    // This anchors all "every N weeks" cycles to a consistent Monday boundary
+    const startDate = new Date(sy, sm-1, sd);
+    startDate.setHours(0,0,0,0);
+    const startDow = startDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const mondayOffset = startDow === 0 ? -6 : 1 - startDow;
+    const weekAnchor = new Date(startDate);
+    weekAnchor.setDate(weekAnchor.getDate() + mondayOffset);
+    weekAnchor.setHours(0,0,0,0);
+
     const dueKeys = [];
+
+    // Walk week-group by week-group (everyN weeks per iteration)
+    let weekGroupStart = new Date(weekAnchor);
     let ct = 0;
-    
-    // Calculate which week we're in relative to start date
-    const weekStartDate = new Date(sy, sm-1, sd);
-    weekStartDate.setHours(0,0,0,0);
-    
-    while (ct < 500 && d <= nowDate) {
-      const currentWeekDay = d.getDay() === 0 ? 7 : d.getDay();
-      
-      // Check if this day is in the selected weekdays
-      if (p.customWeekDays.includes(currentWeekDay)) {
-        const daysSinceStart = Math.floor((d - weekStartDate) / (1000 * 60 * 60 * 24));
-        const weeksSinceStart = Math.floor(daysSinceStart / 7);
-        
-        // Only include dates that fall on the correct week interval
-        if (weeksSinceStart % everyN === 0) {
-          const k = dateKey(d);
-          if (!p.paid.includes(k) && d <= nowDate) {
-            dueKeys.push(k);
-          }
+    while (ct < 500) {
+      if (weekGroupStart > nowDate) break;
+
+      // Check each selected weekday within this week group
+      p.customWeekDays.forEach(dow => {
+        // dow convention: 1=Mon..6=Sat, 7=Sun  (getDay()===0 → stored as 7)
+        const jsDay = dow === 7 ? 0 : dow;
+        const dayOffset = (jsDay - 1 + 7) % 7; // Mon=0, Tue=1, ..., Sun=6
+        const candidate = new Date(weekGroupStart);
+        candidate.setDate(weekGroupStart.getDate() + dayOffset);
+        candidate.setHours(0,0,0,0);
+
+        // Skip dates before the payment's own start date
+        if (candidate < startDate) return;
+        // Skip future dates
+        if (candidate > nowDate) return;
+
+        const k = dateKey(candidate);
+        if (!p.paid.includes(k) && !dueKeys.includes(k)) {
+          dueKeys.push(k);
         }
-      }
-      d.setDate(d.getDate() + 1);
+      });
+
+      // Advance by everyN weeks
+      weekGroupStart = new Date(weekGroupStart);
+      weekGroupStart.setDate(weekGroupStart.getDate() + everyN * 7);
       ct++;
     }
-    
+
     return dueKeys;
   }
 
