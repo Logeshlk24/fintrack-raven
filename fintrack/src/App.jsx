@@ -7913,7 +7913,7 @@ function BusinessPage({ data, update }) {
   const [billModal,    setBillModal]    = useState(null);
   const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
   const [renamingYear, setRenamingYear] = useState(null); // { year, value }
-  const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id for day-drill-down
+  const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id
   const [showAddDay,   setShowAddDay]   = useState(false);
   const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], grossIncome: "", netIncome: "", note: "" });
 
@@ -7931,15 +7931,14 @@ function BusinessPage({ data, update }) {
     return { year: yr, totalGross: entries.reduce((s, e) => s + (e.grossIncome || 0), 0), totalNet: entries.reduce((s, e) => s + (e.netIncome || 0), 0), months: entries.length };
   });
 
-  // ── Day-wise helpers ──────────────────────────────────────────────────────
+  // ── Day-wise helpers ─────────────────────────────────────────────────────
   const isDayWise = activeBiz?.dayWise === true;
   const activeMonthEntry = selectedMonth ? bizData.find(e => e.id === selectedMonth) : null;
   const dayEntries = activeMonthEntry ? (activeMonthEntry.days || []).sort((a, b) => a.date.localeCompare(b.date)) : [];
 
   function toggleDayWise() {
     if (!activeBiz) return;
-    const newVal = !activeBiz.dayWise;
-    update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, dayWise: newVal } : b) }));
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, dayWise: !b.dayWise } : b) }));
   }
 
   function addDayEntry() {
@@ -7950,9 +7949,7 @@ function BusinessPage({ data, update }) {
     updateBizData(d => d.map(e => {
       if (e.id !== selectedMonth) return e;
       const days = [...(e.days || []), { id: dayId, date: dayForm.date, grossIncome: gross, netIncome: net, note: dayForm.note }];
-      const totalGross = days.reduce((s, d) => s + d.grossIncome, 0);
-      const totalNet   = days.reduce((s, d) => s + d.netIncome, 0);
-      return { ...e, days, grossIncome: totalGross, netIncome: totalNet };
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
     }));
     setDayForm({ date: new Date().toISOString().split("T")[0], grossIncome: "", netIncome: "", note: "" });
     setShowAddDay(false);
@@ -7962,11 +7959,11 @@ function BusinessPage({ data, update }) {
     updateBizData(d => d.map(e => {
       if (e.id !== selectedMonth) return e;
       const days = (e.days || []).filter(d => d.id !== dayId);
-      const totalGross = days.reduce((s, d) => s + d.grossIncome, 0);
-      const totalNet   = days.reduce((s, d) => s + d.netIncome, 0);
-      return { ...e, days, grossIncome: totalGross, netIncome: totalNet };
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
     }));
   }
+
+  function updateBizData(fn) {
     if (!activeBiz) return;
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fn(b.data || []) } : b) }));
   }
@@ -8287,18 +8284,9 @@ function BusinessPage({ data, update }) {
           </h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* Day-wise toggle — shown when inside a business (year view or any deeper) */}
           {selectedBiz && !selectedMonth && (
-            <button
-              onClick={toggleDayWise}
-              title={isDayWise ? "Day-wise tracking ON — click to disable" : "Enable day-wise tracking for this business"}
-              style={{
-                background: isDayWise ? "#e8f5ee" : "var(--color-background-secondary)",
-                color: isDayWise ? "#1a6b3c" : "var(--color-text-secondary)",
-                border: isDayWise ? "0.5px solid #bbf7d0" : "0.5px solid var(--color-border-secondary)",
-                borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: isDayWise ? 600 : 400,
-                display: "flex", alignItems: "center", gap: 5,
-              }}>
+            <button onClick={toggleDayWise} title={isDayWise ? "Day-wise ON — click to disable" : "Enable day-wise tracking"}
+              style={{ background: isDayWise ? "#e8f5ee" : "var(--color-background-secondary)", color: isDayWise ? "#1a6b3c" : "var(--color-text-secondary)", border: isDayWise ? "0.5px solid #bbf7d0" : "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: isDayWise ? 600 : 400, display: "flex", alignItems: "center", gap: 5 }}>
               📅 {isDayWise ? "Day-wise ON" : "Day-wise"}
             </button>
           )}
@@ -8509,12 +8497,12 @@ function BusinessPage({ data, update }) {
               <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
                 <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>
                   Monthly Breakdown
-                  {isDayWise && <span style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", fontWeight: 500 }}>📅 Click a month row to see daily entries</span>}
+                  {isDayWise && <span style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px" }}>📅 Click a month to see daily entries</span>}
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--color-background-secondary)" }}>
-                      {["Month","Gross Income","Net Income","Margin", ...(isDayWise ? ["Days"] : ["Bill"]),""].map(h => (
+                      {["Month","Gross Income","Net Income","Margin", ...(isDayWise ? ["Days"] : ["Bill"]), ""].map(h => (
                         <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
                       ))}
                     </tr>
@@ -8542,16 +8530,10 @@ function BusinessPage({ data, update }) {
                               </span>
                             </td>
                           ) : (
-                            /* Bill column */
-                            <td style={{ padding: "6px 14px" }}>
+                            <td style={{ padding: "6px 14px" }} onClick={ev => ev.stopPropagation()}>
                               {e.billImage ? (
-                                <img
-                                  src={e.billImage}
-                                  alt="bill"
-                                  onClick={() => setBillModal({ url: e.billImage, link: e.billLink, driveId: e.billDriveId })}
-                                  style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer", display: "block" }}
-                                  title="Click to view full bill"
-                                />
+                                <img src={e.billImage} alt="bill" onClick={() => setBillModal({ url: e.billImage, link: e.billLink, driveId: e.billDriveId })}
+                                  style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer", display: "block" }} title="Click to view full bill" />
                               ) : (
                                 <BillUploadBtn onUploaded={result => updateEntry(e.id, { billImage: result.previewUrl || result.webViewLink, billDriveId: result.id, billLink: result.webViewLink })} />
                               )}
@@ -8604,10 +8586,9 @@ function BusinessPage({ data, update }) {
         </>
       )}
 
-      {/* ── LEVEL 3: Day entries inside a month (day-wise businesses only) ── */}
+      {/* ── LEVEL 3: Day entries inside a month ── */}
       {selectedMonth && activeMonthEntry && (
         <>
-          {/* Add Day form */}
           {showAddDay && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
               <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Day Entry — {activeMonthEntry.month} {selectedYear}</div>
@@ -8638,20 +8619,18 @@ function BusinessPage({ data, update }) {
               <button onClick={addDayEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>+ Add Day</button>
             </div>
           )}
-
           {dayEntries.length === 0 ? (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
               No day entries yet for {activeMonthEntry.month} {selectedYear}. Click "+ Add Day" to start.
             </div>
           ) : (
             <>
-              {/* Day summary stats */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
                 {[
-                  { label: "Total Gross", val: fmtCur(dayEntries.reduce((s, d) => s + d.grossIncome, 0)), color: "#1a6b3c" },
-                  { label: "Total Net",   val: fmtCur(dayEntries.reduce((s, d) => s + d.netIncome, 0)), color: "#4da6ff" },
-                  { label: "Days Recorded", val: dayEntries.length, color: "#f0a020" },
-                  { label: "Avg Daily Gross", val: fmtCur(dayEntries.reduce((s, d) => s + d.grossIncome, 0) / dayEntries.length), color: "#9b59b6" },
+                  { label: "Total Gross",    val: fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0)), color: "#1a6b3c" },
+                  { label: "Total Net",      val: fmtCur(dayEntries.reduce((s,d)=>s+d.netIncome,0)),   color: "#4da6ff" },
+                  { label: "Days Recorded",  val: dayEntries.length,                                    color: "#f0a020" },
+                  { label: "Avg Daily Gross",val: fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0)/dayEntries.length), color: "#9b59b6" },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
@@ -8659,8 +8638,6 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
-
-              {/* Day entries table */}
               <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
                 <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15 }}>
                   Daily Breakdown — {activeMonthEntry.month} {selectedYear}
@@ -8697,8 +8674,8 @@ function BusinessPage({ data, update }) {
                   <tfoot>
                     <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
                       <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
-                      <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s, d) => s + d.grossIncome, 0))}</td>
-                      <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s, d) => s + d.netIncome, 0))}</td>
+                      <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0))}</td>
+                      <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s,d)=>s+d.netIncome,0))}</td>
                       <td colSpan={3} />
                     </tr>
                   </tfoot>
