@@ -8618,31 +8618,105 @@ function BusinessPage({ data, update }) {
       )}
 
       {/* ── LEVEL 3: Day entries inside a month ── */}
-      {selectedMonth && activeMonthEntry && (
-        <>
-          {/* Price editor card */}
-          <PriceEditor monthEntry={activeMonthEntry} onSave={newPrice => {
-            updateBizData(d => d.map(e => {
-              if (e.id !== selectedMonth) return e;
-              const days = (e.days || []).map(d => { const totalQty = d.quantity != null ? d.quantity : 0; const gross = totalQty * newPrice; return { ...d, grossIncome: gross, netIncome: gross }; });
-              return { ...e, price: newPrice, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
-            }));
-          }} />
+      {selectedMonth && activeMonthEntry && (() => {
+        // Dynamic quantity columns — stored as activeMonthEntry.qtyCols = [{id, label}]
+        // Each day stores qtyVals: { colId: number }
+        // Legacy qty1/qty2/quantity fields are migrated transparently on read
+        const qtyCols = activeMonthEntry.qtyCols && activeMonthEntry.qtyCols.length > 0
+          ? activeMonthEntry.qtyCols
+          : [{ id: "qty1", label: "Qty 1" }, { id: "qty2", label: "Qty 2" }];
 
-          {/* Summary stat cards — only days with qty entered */}
-          {(() => {
-            const filledDays = dayEntries.filter(d => d.quantity != null || d.qty1 != null || d.qty2 != null);
-            if (filledDays.length === 0) return null;
-            const totalQty   = filledDays.reduce((s,d)=>s+(d.quantity||0),0);
-            const totalGross = filledDays.reduce((s,d)=>s+d.grossIncome,0);
-            const totalNet   = filledDays.reduce((s,d)=>s+d.netIncome,0);
-            return (
+        function getColVal(day, colId) {
+          if (day.qtyVals && day.qtyVals[colId] != null) return day.qtyVals[colId];
+          // Legacy fallback
+          if (colId === "qty1") return day.qty1 != null ? day.qty1 : (day.qty2 == null && day.quantity != null ? day.quantity : null);
+          if (colId === "qty2") return day.qty2 ?? null;
+          return null;
+        }
+
+        function getTotalQty(day) {
+          if (qtyCols.length === 0) return null;
+          const vals = qtyCols.map(c => getColVal(day, c.id));
+          if (vals.every(v => v == null)) return null;
+          return vals.reduce((s, v) => s + (v || 0), 0);
+        }
+
+        function updateColVal(dayId, colId, valStr) {
+          const val = valStr === "" || valStr == null ? null : parseFloat(valStr);
+          updateBizData(d => d.map(e => {
+            if (e.id !== selectedMonth) return e;
+            const price = e.price || 0;
+            const cols = e.qtyCols && e.qtyCols.length > 0 ? e.qtyCols : [{ id: "qty1", label: "Qty 1" }, { id: "qty2", label: "Qty 2" }];
+            const days = (e.days || []).map(day => {
+              if (day.id !== dayId) return day;
+              const newVals = { ...(day.qtyVals || {}), [colId]: val };
+              // Also migrate legacy fields into qtyVals on first edit
+              if (!day.qtyVals) {
+                if (day.qty1 != null && !newVals["qty1"]) newVals["qty1"] = day.qty1;
+                if (day.qty2 != null && !newVals["qty2"]) newVals["qty2"] = day.qty2;
+              }
+              const totalQty = cols.map(c => newVals[c.id]).every(v => v == null) ? null : cols.reduce((s, c) => s + (newVals[c.id] || 0), 0);
+              const gross = totalQty != null ? totalQty * price : 0;
+              return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
+            });
+            return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+          }));
+        }
+
+        function addQtyCol() {
+          const newId = "qty_" + Date.now();
+          const newLabel = "Qty " + (qtyCols.length + 1);
+          const newCols = [...qtyCols, { id: newId, label: newLabel }];
+          updateBizData(d => d.map(e => e.id !== selectedMonth ? e : { ...e, qtyCols: newCols }));
+        }
+
+        function removeQtyCol(colId) {
+          if (qtyCols.length <= 1) return;
+          const newCols = qtyCols.filter(c => c.id !== colId);
+          updateBizData(d => d.map(e => {
+            if (e.id !== selectedMonth) return e;
+            const price = e.price || 0;
+            const days = (e.days || []).map(day => {
+              const newVals = { ...(day.qtyVals || {}) };
+              delete newVals[colId];
+              const totalQty = newCols.map(c => newVals[c.id]).every(v => v == null) ? null : newCols.reduce((s,c)=>s+(newVals[c.id]||0),0);
+              const gross = totalQty != null ? totalQty * price : 0;
+              return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
+            });
+            return { ...e, qtyCols: newCols, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+          }));
+        }
+
+        function renameQtyCol(colId, newLabel) {
+          if (!newLabel.trim()) return;
+          updateBizData(d => d.map(e => e.id !== selectedMonth ? e : {
+            ...e, qtyCols: (e.qtyCols || qtyCols).map(c => c.id === colId ? { ...c, label: newLabel.trim() } : c)
+          }));
+        }
+
+        const filledDays = dayEntries.filter(d => getTotalQty(d) != null);
+        const totalQtyAll = filledDays.reduce((s,d) => s + (getTotalQty(d) || 0), 0);
+        const totalGross  = filledDays.reduce((s,d) => s + d.grossIncome, 0);
+        const qtyInputStyle = (has) => ({ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: has ? 600 : 400, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: has ? "#f0faf5" : "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" });
+
+        return (
+          <>
+            {/* Price editor card */}
+            <PriceEditor monthEntry={activeMonthEntry} onSave={newPrice => {
+              updateBizData(d => d.map(e => {
+                if (e.id !== selectedMonth) return e;
+                const days = (e.days || []).map(d => { const tq = d.quantity != null ? d.quantity : 0; const gross = tq * newPrice; return { ...d, grossIncome: gross, netIncome: gross }; });
+                return { ...e, price: newPrice, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+              }));
+            }} />
+
+            {/* Summary stat cards */}
+            {filledDays.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
                 {[
-                  { label: "Days Filled",     val: `${filledDays.length} / ${dayEntries.length}`,              color: "#f0a020" },
-                  { label: "Total Quantity",   val: fmt(totalQty) + " units",                                   color: "#9b59b6" },
-                  { label: "Total Gross",      val: fmtCur(totalGross),                                         color: "#1a6b3c" },
-                  { label: "Total Net",        val: fmtCur(totalNet),                                           color: "#4da6ff" },
+                  { label: "Days Filled",   val: `${filledDays.length} / ${dayEntries.length}`, color: "#f0a020" },
+                  { label: "Total Quantity", val: fmt(totalQtyAll) + " units",                   color: "#9b59b6" },
+                  { label: "Gross Income",   val: fmtCur(totalGross),                            color: "#1a6b3c" },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
@@ -8650,116 +8724,107 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
-            );
-          })()}
+            )}
 
-          {/* Inline editable daily table */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-            <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15, display: "flex", alignItems: "center", gap: 10 }}>
-              Daily Quantities — {activeMonthEntry.month} {selectedYear}
-              {activeMonthEntry.price ? (
-                <span style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>
-                  💰 ₹{fmt(activeMonthEntry.price)}/unit · Just type quantities below
-                </span>
-              ) : <span style={{ fontSize: 11, color: "#e55", background: "#fff0f0", borderRadius: 6, padding: "2px 8px" }}>⚠ Set a price above first</span>}
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: "var(--color-background-secondary)" }}>
-                  {["Date","Day","Qty 1","Qty 2","Total Qty","Gross Income","Note"].map(h => (
-                    <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {dayEntries.map((d, i) => {
-                  const dateObj = new Date(d.date + "T00:00:00");
-                  const dayName = dateObj.toLocaleDateString("en-IN", { weekday: "short" });
-                  const dateStr = dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-                  const isSun = dateObj.getDay() === 0;
-                  const isSat = dateObj.getDay() === 6;
-                  const isWeekend = isSun || isSat;
-                  // Support legacy single qty and new qty1/qty2
-                  const qty1Val = d.qty1 != null ? d.qty1 : (d.qty2 == null && d.quantity != null ? d.quantity : null);
-                  const qty2Val = d.qty2 ?? null;
-                  const totalQtyVal = d.quantity; // always kept in sync by updateDayQty
-                  const hasSomeQty = totalQtyVal != null || qty1Val != null || qty2Val != null;
-                  const qtyInputStyle = (has) => ({ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: has ? 600 : 400, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: has ? "#f0faf5" : "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" });
-                  return (
-                    <tr key={d.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: isWeekend ? "var(--color-background-secondary)" : "transparent" }}>
-                      <td style={{ padding: "7px 14px", fontWeight: 600, color: isWeekend ? "#9b59b6" : "var(--color-text-primary)", whiteSpace: "nowrap" }}>{dateStr}</td>
-                      <td style={{ padding: "7px 14px", color: isWeekend ? "#9b59b6" : "var(--color-text-secondary)", fontSize: 11, width: 40 }}>{dayName}</td>
-                      <td style={{ padding: "4px 8px", width: 100 }}>
+            {/* Inline editable daily table */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+              {/* Table header bar */}
+              <div style={{ padding: "0.75rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 500, fontSize: 15 }}>Daily Quantities — {activeMonthEntry.month} {selectedYear}</span>
+                {activeMonthEntry.price
+                  ? <span style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>💰 ₹{fmt(activeMonthEntry.price)}/unit</span>
+                  : <span style={{ fontSize: 11, color: "#e55", background: "#fff0f0", borderRadius: 6, padding: "2px 8px" }}>⚠ Set a price above first</span>}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={addQtyCol}
+                    style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #1a6b3c", background: "#e8f5ee", color: "#1a6b3c", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                    + Add Column
+                  </button>
+                  {qtyCols.length > 1 && (
+                    <button onClick={() => removeQtyCol(qtyCols[qtyCols.length - 1].id)}
+                      style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #e55", background: "#fff0f0", color: "#e55", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                      − Remove Last
+                    </button>
+                  )}
+                </div>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "var(--color-background-secondary)" }}>
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Date</th>
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Day</th>
+                    {qtyCols.map((col, ci) => (
+                      <th key={col.id} style={{ padding: "4px 8px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, minWidth: 90 }}>
                         <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="—"
-                          key={`${d.id}-qty1-${qty1Val}`}
-                          defaultValue={qty1Val != null ? String(qty1Val) : ""}
-                          onBlur={e => updateDayQty(d.id, e.target.value.trim(), "qty1")}
-                          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("td")?.nextElementSibling?.querySelector("input")?.focus(); } }}
-                          style={qtyInputStyle(qty1Val != null)}
-                          onFocus={e => { e.target.style.border = "1.5px solid #1a6b3c"; e.target.style.background = "#fff"; }}
-                          onBlurCapture={e => { e.target.style.border = "0.5px solid var(--color-border-secondary)"; }}
+                          defaultValue={col.label}
+                          onBlur={e => renameQtyCol(col.id, e.target.value)}
+                          style={{ border: "none", background: "transparent", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", width: "100%", outline: "none", cursor: "text", padding: "2px 4px", borderRadius: 4 }}
+                          onFocus={e => { e.target.style.background = "var(--color-background-primary)"; e.target.style.border = "1px solid var(--color-border-secondary)"; }}
+                          onBlurCapture={e => { e.target.style.background = "transparent"; e.target.style.border = "none"; }}
+                          title="Click to rename"
                         />
-                      </td>
-                      <td style={{ padding: "4px 8px", width: 100 }}>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="—"
-                          key={`${d.id}-qty2-${qty2Val}`}
-                          defaultValue={qty2Val != null ? String(qty2Val) : ""}
-                          onBlur={e => updateDayQty(d.id, e.target.value.trim(), "qty2")}
-                          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("tr")?.nextElementSibling?.querySelector("input")?.focus(); } }}
-                          style={qtyInputStyle(qty2Val != null)}
-                          onFocus={e => { e.target.style.border = "1.5px solid #9b59b6"; e.target.style.background = "#fff"; }}
-                          onBlurCapture={e => { e.target.style.border = "0.5px solid var(--color-border-secondary)"; }}
-                        />
-                      </td>
-                      <td style={{ padding: "7px 14px", fontWeight: hasSomeQty ? 700 : 400, color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 13 }}>
-                        {hasSomeQty ? fmt(totalQtyVal || 0) : "—"}
-                      </td>
-                      <td style={{ padding: "7px 14px", color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: hasSomeQty ? 600 : 400 }}>
-                        {hasSomeQty ? fmtCur(d.grossIncome) : "—"}
-                      </td>
-                      <td style={{ padding: "4px 8px" }}>
-                        <input
-                          type="text"
-                          placeholder="note..."
-                          defaultValue={d.note || ""}
-                          onBlur={e => {
-                            const note = e.target.value.trim();
-                            updateBizData(dd => dd.map(ee => {
-                              if (ee.id !== selectedMonth) return ee;
-                              return { ...ee, days: (ee.days || []).map(dy => dy.id === d.id ? { ...dy, note } : dy) };
-                            }));
-                          }}
-                          style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 12, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "transparent", color: "var(--color-text-secondary)" }}
-                          onFocus={e => e.target.style.border = "1.5px solid #1a6b3c"}
-                          onBlurCapture={e => e.target.style.border = "0.5px solid var(--color-border-secondary)"}
-                        />
+                      </th>
+                    ))}
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Total Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dayEntries.map((d) => {
+                    const dateObj = new Date(d.date + "T00:00:00");
+                    const dayName = dateObj.toLocaleDateString("en-IN", { weekday: "short" });
+                    const dateStr = dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+                    const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                    const totalQtyVal = getTotalQty(d);
+                    const hasSomeQty = totalQtyVal != null;
+                    return (
+                      <tr key={d.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: isWeekend ? "var(--color-background-secondary)" : "transparent" }}>
+                        <td style={{ padding: "7px 14px", fontWeight: 600, color: isWeekend ? "#9b59b6" : "var(--color-text-primary)", whiteSpace: "nowrap" }}>{dateStr}</td>
+                        <td style={{ padding: "7px 14px", color: isWeekend ? "#9b59b6" : "var(--color-text-secondary)", fontSize: 11, width: 40 }}>{dayName}</td>
+                        {qtyCols.map((col, ci) => {
+                          const val = getColVal(d, col.id);
+                          return (
+                            <td key={col.id} style={{ padding: "4px 8px", width: 100 }}>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="—"
+                                key={`${d.id}-${col.id}-${val}`}
+                                defaultValue={val != null ? String(val) : ""}
+                                onBlur={e => updateColVal(d.id, col.id, e.target.value.trim())}
+                                onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("td")?.nextElementSibling?.querySelector("input")?.focus(); } }}
+                                style={qtyInputStyle(val != null)}
+                                onFocus={e => { e.target.style.border = "1.5px solid #1a6b3c"; e.target.style.background = "#fff"; }}
+                                onBlurCapture={e => { e.target.style.border = "0.5px solid var(--color-border-secondary)"; e.target.style.background = val != null ? "#f0faf5" : "var(--color-background-secondary)"; }}
+                              />
+                            </td>
+                          );
+                        })}
+                        <td style={{ padding: "7px 14px", fontWeight: hasSomeQty ? 700 : 400, color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 13, whiteSpace: "nowrap" }}>
+                          {hasSomeQty ? fmt(totalQtyVal) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {filledDays.length > 0 && (
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
+                      <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
+                      {qtyCols.map(col => (
+                        <td key={col.id} style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                          {fmt(dayEntries.reduce((s,d) => s + (getColVal(d, col.id) || 0), 0))}
+                        </td>
+                      ))}
+                      <td style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                        {fmt(dayEntries.reduce((s,d) => s + (getTotalQty(d) || 0), 0))}
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-              {dayEntries.filter(d=>d.quantity!=null).length > 0 && (
-                <tfoot>
-                  <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
-                    <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
-                    <td style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>{fmt(dayEntries.reduce((s,d)=>s+(d.qty1||0),0))}</td>
-                    <td style={{ padding: "9px 14px", fontWeight: 700, color: "#9b59b6" }}>{fmt(dayEntries.reduce((s,d)=>s+(d.qty2||0),0))}</td>
-                    <td style={{ padding: "9px 14px", fontWeight: 700 }}>{fmt(dayEntries.reduce((s,d)=>s+(d.quantity||0),0))}</td>
-                    <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0))}</td>
-                    <td />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-        </>
-      )}
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
