@@ -3904,8 +3904,8 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   // Redirect legacy tab values to new names
   const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
 
-  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents"];
-  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents"];
+  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents", "backup"];
+  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents", "Backup"];
 
   return (
     <div>
@@ -3940,6 +3940,9 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
       {/* ── Documents ── */}
       {effectiveTab === "documents" && <DocumentsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Backup ── */}
+      {effectiveTab === "backup" && <BackupSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
     </div>
   );
 }
@@ -4078,6 +4081,193 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
           💡 Toggling a feature off hides it from the sidebar. All data (trades, records, history) is kept safe and will reappear the moment you turn it back on.
         </p>
       </div>
+    </div>
+  );
+}
+
+// ─── BackupSettings ────────────────────────────────────────────────────────────
+function BackupSettings({ data, update, cardStyle, sectionTitle }) {
+  const importRef = useRef(null);
+  const [importStatus, setImportStatus] = useState(null); // null | "success" | "error"
+  const [importMsg, setImportMsg]       = useState("");
+  const [importing, setImporting]       = useState(false);
+  const [showConfirm, setShowConfirm]   = useState(false);
+  const [pendingImport, setPendingImport] = useState(null);
+
+  // ── EXPORT ──────────────────────────────────────────────────────────────────
+  function handleExport() {
+    // Exclude live Firebase user object — it's re-populated on sign-in
+    const { user, ...exportable } = data;
+    const payload = {
+      _meta: {
+        exportedAt: new Date().toISOString(),
+        appVersion: "fintrack_v2",
+      },
+      ...exportable,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const ts   = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `fintrack_backup_${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── IMPORT — step 1: read & validate file ───────────────────────────────────
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!importRef.current) return;
+    importRef.current.value = "";          // reset so same file can be re-picked
+    if (!file) return;
+
+    setImporting(true);
+    setImportStatus(null);
+    setImportMsg("");
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target.result);
+        // Basic sanity check — must look like a fintrack export
+        if (!parsed._meta || parsed._meta.appVersion !== "fintrack_v2") {
+          throw new Error("This file doesn't look like a FinTrack backup.");
+        }
+        setPendingImport(parsed);
+        setShowConfirm(true);
+      } catch (err) {
+        setImportStatus("error");
+        setImportMsg(err.message || "Invalid JSON file. Please choose a valid FinTrack backup.");
+      } finally {
+        setImporting(false);
+      }
+    };
+    reader.onerror = () => {
+      setImportStatus("error");
+      setImportMsg("Could not read the file. Please try again.");
+      setImporting(false);
+    };
+    reader.readAsText(file);
+  }
+
+  // ── IMPORT — step 2: user confirmed, apply data ──────────────────────────────
+  function confirmImport() {
+    if (!pendingImport) return;
+    const { _meta, ...restored } = pendingImport;
+    // Preserve current Firebase user identity
+    update(prev => ({ ...defaultData, ...restored, user: prev.user }));
+    setShowConfirm(false);
+    setPendingImport(null);
+    setImportStatus("success");
+    setImportMsg(`Backup restored successfully from ${_meta.exportedAt?.slice(0, 10) || "unknown date"}.`);
+  }
+
+  function cancelImport() {
+    setPendingImport(null);
+    setShowConfirm(false);
+  }
+
+  const btnBase = {
+    display: "flex", alignItems: "center", gap: 8,
+    padding: "10px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+    cursor: "pointer", border: "none", transition: "opacity 0.15s",
+  };
+
+  return (
+    <div>
+      {/* ── Export Card ─────────────────────────────────────────────────── */}
+      <div style={cardStyle}>
+        {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
+        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 }}>
+          Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, commute logs, and all settings.
+          Store this file somewhere safe (e.g. Google Drive, email to yourself).
+        </p>
+        <button style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }} onClick={handleExport}>
+          <span style={{ fontSize: 18 }}>⬇️</span> Export All Data
+        </button>
+      </div>
+
+      {/* ── Import Card ─────────────────────────────────────────────────── */}
+      <div style={cardStyle}>
+        {sectionTitle("📥", "Import Data", "Restore your data from a previously exported FinTrack backup file.")}
+        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
+          Select a <strong>fintrack_backup_*.json</strong> file. This will <strong>replace all current data</strong> with the backup.
+          Your Google account stays signed in.
+        </p>
+        <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#92400e" }}>
+          ⚠️ Importing will overwrite your existing data. Make sure to export first if you want to keep the current state.
+        </div>
+
+        {/* Hidden file input */}
+        <input
+          ref={importRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+        />
+        <button
+          style={{ ...btnBase, background: "#1e40af", color: "#fff", opacity: importing ? 0.6 : 1 }}
+          onClick={() => importRef.current?.click()}
+          disabled={importing}
+        >
+          <span style={{ fontSize: 18 }}>📂</span>
+          {importing ? "Reading file…" : "Choose Backup File"}
+        </button>
+
+        {/* Status messages */}
+        {importStatus === "success" && (
+          <div style={{ marginTop: 12, background: "#d1fae5", border: "0.5px solid #6ee7b7", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#065f46" }}>
+            ✅ {importMsg}
+          </div>
+        )}
+        {importStatus === "error" && (
+          <div style={{ marginTop: 12, background: "#fee2e2", border: "0.5px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#991b1b" }}>
+            ❌ {importMsg}
+          </div>
+        )}
+      </div>
+
+      {/* ── Confirm Dialog ───────────────────────────────────────────────── */}
+      {showConfirm && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 9999, padding: 16,
+        }}>
+          <div style={{
+            background: "var(--color-background-primary)", borderRadius: 16,
+            padding: "1.6rem", maxWidth: 420, width: "100%",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 8, textAlign: "center" }}>⚠️</div>
+            <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, textAlign: "center" }}>Replace All Data?</h3>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center", lineHeight: 1.6 }}>
+              This will <strong>permanently overwrite</strong> all your current data with the selected backup.
+            </p>
+            {pendingImport?._meta?.exportedAt && (
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center", marginBottom: 16 }}>
+                Backup date: <strong>{pendingImport._meta.exportedAt.slice(0, 10)}</strong>
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button
+                style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-primary)" }}
+                onClick={cancelImport}
+              >
+                Cancel
+              </button>
+              <button
+                style={{ ...btnBase, background: "#dc2626", color: "#fff" }}
+                onClick={confirmImport}
+              >
+                Yes, Restore Backup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
