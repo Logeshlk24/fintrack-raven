@@ -8620,6 +8620,29 @@ function BusinessPage({ data, update }) {
                               <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
                               <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(gross)}</span>
                             </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ color: "var(--color-text-secondary)", flex: 1 }}>Spending</span>
+                              <input
+                                type="text" inputMode="decimal"
+                                key={`spend-${e.id}-${e.spending}`}
+                                defaultValue={e.spending != null ? String(e.spending) : ""}
+                                placeholder="0"
+                                onClick={ev => ev.stopPropagation()}
+                                onBlur={ev => {
+                                  ev.stopPropagation();
+                                  const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
+                                  const netIncome = (e.grossIncome || 0) - spending;
+                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, spending, netIncome }));
+                                }}
+                                style={{ width: 80, padding: "3px 6px", fontSize: 12, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
+                                onFocus={ev => { ev.stopPropagation(); ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
+                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                              />
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome || 0)}</span>
+                            </div>
                           </div>
                           <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
                             <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
@@ -8644,7 +8667,8 @@ function BusinessPage({ data, update }) {
                                   const qty = ev.target.value.trim() === "" ? null : parseFloat(ev.target.value.trim());
                                   const price = e.price || 0;
                                   const newGross = qty != null ? qty * price : 0;
-                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, qty, grossIncome: newGross, netIncome: newGross }));
+                                  const spending = en && en.spending || 0;
+                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, qty, grossIncome: newGross, netIncome: newGross - (en.spending || 0) }));
                                 }}
                                 style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
                                 onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }}
@@ -8665,7 +8689,7 @@ function BusinessPage({ data, update }) {
                                   const price = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
                                   const qty = e.qty || 0;
                                   const newGross = qty * price;
-                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, price, grossIncome: newGross, netIncome: newGross }));
+                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, price, grossIncome: newGross, netIncome: newGross - (en.spending || 0) }));
                                 }}
                                 style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }}
                                 onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }}
@@ -8676,6 +8700,30 @@ function BusinessPage({ data, update }) {
                             <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
                               <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 15 }}>{fmtCur(gross)}</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ color: "var(--color-text-secondary)", minWidth: 36 }}>Spend</span>
+                              <input
+                                type="text" inputMode="decimal"
+                                key={`spend-${e.id}-${e.spending}`}
+                                defaultValue={e.spending != null ? String(e.spending) : ""}
+                                placeholder="0"
+                                onClick={ev => ev.stopPropagation()}
+                                onBlur={ev => {
+                                  ev.stopPropagation();
+                                  const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
+                                  const netIncome = (e.grossIncome || 0) - spending;
+                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, spending, netIncome }));
+                                }}
+                                style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#e55", outline: "none" }}
+                                onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
+                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                              />
+                              <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>₹</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                              <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 15 }}>{fmtCur(e.netIncome || 0)}</span>
                             </div>
                           </div>
                         </>
@@ -8731,7 +8779,8 @@ function BusinessPage({ data, update }) {
               const gross = totalQty != null ? totalQty * price : 0;
               return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
             });
-            return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+            const cG = days.reduce((s,d)=>s+d.grossIncome,0);
+            return { ...e, days, grossIncome: cG, netIncome: cG - (e.spending || 0) };
           }));
         }
 
@@ -8755,7 +8804,8 @@ function BusinessPage({ data, update }) {
               const gross = totalQty != null ? totalQty * price : 0;
               return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
             });
-            return { ...e, qtyCols: newCols, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+            const rG = days.reduce((s,d)=>s+d.grossIncome,0);
+            return { ...e, qtyCols: newCols, days, grossIncome: rG, netIncome: rG - (e.spending || 0) };
           }));
         }
 
@@ -8778,25 +8828,50 @@ function BusinessPage({ data, update }) {
               updateBizData(d => d.map(e => {
                 if (e.id !== selectedMonth) return e;
                 const days = (e.days || []).map(d => { const tq = d.quantity != null ? d.quantity : 0; const gross = tq * newPrice; return { ...d, grossIncome: gross, netIncome: gross }; });
-                return { ...e, price: newPrice, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+                const newGross = days.reduce((s,d)=>s+d.grossIncome,0);
+                const spending = e.spending || 0;
+                return { ...e, price: newPrice, days, grossIncome: newGross, netIncome: newGross - spending };
               }));
             }} />
 
             {/* Summary stat cards */}
-            {filledDays.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
-                {[
-                  { label: "Days Filled",   val: `${filledDays.length} / ${dayEntries.length}`, color: "#f0a020" },
-                  { label: "Total Quantity", val: fmt(totalQtyAll) + " units",                   color: "#9b59b6" },
-                  { label: "Gross Income",   val: fmtCur(totalGross),                            color: "#1a6b3c" },
-                ].map(c => (
-                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
-                    <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {filledDays.length > 0 && (() => {
+              const spending = activeMonthEntry.spending || 0;
+              const netIncome = totalGross - spending;
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
+                  {[
+                    { label: "Days Filled",   val: `${filledDays.length} / ${dayEntries.length}`, color: "#f0a020" },
+                    { label: "Total Quantity", val: fmt(totalQtyAll) + " units",                   color: "#9b59b6" },
+                    { label: "Gross Income",   val: fmtCur(totalGross),                            color: "#1a6b3c" },
+                    { label: "Spending",       val: fmtCur(spending),                              color: "#e55",   editable: true },
+                    { label: "Net Income",     val: fmtCur(netIncome),                             color: "#4da6ff" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: c.label === "Spending" ? "0.5px solid #fca5a5" : "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      {c.editable ? (
+                        <input
+                          type="text" inputMode="decimal"
+                          key={`spending-card-${activeMonthEntry.id}-${activeMonthEntry.spending}`}
+                          defaultValue={spending > 0 ? String(spending) : ""}
+                          placeholder="0"
+                          onBlur={e => {
+                            const s = e.target.value.trim() === "" ? 0 : parseFloat(e.target.value.trim());
+                            const net = totalGross - s;
+                            updateBizData(d => d.map(en => en.id !== selectedMonth ? en : { ...en, spending: s, netIncome: net }));
+                          }}
+                          style={{ fontSize: 18, fontWeight: 600, color: "#e55", border: "none", background: "transparent", outline: "none", width: "100%", padding: 0 }}
+                          onFocus={e => { e.target.style.borderBottom = "1.5px solid #e55"; }}
+                          onBlurCapture={e => { e.target.style.borderBottom = "none"; }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Inline editable daily table */}
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
