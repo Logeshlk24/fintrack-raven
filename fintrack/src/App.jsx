@@ -410,7 +410,8 @@ export default function App() {
       return s - outstanding;
     }
     return s + (b.openingBalance || 0) + inc - exp;
-  }, 0) + (unlinkedIncome - unlinkedExpense);
+  }, 0) + (unlinkedIncome - unlinkedExpense)
+    + (data.needsWants || []).filter(g => g.goalType !== "task" && g.includeInNetWorth !== false && !g.completed).reduce((s, g) => s + Number(g.savedAmount || 0), 0);
 
   const totalAssets = data.assets.reduce((s, a) => s + Number(a.value || 0), 0);
   const totalLiabilities = data.liabilities.reduce((s, l) => s + Number(l.value || 0), 0);
@@ -7453,7 +7454,7 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
-  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], includeInNetWorth: true });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -7480,9 +7481,10 @@ function GoalsPage({ data, update }) {
         urls: (form.urls || []).filter(u => u.trim()),
         createdAt: today(),
         completed: false,
+        includeInNetWorth: form.includeInNetWorth !== false,
       }]
     }));
-    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], includeInNetWorth: true });
     setShowAdd(false);
   }
 
@@ -7497,6 +7499,7 @@ function GoalsPage({ data, update }) {
         notes: editItem.notes,
         priority: editItem.priority,
         urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
+        includeInNetWorth: editItem.includeInNetWorth !== false,
       } : x)
     }));
     setEditItem(null);
@@ -7589,6 +7592,18 @@ function GoalsPage({ data, update }) {
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
           <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
+        {values.goalType === "money" && (
+          <div style={{ marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 12px", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>📊 Include saved amount in Net Worth</div>
+              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>Count this goal's saved ₹ toward your net worth</div>
+            </div>
+            <button type="button" onClick={() => onChange({ ...values, includeInNetWorth: !values.includeInNetWorth })}
+              style={{ flexShrink: 0, width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer", background: values.includeInNetWorth !== false ? "#1a6b3c" : "#d1d5db", position: "relative", transition: "background 0.2s" }}>
+              <div style={{ position: "absolute", top: 3, left: values.includeInNetWorth !== false ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+            </button>
+          </div>
+        )}
         <div style={{ marginTop: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>🔗 Links (optional)</label>
           {(values.urls || [""]).map((url, i) => (
@@ -7655,6 +7670,16 @@ function GoalsPage({ data, update }) {
               <span style={{ fontSize: 10, background: item.priority === "high" ? "#fdf0f0" : item.priority === "medium" ? "#fffbe0" : "#e8f5ee", color: item.priority === "high" ? "#d44" : item.priority === "medium" ? "#b8860b" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500 }}>
                 {item.priority === "high" ? "🔴" : item.priority === "medium" ? "🟡" : "🟢"} {item.priority}
               </span>
+              {!isTask && (
+                <button title={item.includeInNetWorth !== false ? "Included in net worth — click to exclude" : "Excluded from net worth — click to include"}
+                  onClick={() => update(p => ({ needsWants: (p.needsWants || []).map(x => x.id === item.id ? { ...x, includeInNetWorth: item.includeInNetWorth === false } : x) }))}
+                  style={{ fontSize: 10, borderRadius: 4, padding: "1px 6px", fontWeight: 500, border: "0.5px solid", cursor: "pointer", transition: "all 0.15s",
+                    background: item.includeInNetWorth !== false ? "#e8f5ee" : "var(--color-background-tertiary)",
+                    color: item.includeInNetWorth !== false ? "#1a6b3c" : "var(--color-text-secondary)",
+                    borderColor: item.includeInNetWorth !== false ? "#1a6b3c55" : "var(--color-border-secondary)" }}>
+                  {item.includeInNetWorth !== false ? "📊 In Net Worth" : "📊 Excluded"}
+                </button>
+              )}
             </div>
             {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
             {(item.urls && item.urls.length > 0 ? item.urls : item.url ? [item.url] : []).map((u, i) => u ? (
