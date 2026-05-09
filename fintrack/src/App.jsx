@@ -7959,6 +7959,8 @@ function BusinessPage({ data, update }) {
   const [renamingYear, setRenamingYear] = useState(null); // { year, value }
   const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id (day-wise)
   const [selectedNonDayMonth, setSelectedNonDayMonth] = useState(null); // monthEntry id (non-day-wise detail)
+  const [renamingDayMonth, setRenamingDayMonth] = useState(false); // day-wise month rename
+  const [renamingDayMonthVal, setRenamingDayMonthVal] = useState("");
   const [showAddDay,   setShowAddDay]   = useState(false);
   const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
 
@@ -8370,7 +8372,31 @@ function BusinessPage({ data, update }) {
                   )
                 : !selectedMonth
                   ? `${activeBiz?.name} · ${selectedYear}`
-                  : `${activeBiz?.name} · ${selectedYear} · ${activeMonthEntry?.month}`}
+                  : <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {activeBiz?.name} · {selectedYear} ·{" "}
+                      {renamingDayMonth ? (
+                        <>
+                          <select autoFocus value={renamingDayMonthVal}
+                            onChange={e => setRenamingDayMonthVal(e.target.value)}
+                            style={{ fontSize: 16, fontFamily: "'DM Serif Display', serif", border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "2px 8px", outline: "none", background: "var(--color-background-secondary)" }}>
+                            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                          <button onClick={() => {
+                            const newMonthIdx = ["January","February","March","April","May","June","July","August","September","October","November","December"].indexOf(renamingDayMonthVal);
+                            updateBizData(d => d.map(e => e.id !== selectedMonth ? e : { ...e, month: renamingDayMonthVal, monthIndex: newMonthIdx !== -1 ? newMonthIdx : e.monthIndex }));
+                            setRenamingDayMonth(false);
+                          }} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "3px 12px", cursor: "pointer", fontSize: 13, color: "#fff", fontWeight: 600 }}>✓</button>
+                          <button onClick={() => setRenamingDayMonth(false)}
+                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>✕</button>
+                        </>
+                      ) : (
+                        <>
+                          {activeMonthEntry?.month}
+                          <button onClick={() => { setRenamingDayMonthVal(activeMonthEntry?.month || ""); setRenamingDayMonth(true); }}
+                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Change month">✏️ Month</button>
+                        </>
+                      )}
+                    </span>}
           </h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
