@@ -7952,7 +7952,7 @@ function BusinessPage({ data, update }) {
   const [showAddYear,  setShowAddYear]  = useState(false);
   const [newYear,      setNewYear]      = useState("");
   const [showAddMonth, setShowAddMonth] = useState(false);
-  const [monthForm,    setMonthForm]    = useState({ month: "", qty: "", price: "" });
+  const [monthForm,    setMonthForm]    = useState({ month: "", qtyRows: [""], price: "" });
   const [editEntry,    setEditEntry]    = useState(null);
   const [billModal,    setBillModal]    = useState(null);
   const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
@@ -8070,7 +8070,8 @@ function BusinessPage({ data, update }) {
     const monthIdx = MONTHS.indexOf(monthForm.month);
     if (monthIdx === -1) return;
     const price = monthForm.price !== "" ? parseFloat(monthForm.price) : 0;
-    const qty   = monthForm.qty   !== "" ? parseFloat(monthForm.qty)   : null;
+    const totalQty = monthForm.qtyRows.reduce((sum, v) => sum + (v !== "" ? parseFloat(v) || 0 : 0), 0) || null;
+    const qty = totalQty;
     const gross = (qty != null && price) ? qty * price : 0;
     const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
     if (!existing) {
@@ -8094,7 +8095,7 @@ function BusinessPage({ data, update }) {
         return { ...e, price, qty: qty ?? e.qty, grossIncome: newGross, netIncome: newGross };
       }));
     }
-    setMonthForm({ month: "", qty: "", price: "" }); setShowAddMonth(false);
+    setMonthForm({ month: "", qtyRows: [""], price: "" }); setShowAddMonth(false);
   }
 
   function saveEdit() {
@@ -8383,7 +8384,7 @@ function BusinessPage({ data, update }) {
             </button>
           )}
           {selectedYear && !selectedMonth && (
-            <button onClick={() => setShowAddMonth(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            <button onClick={() => { setShowAddMonth(p => !p); setMonthForm({ month: "", qtyRows: [""], price: "" }); }} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
               {showAddMonth ? "✕ Cancel" : "+ Add Month"}
             </button>
           )}
@@ -8539,11 +8540,45 @@ function BusinessPage({ data, update }) {
                 </div>
                 {!isDayWise && (
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Total Qty (units)</label>
-                    <input type="text" inputMode="decimal" placeholder="e.g. 120"
-                      value={monthForm.qty}
-                      onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, qty: v })); }}
-                      style={{ width: "100%", boxSizing: "border-box" }} />
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Qty (units)</label>
+                      <button
+                        onClick={() => setMonthForm(p => ({ ...p, qtyRows: [...p.qtyRows, ""] }))}
+                        style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontWeight: 600 }}>
+                        + Add Row
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      {monthForm.qtyRows.map((val, idx) => (
+                        <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <input type="text" inputMode="decimal" placeholder={`e.g. 120`}
+                            value={val}
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (v === "" || /^\d*\.?\d*$/.test(v)) {
+                                setMonthForm(p => {
+                                  const rows = [...p.qtyRows];
+                                  rows[idx] = v;
+                                  return { ...p, qtyRows: rows };
+                                });
+                              }
+                            }}
+                            style={{ width: "100%", boxSizing: "border-box" }} />
+                          {monthForm.qtyRows.length > 1 && (
+                            <button
+                              onClick={() => setMonthForm(p => ({ ...p, qtyRows: p.qtyRows.filter((_, i) => i !== idx) }))}
+                              style={{ flexShrink: 0, background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {monthForm.qtyRows.length > 1 && (
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", textAlign: "right" }}>
+                          Total: <strong style={{ color: "#111" }}>{monthForm.qtyRows.reduce((s, v) => s + (parseFloat(v) || 0), 0)}</strong> units
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
                 <div>
@@ -8553,9 +8588,9 @@ function BusinessPage({ data, update }) {
                     style={{ width: "100%", boxSizing: "border-box" }} />
                 </div>
               </div>
-              {!isDayWise && monthForm.qty && monthForm.price && (
+              {!isDayWise && monthForm.qtyRows.some(v => v !== "") && monthForm.price && (
                 <div style={{ marginTop: 10, padding: "8px 12px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 600 }}>
-                  Gross Income = {fmt(parseFloat(monthForm.qty) * parseFloat(monthForm.price))} ₹
+                  Gross Income = {fmt(monthForm.qtyRows.reduce((s, v) => s + (parseFloat(v) || 0), 0) * parseFloat(monthForm.price))} ₹
                 </div>
               )}
               <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
