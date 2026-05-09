@@ -292,20 +292,6 @@ export default function App() {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
-  // ── Flush save on page unload (prevents data loss on refresh/close) ───────
-  useEffect(() => {
-    const handleUnload = () => {
-      if (firebaseUser && dataRef.current) {
-        // Cancel any pending debounce
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        // Firestore's client SDK queues the write even during unload
-        saveToFirestore(firebaseUser.uid, dataRef.current);
-      }
-    };
-    window.addEventListener("beforeunload", handleUnload);
-    return () => window.removeEventListener("beforeunload", handleUnload);
-  }, [firebaseUser]);
-
   // ── 1. Listen to Firebase auth changes ───────────────────────────────────
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => setFirebaseUser(user ?? null));
