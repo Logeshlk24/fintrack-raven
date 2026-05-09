@@ -7894,6 +7894,50 @@ function PercentageCalculator() {
   );
 }
 
+function PriceEditor({ monthEntry, onSave }) {
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(String(monthEntry.price || ""));
+
+  function handleSave() {
+    const p = parseFloat(val);
+    if (!isNaN(p) && p > 0) { onSave(p); setEditing(false); }
+  }
+
+  return (
+    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1.1rem", marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 22 }}>💰</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Price per unit — {monthEntry.month}</div>
+        {editing ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input autoFocus type="text" inputMode="decimal" value={val}
+              onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setVal(v); }}
+              onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+              style={{ width: 120, boxSizing: "border-box", fontSize: 14, fontWeight: 600 }}
+              placeholder="e.g. 32" />
+            <button onClick={handleSave} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Save</button>
+            <button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20, fontWeight: 700, color: "#1a6b3c" }}>
+              {monthEntry.price ? fmtCur(monthEntry.price) : <span style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>Not set</span>}
+            </span>
+            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>per unit</span>
+            <button onClick={() => { setVal(String(monthEntry.price || "")); setEditing(true); }}
+              style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️ Edit Price</button>
+          </div>
+        )}
+      </div>
+      {monthEntry.price && (
+        <div style={{ background: "#e8f5ee", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#1a6b3c" }}>
+          Gross = Qty × ₹{fmt(monthEntry.price)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BusinessPage({ data, update }) {
   // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
   // Migrate legacy flat businessData into first business if needed
@@ -8499,83 +8543,51 @@ function BusinessPage({ data, update }) {
                 <LineChart entries={yearEntries} />
               </div>
 
-              {/* Monthly data table */}
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>
-                  Monthly Breakdown
-                  <span style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px" }}>📁 Click a month to see daily entries</span>
-                </div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: "var(--color-background-secondary)" }}>
-                      {["Month","Price/unit","Gross Income","Net Income","Margin","Days",""].map(h => (
-                        <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {yearEntries.map((e, i) => {
-                      const margin = e.grossIncome > 0 ? ((e.netIncome / e.grossIncome) * 100).toFixed(1) : "0.0";
-                      const dayCount = (e.days || []).length;
-                      return (
-                        <tr key={e.id}
-                          onClick={() => { setSelectedMonth(e.id); setShowAddDay(false); }}
-                          style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)", cursor: "pointer" }}
-                          onMouseEnter={ev => ev.currentTarget.style.background = "#f0faf5"}
-                          onMouseLeave={ev => ev.currentTarget.style.background = i % 2 === 0 ? "transparent" : "var(--color-background-secondary)"}>
-                          <td style={{ padding: "9px 14px", fontWeight: 500 }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>📁 {e.month} <span style={{ fontSize: 10, color: "#1a6b3c" }}>›</span></span>
-                          </td>
-                          <td style={{ padding: "9px 14px", color: "var(--color-text-secondary)", fontSize: 12 }}>{e.price ? fmtCur(e.price) : "—"}</td>
-                          <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</td>
-                          <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</td>
-                          <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
-                          <td style={{ padding: "9px 14px" }}>
-                            <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
-                              {dayCount} day{dayCount !== 1 ? "s" : ""}
-                            </span>
-                          </td>
-                          <td style={{ padding: "9px 14px", textAlign: "right" }} onClick={ev => ev.stopPropagation()}>
-                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                              <button onClick={() => deleteEntry(e.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "#d44" }}>🗑</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
-                      <td style={{ padding: "9px 14px", fontWeight: 600 }}>Total</td>
-                      <td />
-                      <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0))}</td>
-                      <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0))}</td>
-                      <td colSpan={3} />
-                    </tr>
-                  </tfoot>
-                </table>
-                {/* Bill full-view modal */}
-                {billModal && (
-                  <div onClick={() => setBillModal(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.78)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
-                    <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"92vw", maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
-                      <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
-                        <span style={{ fontWeight:600, fontSize:13 }}>Bill Preview</span>
-                        <div style={{ display:"flex", gap:8 }}>
-                          {billModal.link && <a href={billModal.link} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
-                          <button onClick={()=>setBillModal(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:18, color:"#6b7280" }}>✕</button>
+              {/* ── Month folder cards grid ── */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
+                {yearEntries.map(e => {
+                  const margin = e.grossIncome > 0 ? ((e.netIncome / e.grossIncome) * 100).toFixed(1) : "0.0";
+                  const dayCount = (e.days || []).length;
+                  return (
+                    <div key={e.id}
+                      onClick={() => { setSelectedMonth(e.id); setShowAddDay(false); }}
+                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: "pointer", borderTop: "3px solid #4da6ff", position: "relative" }}
+                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                      {/* Delete btn */}
+                      <button onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
+                        style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                      {/* Folder icon + name */}
+                      <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
+                      <div style={{ fontWeight: 700, fontSize: 18, fontFamily: "'DM Serif Display', serif", marginBottom: 2 }}>{e.month}</div>
+                      {/* Price pill */}
+                      <div style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", display: "inline-block", marginBottom: 8, fontWeight: 500 }}>
+                        ₹{e.price ? fmt(e.price) : "—"} / unit
+                      </div>
+                      {/* Stats */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                          <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                          <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ color: "var(--color-text-secondary)" }}>Margin</span>
+                          <span style={{ color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020", fontWeight: 500 }}>{margin}%</span>
                         </div>
                       </div>
-                      <div style={{ flex:1, overflow:"auto", display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
-                        {billModal.driveId
-                          ? <iframe src={`https://drive.google.com/file/d/${billModal.driveId}/preview`} style={{ width:"80vw", height:"78vh", border:"none" }} title="Bill" allow="autoplay" />
-                          : billModal.url?.startsWith?.("data:image")
-                            ? <img src={billModal.url} alt="Bill" style={{ maxWidth:"80vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
-                            : <iframe src={billModal.url} style={{ width:"80vw", height:"78vh", border:"none" }} title="Bill" />
-                        }
+                      {/* Day count badge */}
+                      <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
+                        <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
+                          📅 {dayCount} day{dayCount !== 1 ? "s" : ""} recorded
+                        </span>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
             </>
           )}
@@ -8585,6 +8597,15 @@ function BusinessPage({ data, update }) {
       {/* ── LEVEL 3: Day entries inside a month ── */}
       {selectedMonth && activeMonthEntry && (
         <>
+          {/* Price editor card — always visible at top of month folder */}
+          <PriceEditor monthEntry={activeMonthEntry} onSave={newPrice => {
+            updateBizData(d => d.map(e => {
+              if (e.id !== selectedMonth) return e;
+              // Recalculate all day grosses with new price
+              const days = (e.days || []).map(d => ({ ...d, grossIncome: (d.quantity || 0) * newPrice }));
+              return { ...e, price: newPrice, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+            }));
+          }} />
           {showAddDay && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
               <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Day Entry — {activeMonthEntry.month} {selectedYear}</div>
