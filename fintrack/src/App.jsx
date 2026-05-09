@@ -7963,8 +7963,8 @@ function BusinessPage({ data, update }) {
   const [renamingDayMonthVal, setRenamingDayMonthVal] = useState("");
   const [showAddDay,   setShowAddDay]   = useState(false);
   const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
-  const [showLiabilitiesModal, setShowLiabilitiesModal] = useState(null); // biz.id
-  const [liabilityForm, setLiabilityForm] = useState({ name: "", amount: "" });
+  const [showLiabilitiesSection, setShowLiabilitiesSection] = useState(false);
+  const [bizLiabForm, setBizLiabForm] = useState({ name: "", amount: "" });
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -8063,15 +8063,18 @@ function BusinessPage({ data, update }) {
 
   // ── Business Liabilities helpers ─────────────────────────────────────────
   function addBizLiability(bizId) {
-    const name = liabilityForm.name.trim();
-    const amount = parseFloat(liabilityForm.amount);
+    const name = bizLiabForm.name.trim();
+    const amount = parseFloat(bizLiabForm.amount);
     if (!name || isNaN(amount) || amount <= 0) return;
-    const newLiab = { id: "liab_" + Date.now(), name, amount };
+    const newLiab = { id: "liab_" + Date.now(), name, amount, paid: false };
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: [...(b.liabilities || []), newLiab] } : b) }));
-    setLiabilityForm({ name: "", amount: "" });
+    setBizLiabForm({ name: "", amount: "" });
   }
   function deleteBizLiability(bizId, liabId) {
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: (b.liabilities || []).filter(l => l.id !== liabId) } : b) }));
+  }
+  function toggleBizLiabilityPaid(bizId, liabId) {
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: (b.liabilities || []).map(l => l.id === liabId ? { ...l, paid: !l.paid } : l) } : b) }));
   }
 
   function renameBusiness(id, newName) {
@@ -8414,6 +8417,12 @@ function BusinessPage({ data, update }) {
               📅 {isDayWise ? "Day-wise ON" : "Day-wise"}
             </button>
           )}
+          {selectedBiz && !selectedYear && (
+            <button onClick={() => setShowLiabilitiesSection(p => !p)}
+              style={{ background: showLiabilitiesSection ? "#fff5f5" : "var(--color-background-secondary)", color: showLiabilitiesSection ? "#c0392b" : "var(--color-text-secondary)", border: showLiabilitiesSection ? "0.5px solid #f5c0c0" : "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: showLiabilitiesSection ? 600 : 400, display: "flex", alignItems: "center", gap: 5 }}>
+              ⚖️ Liabilities
+            </button>
+          )}
           {!selectedBiz && (
             <button onClick={() => setShowAddBiz(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
               {showAddBiz ? "✕ Cancel" : "+ New Business"}
@@ -8462,10 +8471,10 @@ function BusinessPage({ data, update }) {
                 const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
                 const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
                 const bizLiabilities = biz.liabilities || [];
-                const totalLiab = bizLiabilities.reduce((s, l) => s + (l.amount || 0), 0);
-                const netAfterLiab = totalNet - totalLiab;
+                const paidLiab = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                const finalNet = totalNet - paidLiab;
                 return (
-                  <div key={biz.id} onClick={() => { if (!renamingBiz) setSelectedBiz(biz.id); }}
+                  <div key={biz.id} onClick={() => { if (!renamingBiz) { setSelectedBiz(biz.id); setShowLiabilitiesSection(false); } }}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
@@ -8487,89 +8496,19 @@ function BusinessPage({ data, update }) {
                       <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
                     )}
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: totalLiab > 0 ? 6 : 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: paidLiab > 0 ? 5 : 0 }}>
                       <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
                       <span style={{ color: "#4da6ff" }}>Net: {fmtCur(totalNet)}</span>
                     </div>
-                    {totalLiab > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6, paddingTop: 5, borderTop: "0.5px dashed var(--color-border-tertiary)" }}>
-                        <span style={{ color: "#e55" }}>Liabilities: -{fmtCur(totalLiab)}</span>
-                        <span style={{ color: netAfterLiab >= 0 ? "#1a6b3c" : "#e55", fontWeight: 600 }}>Final: {fmtCur(netAfterLiab)}</span>
+                    {paidLiab > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, paddingTop: 5, borderTop: "0.5px dashed var(--color-border-tertiary)" }}>
+                        <span style={{ color: "#e55" }}>Paid Liab: -{fmtCur(paidLiab)}</span>
+                        <span style={{ color: finalNet >= 0 ? "#1a6b3c" : "#e55", fontWeight: 600 }}>Final: {fmtCur(finalNet)}</span>
                       </div>
                     )}
-                    {/* Liabilities button */}
-                    <button
-                      onClick={ev => { ev.stopPropagation(); setShowLiabilitiesModal(biz.id); setLiabilityForm({ name: "", amount: "" }); }}
-                      style={{ marginTop: 6, width: "100%", background: bizLiabilities.length > 0 ? "#fff5f5" : "var(--color-background-secondary)", border: "0.5px solid " + (bizLiabilities.length > 0 ? "#f5c0c0" : "var(--color-border-secondary)"), borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11, color: bizLiabilities.length > 0 ? "#c0392b" : "var(--color-text-secondary)", fontWeight: 500, textAlign: "left" }}>
-                      ⚖️ Liabilities {bizLiabilities.length > 0 ? `(${bizLiabilities.length} · -${fmtCur(totalLiab)})` : "(none)"}
-                    </button>
                   </div>
                 );
               })}
-              {/* Liabilities Modal */}
-              {showLiabilitiesModal && (() => {
-                const biz = businesses.find(b => b.id === showLiabilitiesModal);
-                if (!biz) return null;
-                const bizLiabs = biz.liabilities || [];
-                const totalLiabModal = bizLiabs.reduce((s, l) => s + (l.amount || 0), 0);
-                const totalNetModal = (biz.data || []).reduce((s, e) => s + (e.netIncome || 0), 0);
-                return (
-                  <div onClick={() => setShowLiabilitiesModal(null)}
-                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                    <div onClick={e => e.stopPropagation()}
-                      style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                        <div style={{ fontWeight: 700, fontSize: 17 }}>⚖️ Liabilities — {biz.name}</div>
-                        <button onClick={() => setShowLiabilitiesModal(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--color-text-secondary)" }}>✕</button>
-                      </div>
-                      {/* Summary strip */}
-                      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                        {[
-                          { label: "Total Net Income", val: fmtCur(totalNetModal), color: "#4da6ff" },
-                          { label: "Total Liabilities", val: "-" + fmtCur(totalLiabModal), color: "#e55" },
-                          { label: "Net After Liabilities", val: fmtCur(totalNetModal - totalLiabModal), color: (totalNetModal - totalLiabModal) >= 0 ? "#1a6b3c" : "#e55" },
-                        ].map(c => (
-                          <div key={c.label} style={{ flex: 1, background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.6rem 0.7rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                            <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: c.color }}>{c.val}</div>
-                          </div>
-                        ))}
-                      </div>
-                      {/* Existing liabilities list */}
-                      {bizLiabs.length > 0 && (
-                        <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 6 }}>
-                          {bizLiabs.map(l => (
-                            <div key={l.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff5f5", borderRadius: 8, padding: "7px 12px", border: "0.5px solid #f5c0c0" }}>
-                              <span style={{ fontSize: 13, fontWeight: 500 }}>{l.name}</span>
-                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <span style={{ fontSize: 13, color: "#c0392b", fontWeight: 600 }}>-{fmtCur(l.amount)}</span>
-                                <button onClick={() => deleteBizLiability(biz.id, l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#c0392b", fontSize: 14, opacity: 0.7, padding: 0 }}>🗑</button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {/* Add form */}
-                      <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--color-text-secondary)" }}>Add Liability</div>
-                        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                          <input placeholder="e.g. Rent, Salary, Loan EMI" value={liabilityForm.name}
-                            onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))}
-                            style={{ flex: 2, boxSizing: "border-box" }} />
-                          <input type="number" placeholder="Amount" value={liabilityForm.amount}
-                            onChange={e => setLiabilityForm(p => ({ ...p, amount: e.target.value }))}
-                            onKeyDown={e => e.key === "Enter" && addBizLiability(biz.id)}
-                            style={{ flex: 1, boxSizing: "border-box" }} />
-                        </div>
-                        <button onClick={() => addBizLiability(biz.id)}
-                          style={{ width: "100%", background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "8px 0", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
-                          + Add Liability
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           )}
         </>
@@ -8592,6 +8531,104 @@ function BusinessPage({ data, update }) {
               <button onClick={addYear} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create Year</button>
             </div>
           )}
+
+          {/* ── Liabilities Section (inline panel) ── */}
+          {showLiabilitiesSection && activeBiz && (() => {
+            const bizLiabs = activeBiz.liabilities || [];
+            const totalNet = bizData.reduce((s, e) => s + (e.netIncome || 0), 0);
+            const paidTotal = bizLiabs.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+            const unpaidTotal = bizLiabs.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+            const finalNet = totalNet - paidTotal;
+            return (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid #f5c0c0", padding: "1.25rem 1.4rem", marginBottom: 16, borderTop: "3px solid #c0392b" }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>⚖️ Liabilities — {activeBiz.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "3px 9px" }}>
+                    💡 Mark as Paid → deducted from Net Income
+                  </div>
+                </div>
+
+                {/* Summary tiles */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
+                  {[
+                    { label: "Net Income", val: fmtCur(totalNet), color: "#4da6ff", bg: "#f0f7ff" },
+                    { label: "Paid Liabilities", val: paidTotal > 0 ? "-" + fmtCur(paidTotal) : fmtCur(0), color: "#c0392b", bg: "#fff5f5" },
+                    { label: "Final Net Income", val: fmtCur(finalNet), color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", bg: finalNet >= 0 ? "#f0faf4" : "#fff5f5" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: c.bg, borderRadius: 10, padding: "0.75rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Liabilities list */}
+                {bizLiabs.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, padding: "1.5rem 0", borderTop: "0.5px dashed var(--color-border-tertiary)", borderBottom: "0.5px dashed var(--color-border-tertiary)", marginBottom: 16 }}>
+                    No liabilities added yet. Use the form below to add one.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {/* Column headers */}
+                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div/>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Name</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Amount</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" }}>Status</div>
+                      <div/>
+                    </div>
+                    {bizLiabs.map(l => (
+                      <div key={l.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", background: l.paid ? "#f0faf4" : "#fff5f5", borderRadius: 9, padding: "9px 12px", border: "0.5px solid " + (l.paid ? "#bbf7d0" : "#f5c0c0"), transition: "all 0.15s" }}>
+                        {/* Paid checkbox */}
+                        <button onClick={() => toggleBizLiabilityPaid(activeBiz.id, l.id)}
+                          title={l.paid ? "Mark as Unpaid" : "Mark as Paid"}
+                          style={{ width: 26, height: 26, borderRadius: 6, border: "2px solid " + (l.paid ? "#1a6b3c" : "#c0392b"), background: l.paid ? "#1a6b3c" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#fff", flexShrink: 0, padding: 0, transition: "all 0.15s" }}>
+                          {l.paid ? "✓" : ""}
+                        </button>
+                        {/* Name */}
+                        <span style={{ fontSize: 13, fontWeight: 500, color: l.paid ? "#1a6b3c" : "#c0392b", textDecoration: l.paid ? "none" : "none" }}>{l.name}</span>
+                        {/* Amount */}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: l.paid ? "#1a6b3c" : "#c0392b", whiteSpace: "nowrap" }}>{l.paid ? "-" : ""}{fmtCur(l.amount)}</span>
+                        {/* Status badge */}
+                        <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 6, padding: "2px 8px", background: l.paid ? "#1a6b3c" : "#fff0f0", color: l.paid ? "#fff" : "#c0392b", border: "0.5px solid " + (l.paid ? "#1a6b3c" : "#f5c0c0"), whiteSpace: "nowrap" }}>
+                          {l.paid ? "✅ Paid" : "⏳ Pending"}
+                        </span>
+                        {/* Delete */}
+                        <button onClick={() => deleteBizLiability(activeBiz.id, l.id)}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 0 }}>🗑</button>
+                      </div>
+                    ))}
+                    {/* Totals row */}
+                    {bizLiabs.length > 0 && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, fontSize: 12, paddingTop: 8, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                        {unpaidTotal > 0 && <span style={{ color: "#c0392b" }}>Pending: {fmtCur(unpaidTotal)}</span>}
+                        {paidTotal > 0 && <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Deducted: -{fmtCur(paidTotal)}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Add form */}
+                <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--color-text-secondary)" }}>+ Add New Liability</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input placeholder="e.g. Rent, Worker Salary, Loan EMI" value={bizLiabForm.name}
+                      onChange={e => setBizLiabForm(p => ({ ...p, name: e.target.value }))}
+                      style={{ flex: 2, boxSizing: "border-box" }} />
+                    <input type="number" placeholder="Amount (₹)" value={bizLiabForm.amount}
+                      onChange={e => setBizLiabForm(p => ({ ...p, amount: e.target.value }))}
+                      onKeyDown={e => e.key === "Enter" && addBizLiability(activeBiz.id)}
+                      style={{ flex: 1, boxSizing: "border-box" }} />
+                    <button onClick={() => addBizLiability(activeBiz.id)}
+                      style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {yearSummary.length === 0 ? (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
               No years yet. Click "+ Add Year" to create your first year folder.
