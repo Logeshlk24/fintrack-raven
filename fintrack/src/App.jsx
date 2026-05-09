@@ -5799,26 +5799,46 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
     const updates = [];
     payments.forEach(pay => {
-      const key = getNextDueKey(pay);
-      if (!key) return;
-      // Determine due date from key
-      let dueDate;
-      if (pay.freq === "custom" && pay.customUnit === "weeks") {
-        const parts = key.split("-").map(Number);
-        dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
+      // For custom weekly payments with multiple days, get all due keys
+      if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
+        const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
+        allDueKeys.forEach(key => {
+          if (pay.paid.includes(key)) return; // already paid
+          
+          const parts = key.split("-").map(Number);
+          const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
+          dueDate.setHours(0,0,0,0);
+          
+          // If autoTime set, only trigger after that time today (or if overdue from past days)
+          if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
+            if (nowHHMM < pay.autoTime) return; // not time yet
+          }
+          
+          updates.push({ pay, key });
+        });
       } else {
-        const [ky, km] = key.split("-").map(Number);
-        dueDate = new Date(ky, km-1, pay.day);
+        // Original logic for non-weekly payments
+        const key = getNextDueKey(pay);
+        if (!key) return;
+        // Determine due date from key
+        let dueDate;
+        if (pay.freq === "custom" && pay.customUnit === "weeks") {
+          const parts = key.split("-").map(Number);
+          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
+        } else {
+          const [ky, km] = key.split("-").map(Number);
+          dueDate = new Date(ky, km-1, pay.day);
+        }
+        if (!dueDate) return;
+        dueDate.setHours(0,0,0,0);
+        if (dueDate > nowDate) return; // not due yet
+        if (pay.paid.includes(key)) return; // already paid
+        // If autoTime set, only trigger after that time today (or if overdue from past days)
+        if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
+          if (nowHHMM < pay.autoTime) return; // not time yet
+        }
+        updates.push({ pay, key });
       }
-      if (!dueDate) return;
-      dueDate.setHours(0,0,0,0);
-      if (dueDate > nowDate) return; // not due yet
-      if (pay.paid.includes(key)) return; // already paid
-      // If autoTime set, only trigger after that time today (or if overdue from past days)
-      if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
-        if (nowHHMM < pay.autoTime) return; // not time yet
-      }
-      updates.push({ pay, key });
     });
 
     if (!updates.length) return;
@@ -5880,22 +5900,40 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       const updates = [];
       payments.forEach(pay => {
         if (!pay.autoTime) return;
-        const key = getNextDueKey(pay);
-        if (!key) return;
-        let dueDate;
-        if (pay.freq === "custom" && pay.customUnit === "weeks") {
-          const parts = key.split("-").map(Number);
-          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
+        
+        // For custom weekly payments with multiple days, get all due keys
+        if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
+          const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
+          allDueKeys.forEach(key => {
+            if (pay.paid.includes(key)) return;
+            
+            const parts = key.split("-").map(Number);
+            const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
+            dueDate.setHours(0,0,0,0);
+            
+            if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
+            if (nowHHMM < pay.autoTime) return;
+            updates.push({ pay, key });
+          });
         } else {
-          const [ky, km] = key.split("-").map(Number);
-          dueDate = new Date(ky, km-1, pay.day);
+          // Original logic for non-weekly payments
+          const key = getNextDueKey(pay);
+          if (!key) return;
+          let dueDate;
+          if (pay.freq === "custom" && pay.customUnit === "weeks") {
+            const parts = key.split("-").map(Number);
+            dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
+          } else {
+            const [ky, km] = key.split("-").map(Number);
+            dueDate = new Date(ky, km-1, pay.day);
+          }
+          if (!dueDate) return;
+          dueDate.setHours(0,0,0,0);
+          if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
+          if (pay.paid.includes(key)) return;
+          if (nowHHMM < pay.autoTime) return;
+          updates.push({ pay, key });
         }
-        if (!dueDate) return;
-        dueDate.setHours(0,0,0,0);
-        if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
-        if (pay.paid.includes(key)) return;
-        if (nowHHMM < pay.autoTime) return;
-        updates.push({ pay, key });
       });
 
       if (!updates.length) return;
@@ -5994,6 +6032,48 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
   function pad2(n) { return String(n).padStart(2,"0"); }
   function dateKey(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+
+  // Get all due keys for custom weekly payments (multiple days in same week)
+  function getAllDueKeysForWeekly(p, nowDate) {
+    if (p.freq !== "custom" || p.customUnit !== "weeks" || !p.customWeekDays || p.customWeekDays.length === 0) {
+      return [];
+    }
+    
+    const startStr = p.startDate || (p.startMonth + "-01");
+    const [sy, sm, sd] = startStr.split("-").map(Number);
+    let d = new Date(sy, sm-1, sd);
+    d.setHours(0,0,0,0);
+    
+    const everyN = parseInt(p.customEveryN || 1);
+    const dueKeys = [];
+    let ct = 0;
+    
+    // Calculate which week we're in relative to start date
+    const weekStartDate = new Date(sy, sm-1, sd);
+    weekStartDate.setHours(0,0,0,0);
+    
+    while (ct < 500 && d <= nowDate) {
+      const currentWeekDay = d.getDay() === 0 ? 7 : d.getDay();
+      
+      // Check if this day is in the selected weekdays
+      if (p.customWeekDays.includes(currentWeekDay)) {
+        const daysSinceStart = Math.floor((d - weekStartDate) / (1000 * 60 * 60 * 24));
+        const weeksSinceStart = Math.floor(daysSinceStart / 7);
+        
+        // Only include dates that fall on the correct week interval
+        if (weeksSinceStart % everyN === 0) {
+          const k = dateKey(d);
+          if (!p.paid.includes(k) && d <= nowDate) {
+            dueKeys.push(k);
+          }
+        }
+      }
+      d.setDate(d.getDate() + 1);
+      ct++;
+    }
+    
+    return dueKeys;
+  }
 
   function getNextDueKey(p) {
     const now = new Date(); now.setHours(0,0,0,0);
