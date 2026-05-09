@@ -8729,7 +8729,11 @@ function BusinessPage({ data, update }) {
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
                     <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
                     <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
+                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(s.totalNet)}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -10306,17 +10310,27 @@ function ProjectsPage({ data, update }) {
                                 </div>
                                 {/* Time timeline progress bar — only shown when ETA is set */}
                                 {t.eta && (() => {
-                                  const created = new Date(t.createdAt || t.id);
-                                  const due = new Date(t.eta);
                                   const now = new Date();
+                                  // Normalize due date to end of that day
+                                  const due = new Date(t.eta + "T23:59:59");
+                                  const isOverdue = now > due;
+                                  // Use createdAt if available, else fall back to task id (timestamp)
+                                  const createdRaw = t.createdAt ? new Date(t.createdAt) : new Date(typeof t.id === "number" ? t.id : Date.now());
+                                  // If created on same day or after due, use 1 day before due as start
+                                  const created = createdRaw >= due ? new Date(due.getTime() - 86400000) : createdRaw;
                                   const total = due - created;
                                   const elapsed = now - created;
-                                  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((elapsed / total) * 100))) : 0;
-                                  const barColor = pct >= 90 ? "#d44" : pct >= 70 ? "#f0a020" : "#4da6ff";
+                                  const rawPct = total > 0 ? Math.round((elapsed / total) * 100) : 100;
+                                  const pct = Math.min(100, Math.max(0, rawPct));
+                                  const delayed = isOverdue && !t.done;
+                                  const barColor = delayed ? "#d44" : pct >= 90 ? "#f0a020" : pct >= 70 ? "#f59e0b" : "#4da6ff";
                                   return (
                                     <div>
                                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
-                                        <span>Time Elapsed</span>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                          Time Elapsed
+                                          {delayed && <span style={{ background: "#fde8e8", color: "#d44", borderRadius: 3, padding: "0px 4px", fontWeight: 700, fontSize: 8, letterSpacing: 0.3 }}>⚠ DELAYED</span>}
+                                        </span>
                                         <span style={{ color: barColor, fontWeight: 600 }}>{pct}%</span>
                                       </div>
                                       <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
