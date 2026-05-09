@@ -7952,7 +7952,7 @@ function BusinessPage({ data, update }) {
   const [showAddYear,  setShowAddYear]  = useState(false);
   const [newYear,      setNewYear]      = useState("");
   const [showAddMonth, setShowAddMonth] = useState(false);
-  const [monthForm,    setMonthForm]    = useState({ month: "", qtyRows: [""], price: "" });
+  const [monthForm,    setMonthForm]    = useState({ month: "", rows: [{ qty: "", price: "" }] });
   const [editEntry,    setEditEntry]    = useState(null);
   const [billModal,    setBillModal]    = useState(null);
   const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
@@ -8069,14 +8069,11 @@ function BusinessPage({ data, update }) {
   function addMonthEntry() {
     const monthIdx = MONTHS.indexOf(monthForm.month);
     if (monthIdx === -1) return;
-    const price = monthForm.price !== "" ? parseFloat(monthForm.price) : 0;
-    const totalQty = monthForm.qtyRows.reduce((sum, v) => sum + (v !== "" ? parseFloat(v) || 0 : 0), 0) || null;
-    const qty = totalQty;
-    const gross = (qty != null && price) ? qty * price : 0;
-    const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
-    if (!existing) {
-      if (isDayWise) {
-        // Pre-populate every day of the month as an empty slot
+    if (isDayWise) {
+      // Day-wise: single price from first row
+      const price = parseFloat(monthForm.rows[0]?.price) || 0;
+      const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
+      if (!existing) {
         const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
         const days = Array.from({ length: daysInMonth }, (_, i) => {
           const dayNum = i + 1;
@@ -8085,17 +8082,26 @@ function BusinessPage({ data, update }) {
         });
         updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
       } else {
-        // Non-day-wise: just store month qty + price → gross
-        updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, qty, price, grossIncome: gross, netIncome: gross }]);
+        updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx ? { ...e, price } : e));
       }
     } else {
-      updateBizData(d => d.map(e => {
-        if (!(e.year === selectedYear && e.monthIndex === monthIdx)) return e;
-        const newGross = (qty != null && price) ? qty * price : (e.qty != null ? e.qty * price : e.grossIncome);
-        return { ...e, price, qty: qty ?? e.qty, grossIncome: newGross, netIncome: newGross };
-      }));
+      // Non-day-wise: each row has its own qty × price → subtotal; gross = sum
+      const filledRows = monthForm.rows.filter(r => r.qty !== "" && r.price !== "");
+      if (filledRows.length === 0) return;
+      const gross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
+      const qty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0) || null;
+      const price = parseFloat(filledRows[0].price) || 0; // reference price
+      const qtyBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
+      const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
+      if (!existing) {
+        updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, qty, price, qtyBreakdown, grossIncome: gross, netIncome: gross }]);
+      } else {
+        updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx
+          ? { ...e, qty, price, qtyBreakdown, grossIncome: gross, netIncome: gross }
+          : e));
+      }
     }
-    setMonthForm({ month: "", qtyRows: [""], price: "" }); setShowAddMonth(false);
+    setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); setShowAddMonth(false);
   }
 
   function saveEdit() {
@@ -8384,7 +8390,7 @@ function BusinessPage({ data, update }) {
             </button>
           )}
           {selectedYear && !selectedMonth && (
-            <button onClick={() => { setShowAddMonth(p => !p); setMonthForm({ month: "", qtyRows: [""], price: "" }); }} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            <button onClick={() => { setShowAddMonth(p => !p); setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); }} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
               {showAddMonth ? "✕ Cancel" : "+ Add Month"}
             </button>
           )}
@@ -8530,7 +8536,7 @@ function BusinessPage({ data, update }) {
                 <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>💡 Qty × Price = Gross</span>
                 {isDayWise ? "Set price — Gross is auto-calculated from daily quantities" : "Enter total quantity and price for the month"}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: isDayWise ? "1fr 1fr" : "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isDayWise ? "1fr 1fr" : "1fr 1fr", gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
                   <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
@@ -8538,59 +8544,63 @@ function BusinessPage({ data, update }) {
                     {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
-                {!isDayWise && (
+                {isDayWise && (
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Qty (units)</label>
-                      <button
-                        onClick={() => setMonthForm(p => ({ ...p, qtyRows: [...p.qtyRows, ""] }))}
-                        style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontWeight: 600 }}>
-                        + Add Row
-                      </button>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      {monthForm.qtyRows.map((val, idx) => (
-                        <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <input type="text" inputMode="decimal" placeholder={`e.g. 120`}
-                            value={val}
-                            onChange={e => {
-                              const v = e.target.value;
-                              if (v === "" || /^\d*\.?\d*$/.test(v)) {
-                                setMonthForm(p => {
-                                  const rows = [...p.qtyRows];
-                                  rows[idx] = v;
-                                  return { ...p, qtyRows: rows };
-                                });
-                              }
-                            }}
-                            style={{ width: "100%", boxSizing: "border-box" }} />
-                          {monthForm.qtyRows.length > 1 && (
-                            <button
-                              onClick={() => setMonthForm(p => ({ ...p, qtyRows: p.qtyRows.filter((_, i) => i !== idx) }))}
-                              style={{ flexShrink: 0, background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      {monthForm.qtyRows.length > 1 && (
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", textAlign: "right" }}>
-                          Total: <strong style={{ color: "#111" }}>{monthForm.qtyRows.reduce((s, v) => s + (parseFloat(v) || 0), 0)}</strong> units
-                        </div>
-                      )}
-                    </div>
+                    <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Price per unit (₹) *</label>
+                    <input type="text" inputMode="decimal" placeholder="e.g. 32"
+                      value={monthForm.rows[0]?.price || ""}
+                      onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[0] = { ...rows[0], price: v }; return { ...p, rows }; }); }}
+                      style={{ width: "100%", boxSizing: "border-box" }} />
                   </div>
                 )}
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Price per unit (₹) *</label>
-                  <input type="text" inputMode="decimal" placeholder="e.g. 32" value={monthForm.price}
-                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, price: v })); }}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
               </div>
-              {!isDayWise && monthForm.qtyRows.some(v => v !== "") && monthForm.price && (
-                <div style={{ marginTop: 10, padding: "8px 12px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 600 }}>
-                  Gross Income = {fmt(monthForm.qtyRows.reduce((s, v) => s + (parseFloat(v) || 0), 0) * parseFloat(monthForm.price))} ₹
+              {!isDayWise && (
+                <div style={{ marginTop: 12 }}>
+                  {/* Header row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 4, alignItems: "center" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Qty (units)</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Price per unit (₹)</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, textAlign: "right" }}>Subtotal</div>
+                    <div />
+                  </div>
+                  {/* Rows */}
+                  {monthForm.rows.map((row, idx) => {
+                    const subtotal = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
+                    return (
+                      <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                        <input type="text" inputMode="decimal" placeholder="e.g. 120"
+                          value={row.qty}
+                          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], qty: v }; return { ...p, rows }; }); }}
+                          style={{ width: "100%", boxSizing: "border-box" }} />
+                        <input type="text" inputMode="decimal" placeholder="e.g. 32"
+                          value={row.price}
+                          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], price: v }; return { ...p, rows }; }); }}
+                          style={{ width: "100%", boxSizing: "border-box" }} />
+                        <div style={{ fontSize: 12, fontWeight: 600, color: subtotal > 0 ? "#1a6b3c" : "var(--color-text-secondary)", whiteSpace: "nowrap", minWidth: 70, textAlign: "right" }}>
+                          {subtotal > 0 ? `₹${fmt(subtotal)}` : "—"}
+                        </div>
+                        {monthForm.rows.length > 1 ? (
+                          <button onClick={() => setMonthForm(p => ({ ...p, rows: p.rows.filter((_, i) => i !== idx) }))}
+                            style={{ flexShrink: 0, background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                            ×
+                          </button>
+                        ) : <div />}
+                      </div>
+                    );
+                  })}
+                  {/* Add row + gross total */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                    <button
+                      onClick={() => setMonthForm(p => ({ ...p, rows: [...p.rows, { qty: "", price: "" }] }))}
+                      style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                      + Add Row
+                    </button>
+                    {monthForm.rows.some(r => r.qty && r.price) && (
+                      <div style={{ padding: "6px 14px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 700 }}>
+                        Gross = ₹{fmt(monthForm.rows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
