@@ -8733,6 +8733,16 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+                {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
+                  <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{s.year} — Gross</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 2 }}>Net</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#4da6ff" }}>{fmtCur(s.totalNet)}</div>
+                  </div>
+                ))}
+              </div>
               {yearSummary.length > 1 && (
                 <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
                   <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Year-on-Year Performance</div>
