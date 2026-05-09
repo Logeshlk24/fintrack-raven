@@ -8397,29 +8397,28 @@ function BusinessPage({ data, update }) {
                             const newMonthIdx = MONTHS_ALL.indexOf(renamingDayMonthVal);
                             updateBizData(d => d.map(e => {
                               if (e.id !== selectedMonth) return e;
-                              // Regenerate the days array with correct dates for the new month,
-                              // preserving any recorded data (qty values, gross, net, note, etc.)
                               const yr = e.year;
                               const mIdx = newMonthIdx !== -1 ? newMonthIdx : e.monthIndex;
                               const daysInNewMonth = new Date(yr, mIdx + 1, 0).getDate();
                               const oldDays = e.days || [];
-                              // Build a map from day-number → old day data (for data preservation)
+                              // Map old days by day-number so we can reuse recorded data
                               const oldByDayNum = {};
                               oldDays.forEach(od => {
                                 const dn = parseInt(od.date.split("-")[2], 10);
                                 if (!isNaN(dn)) oldByDayNum[dn] = od;
                               });
+                              // Rebuild days array for the new month (correct dates, trimmed to valid days)
                               const newDays = Array.from({ length: daysInNewMonth }, (_, i) => {
                                 const dayNum = i + 1;
                                 const dateStr = `${yr}-${String(mIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
                                 const old = oldByDayNum[dayNum];
-                                if (old) {
-                                  // Keep all recorded data, just update the date string
-                                  return { ...old, date: dateStr };
-                                }
+                                if (old) return { ...old, date: dateStr };
                                 return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
                               });
-                              return { ...e, month: renamingDayMonthVal, monthIndex: mIdx, days: newDays };
+                              // Recompute gross & net from the trimmed days
+                              const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
+                              const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
+                              return { ...e, month: renamingDayMonthVal, monthIndex: mIdx, days: newDays, grossIncome: newGross, netIncome: newNet };
                             }));
                             setRenamingDayMonth(false);
                           }} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "3px 12px", cursor: "pointer", fontSize: 13, color: "#fff", fontWeight: 600 }}>✓</button>
