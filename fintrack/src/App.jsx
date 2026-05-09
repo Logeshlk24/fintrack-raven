@@ -8004,7 +8004,17 @@ function BusinessPage({ data, update }) {
 
   function addMonthEntry() {
     const monthIdx = MONTHS.indexOf(monthForm.month);
-    if (monthIdx === -1 || !monthForm.grossIncome || !monthForm.netIncome) return;
+    if (monthIdx === -1) return;
+    // Day-wise mode: month is just a folder, gross/net start at 0 and are filled by daily entries
+    if (isDayWise) {
+      const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
+      if (!existing) {
+        updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, days: [] }]);
+      }
+      setMonthForm({ month: "", grossIncome: "", netIncome: "" }); setShowAddMonth(false);
+      return;
+    }
+    if (!monthForm.grossIncome || !monthForm.netIncome) return;
     const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
     if (existing) {
       updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx
@@ -8440,8 +8450,16 @@ function BusinessPage({ data, update }) {
           {/* Add Month form */}
           {showAddMonth && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Month Data</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                {isDayWise ? "Create Month Folder" : "Add Month Data"}
+              </div>
+              {isDayWise && (
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12, marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>📅 Day-wise ON</span>
+                  Gross &amp; Net will be auto-calculated from daily entries
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: isDayWise ? "1fr" : "1fr 1fr 1fr", gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
                   <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
@@ -8449,20 +8467,26 @@ function BusinessPage({ data, update }) {
                     {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹) *</label>
-                  <input type="text" inputMode="decimal" placeholder="e.g. 500000" value={monthForm.grossIncome}
-                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, grossIncome: v })); }}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹) *</label>
-                  <input type="text" inputMode="decimal" placeholder="e.g. 300000" value={monthForm.netIncome}
-                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, netIncome: v })); }}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
+                {!isDayWise && (
+                  <>
+                    <div>
+                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹) *</label>
+                      <input type="text" inputMode="decimal" placeholder="e.g. 500000" value={monthForm.grossIncome}
+                        onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, grossIncome: v })); }}
+                        style={{ width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹) *</label>
+                      <input type="text" inputMode="decimal" placeholder="e.g. 300000" value={monthForm.netIncome}
+                        onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, netIncome: v })); }}
+                        style={{ width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                  </>
+                )}
               </div>
-              <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>+ Add Month</button>
+              <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+                {isDayWise ? "📁 Create Month Folder" : "+ Add Month"}
+              </button>
             </div>
           )}
 
