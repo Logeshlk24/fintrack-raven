@@ -90,6 +90,7 @@ const defaultData = {
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
+  billAttachments: [], // { monthId, fileName, fileUrl, fileId, uploadDate }
 };
 
 
@@ -8977,6 +8978,83 @@ function BusinessPage({ data, update }) {
                             onFocus={ev=>{ev.target.style.border="1.5px solid #e55";ev.target.style.background="#fff";}}
                             onBlurCapture={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
                         </div>
+                        {/* Bill Attachment Section */}
+                        <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
+                          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                            <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
+                          </div>
+                          {(() => {
+                            const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
+                            return (
+                              <>
+                                {bills.length > 0 && (
+                                  <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
+                                    {bills.map((bill,idx) => (
+                                      <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
+                                        <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
+                                          <span>📄</span>
+                                          <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
+                                        </div>
+                                        <div style={{ display:"flex",gap:4,flexShrink:0 }}>
+                                          <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                            style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
+                                            View
+                                          </button>
+                                          <button onClick={() => {
+                                            setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                          }}
+                                            style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
+                                            ×
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <input
+                                  type="file"
+                                  id={`bill-upload-${entry.id}`}
+                                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                  style={{ display:"none" }}
+                                  onChange={async (ev) => {
+                                    const file = ev.target.files?.[0];
+                                    if (!file) return;
+                                    
+                                    const driveContext = React.useContext(DriveContext);
+                                    if (!driveContext?.uploadFileToDrive) {
+                                      alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                                      return;
+                                    }
+
+                                    try {
+                                      const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                                      if (result?.id && result?.webViewLink) {
+                                        const newBill = {
+                                          monthId: entry.id,
+                                          fileName: file.name,
+                                          fileUrl: result.webViewLink,
+                                          fileId: result.id,
+                                          uploadDate: new Date().toISOString()
+                                        };
+                                        setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                        alert("Bill uploaded successfully!");
+                                      }
+                                    } catch (err) {
+                                      console.error("Upload failed:", err);
+                                      alert("Failed to upload bill. Please try again.");
+                                    }
+                                    ev.target.value = "";
+                                  }}
+                                />
+                                <label htmlFor={`bill-upload-${entry.id}`}
+                                  style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
+                                  <span>📎</span>
+                                  <span>Attach Bill</span>
+                                </label>
+                              </>
+                            );
+                          })()}
+                        </div>
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 }}>
                           <span style={{color:"#4da6ff",fontWeight:600}}>Net Income</span>
                           <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
@@ -9261,6 +9339,83 @@ function BusinessPage({ data, update }) {
                     onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
                   />
                 </div>
+                {/* Bill Attachment Section */}
+                <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
+                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                    <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
+                  </div>
+                  {(() => {
+                    const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
+                    return (
+                      <>
+                        {bills.length > 0 && (
+                          <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
+                            {bills.map((bill,idx) => (
+                              <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
+                                <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
+                                  <span>📄</span>
+                                  <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
+                                </div>
+                                <div style={{ display:"flex",gap:4,flexShrink:0 }}>
+                                  <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                    style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
+                                    View
+                                  </button>
+                                  <button onClick={() => {
+                                    setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                  }}
+                                    style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
+                                    ×
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          id={`bill-upload-detail-${entry.id}`}
+                          accept=".pdf,.jpg,.jpeg,.png,.webp"
+                          style={{ display:"none" }}
+                          onChange={async (ev) => {
+                            const file = ev.target.files?.[0];
+                            if (!file) return;
+                            
+                            const driveContext = React.useContext(DriveContext);
+                            if (!driveContext?.uploadFileToDrive) {
+                              alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                              return;
+                            }
+
+                            try {
+                              const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                              if (result?.id && result?.webViewLink) {
+                                const newBill = {
+                                  monthId: entry.id,
+                                  fileName: file.name,
+                                  fileUrl: result.webViewLink,
+                                  fileId: result.id,
+                                  uploadDate: new Date().toISOString()
+                                };
+                                setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                alert("Bill uploaded successfully!");
+                              }
+                            } catch (err) {
+                              console.error("Upload failed:", err);
+                              alert("Failed to upload bill. Please try again.");
+                            }
+                            ev.target.value = "";
+                          }}
+                        />
+                        <label htmlFor={`bill-upload-detail-${entry.id}`}
+                          style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
+                          <span>📎</span>
+                          <span>Attach Bill</span>
+                        </label>
+                      </>
+                    );
+                  })()}
+                </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
                   <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
                   <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
@@ -9407,6 +9562,89 @@ function BusinessPage({ data, update }) {
                 </div>
               );
             })()}
+
+            {/* Bill Attachment Section for Day-wise Mode */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+                <span style={{fontWeight:500,fontSize:14}}>📎 Bill Attachments</span>
+              </div>
+              {(() => {
+                const bills = (data.billAttachments || []).filter(b => b.monthId === activeMonthEntry.id);
+                return (
+                  <>
+                    {bills.length > 0 && (
+                      <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:10 }}>
+                        {bills.map((bill,idx) => (
+                          <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"8px 12px",borderRadius:8,fontSize:12 }}>
+                            <div style={{ display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0 }}>
+                              <span style={{fontSize:16}}>📄</span>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</div>
+                                <div style={{ fontSize:10,color:"var(--color-text-secondary)",marginTop:2 }}>
+                                  {new Date(bill.uploadDate).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display:"flex",gap:6,flexShrink:0 }}>
+                              <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:500 }}>
+                                View
+                              </button>
+                              <button onClick={() => {
+                                setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                              }}
+                                style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600 }}>
+                                ×
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      id={`bill-upload-daywise-${activeMonthEntry.id}`}
+                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      style={{ display:"none" }}
+                      onChange={async (ev) => {
+                        const file = ev.target.files?.[0];
+                        if (!file) return;
+                        
+                        const driveContext = React.useContext(DriveContext);
+                        if (!driveContext?.uploadFileToDrive) {
+                          alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                          return;
+                        }
+
+                        try {
+                          const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${activeMonthEntry.month}`);
+                          if (result?.id && result?.webViewLink) {
+                            const newBill = {
+                              monthId: activeMonthEntry.id,
+                              fileName: file.name,
+                              fileUrl: result.webViewLink,
+                              fileId: result.id,
+                              uploadDate: new Date().toISOString()
+                            };
+                            setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                            alert("Bill uploaded successfully!");
+                          }
+                        } catch (err) {
+                          console.error("Upload failed:", err);
+                          alert("Failed to upload bill. Please try again.");
+                        }
+                        ev.target.value = "";
+                      }}
+                    />
+                    <label htmlFor={`bill-upload-daywise-${activeMonthEntry.id}`}
+                      style={{ display:"inline-flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500 }}>
+                      <span>📎</span>
+                      <span>Attach Bill</span>
+                    </label>
+                  </>
+                );
+              })()}
+            </div>
 
             {/* Inline editable daily table */}
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
