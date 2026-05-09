@@ -8729,7 +8729,11 @@ function BusinessPage({ data, update }) {
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
                     <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
                     <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
+                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(s.totalNet)}</span>
+                    </div>
                   </div>
                 ))}
               </div>
