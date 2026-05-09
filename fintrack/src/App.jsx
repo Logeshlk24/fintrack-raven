@@ -7957,7 +7957,8 @@ function BusinessPage({ data, update }) {
   const [billModal,    setBillModal]    = useState(null);
   const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
   const [renamingYear, setRenamingYear] = useState(null); // { year, value }
-  const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id
+  const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id (day-wise)
+  const [selectedNonDayMonth, setSelectedNonDayMonth] = useState(null); // monthEntry id (non-day-wise detail)
   const [showAddDay,   setShowAddDay]   = useState(false);
   const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
 
@@ -8063,7 +8064,7 @@ function BusinessPage({ data, update }) {
   function addYear() {
     const y = parseInt(newYear);
     if (!y || years.includes(y)) return;
-    setSelectedYear(y); setShowAddYear(false); setNewYear(""); setSelectedMonth(null);
+    setSelectedYear(y); setShowAddYear(false); setNewYear(""); setSelectedMonth(null); setSelectedNonDayMonth(null);
   }
 
   function addMonthEntry() {
@@ -8348,10 +8349,10 @@ function BusinessPage({ data, update }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {selectedBiz && !selectedYear && (
-            <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
+            <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
           )}
           {selectedYear && !selectedMonth && (
-            <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
+            <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
           )}
           {selectedMonth && isDayWise && (
             <button onClick={() => { setSelectedMonth(null); setShowAddDay(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Months</button>
@@ -8643,9 +8644,9 @@ function BusinessPage({ data, update }) {
                   const gross = e.grossIncome || 0;
                   return (
                     <div key={e.id}
-                      onClick={() => { if (isDayWise) { setSelectedMonth(e.id); setShowAddDay(false); } }}
-                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: isDayWise ? "pointer" : "default", borderTop: "3px solid #4da6ff", position: "relative" }}
-                      onMouseEnter={ev => { if (isDayWise) ev.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; }}
+                      onClick={() => { if (isDayWise) { setSelectedMonth(e.id); setShowAddDay(false); } else { setSelectedNonDayMonth(e.id); } }}
+                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: "pointer", borderTop: "3px solid #4da6ff", position: "relative" }}
+                      onMouseEnter={ev => { ev.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; }}
                       onMouseLeave={ev => ev.currentTarget.style.boxShadow = "none"}>
                       {/* Delete btn */}
                       <button onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
@@ -8697,79 +8698,19 @@ function BusinessPage({ data, update }) {
                         </>
                       ) : (
                         <>
-                          {/* Non-day-wise: inline editable Qty + Price + auto Gross */}
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ color: "var(--color-text-secondary)", minWidth: 36 }}>Qty</span>
-                              <input
-                                type="text" inputMode="decimal"
-                                key={`qty-${e.id}-${e.qty}`}
-                                defaultValue={e.qty != null ? String(e.qty) : ""}
-                                placeholder="—"
-                                onClick={ev => ev.stopPropagation()}
-                                onBlur={ev => {
-                                  ev.stopPropagation();
-                                  const qty = ev.target.value.trim() === "" ? null : parseFloat(ev.target.value.trim());
-                                  const price = e.price || 0;
-                                  const newGross = qty != null ? qty * price : 0;
-                                  const spending = en && en.spending || 0;
-                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, qty, grossIncome: newGross, netIncome: newGross - (en.spending || 0) }));
-                                }}
-                                style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
-                                onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }}
-                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
-                              />
-                              <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>units</span>
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ color: "var(--color-text-secondary)", minWidth: 36 }}>Price</span>
-                              <input
-                                type="text" inputMode="decimal"
-                                key={`price-${e.id}-${e.price}`}
-                                defaultValue={e.price != null ? String(e.price) : ""}
-                                placeholder="₹ / unit"
-                                onClick={ev => ev.stopPropagation()}
-                                onBlur={ev => {
-                                  ev.stopPropagation();
-                                  const price = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
-                                  const qty = e.qty || 0;
-                                  const newGross = qty * price;
-                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, price, grossIncome: newGross, netIncome: newGross - (en.spending || 0) }));
-                                }}
-                                style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }}
-                                onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }}
-                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
-                              />
-                              <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>₹</span>
-                            </div>
-                            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          {/* Non-day-wise: show only Gross & Net — click card to open detail */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, marginTop: 4 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
-                              <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 15 }}>{fmtCur(gross)}</span>
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ color: "var(--color-text-secondary)", minWidth: 36 }}>Spend</span>
-                              <input
-                                type="text" inputMode="decimal"
-                                key={`spend-${e.id}-${e.spending}`}
-                                defaultValue={e.spending != null ? String(e.spending) : ""}
-                                placeholder="0"
-                                onClick={ev => ev.stopPropagation()}
-                                onBlur={ev => {
-                                  ev.stopPropagation();
-                                  const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
-                                  const netIncome = (e.grossIncome || 0) - spending;
-                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, spending, netIncome }));
-                                }}
-                                style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#e55", outline: "none" }}
-                                onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
-                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
-                              />
-                              <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>₹</span>
+                              <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
                             </div>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
-                              <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 15 }}>{fmtCur(e.netIncome || 0)}</span>
+                              <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(e.netIncome || 0)}</span>
                             </div>
+                          </div>
+                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, textAlign: "center" }}>
+                            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>📂 Click to view details</span>
                           </div>
                         </>
                       )}
@@ -8781,6 +8722,77 @@ function BusinessPage({ data, update }) {
           )}
         </>
       )}
+
+      {/* ── Non-day-wise Month Detail Panel ── */}
+      {selectedNonDayMonth && !isDayWise && (() => {
+        const entry = bizData.find(e => e.id === selectedNonDayMonth);
+        if (!entry) return null;
+        const gross = entry.grossIncome || 0;
+        const net   = entry.netIncome || 0;
+        const breakdown = entry.qtyBreakdown || (entry.qty != null ? [{ qty: entry.qty, price: entry.price || 0 }] : []);
+        return (
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginTop: 4 }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={() => setSelectedNonDayMonth(null)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
+                <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+              </div>
+              <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
+            </div>
+
+            {/* Qty × Price breakdown table */}
+            {breakdown.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+                  <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>Qty (units)</div>
+                  <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" }}>Price (₹)</div>
+                  <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" }}>Subtotal</div>
+                  {breakdown.map((row, idx) => (
+                    <React.Fragment key={idx}>
+                      <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" }}>units</span></div>
+                      <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
+                      <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty * row.price)}</div>
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Gross / Spend / Net */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 }}>
+                <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Gross Income</span>
+                <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" }}>
+                <span style={{ color: "var(--color-text-secondary)" }}>Spend (₹)</span>
+                <input
+                  type="text" inputMode="decimal"
+                  key={`detail-spend-${entry.id}-${entry.spending}`}
+                  defaultValue={entry.spending != null ? String(entry.spending) : ""}
+                  placeholder="0"
+                  onBlur={ev => {
+                    const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
+                    const netIncome = (entry.grossIncome || 0) - spending;
+                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, spending, netIncome }));
+                  }}
+                  style={{ width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
+                  onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
+                  onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
+                <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
+                <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── LEVEL 3: Day entries inside a month (Day-wise mode only) ── */}
       {selectedMonth && activeMonthEntry && isDayWise && (() => {
