@@ -90,6 +90,7 @@ const defaultData = {
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
+  billAttachments: [], // { monthId, fileName, fileUrl, fileId, uploadDate }
 };
 
 
@@ -7894,6 +7895,50 @@ function PercentageCalculator() {
   );
 }
 
+function PriceEditor({ monthEntry, onSave }) {
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(String(monthEntry.price || ""));
+
+  function handleSave() {
+    const p = parseFloat(val);
+    if (!isNaN(p) && p > 0) { onSave(p); setEditing(false); }
+  }
+
+  return (
+    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1.1rem", marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 22 }}>💰</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Price per unit — {monthEntry.month}</div>
+        {editing ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input autoFocus type="text" inputMode="decimal" value={val}
+              onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setVal(v); }}
+              onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+              style={{ width: 120, boxSizing: "border-box", fontSize: 14, fontWeight: 600 }}
+              placeholder="e.g. 32" />
+            <button onClick={handleSave} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Save</button>
+            <button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20, fontWeight: 700, color: "#1a6b3c" }}>
+              {monthEntry.price ? fmtCur(monthEntry.price) : <span style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>Not set</span>}
+            </span>
+            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>per unit</span>
+            <button onClick={() => { setVal(String(monthEntry.price || "")); setEditing(true); }}
+              style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️ Edit Price</button>
+          </div>
+        )}
+      </div>
+      {monthEntry.price && (
+        <div style={{ background: "#e8f5ee", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#1a6b3c" }}>
+          Gross = Qty × ₹{fmt(monthEntry.price)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BusinessPage({ data, update }) {
   // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
   // Migrate legacy flat businessData into first business if needed
@@ -7908,11 +7953,19 @@ function BusinessPage({ data, update }) {
   const [showAddYear,  setShowAddYear]  = useState(false);
   const [newYear,      setNewYear]      = useState("");
   const [showAddMonth, setShowAddMonth] = useState(false);
-  const [monthForm,    setMonthForm]    = useState({ month: "", grossIncome: "", netIncome: "" });
+  const [monthForm,    setMonthForm]    = useState({ month: "", rows: [{ qty: "", price: "" }] });
   const [editEntry,    setEditEntry]    = useState(null);
   const [billModal,    setBillModal]    = useState(null);
   const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
   const [renamingYear, setRenamingYear] = useState(null); // { year, value }
+  const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id (day-wise)
+  const [selectedNonDayMonth, setSelectedNonDayMonth] = useState(null); // monthEntry id (non-day-wise detail)
+  const [renamingDayMonth, setRenamingDayMonth] = useState(false); // day-wise month rename
+  const [renamingDayMonthVal, setRenamingDayMonthVal] = useState("");
+  const [showAddDay,   setShowAddDay]   = useState(false);
+  const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
+  const [showLiabilitiesSection, setShowLiabilitiesSection] = useState(false);
+  const [bizLiabForm, setBizLiabForm] = useState({ name: "", amount: "" });
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -7928,6 +7981,58 @@ function BusinessPage({ data, update }) {
     return { year: yr, totalGross: entries.reduce((s, e) => s + (e.grossIncome || 0), 0), totalNet: entries.reduce((s, e) => s + (e.netIncome || 0), 0), months: entries.length };
   });
 
+  // ── Day-wise helpers ─────────────────────────────────────────────────────
+  const isDayWise = activeBiz?.dayWise === true;
+  const activeMonthEntry = selectedMonth ? bizData.find(e => e.id === selectedMonth) : null;
+  const dayEntries = activeMonthEntry ? (activeMonthEntry.days || []).sort((a, b) => a.date.localeCompare(b.date)) : [];
+
+  function toggleDayWise() {
+    if (!activeBiz) return;
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, dayWise: !b.dayWise } : b) }));
+  }
+
+  function addDayEntry() {
+    if (!dayForm.date || !dayForm.quantity) return;
+    const qty   = parseFloat(dayForm.quantity);
+    const price = activeMonthEntry?.price || 0;
+    const gross = qty * price;
+    const net   = dayForm.netIncome !== "" ? parseFloat(dayForm.netIncome) : gross;
+    const dayId = "day_" + Date.now();
+    updateBizData(d => d.map(e => {
+      if (e.id !== selectedMonth) return e;
+      const days = [...(e.days || []), { id: dayId, date: dayForm.date, quantity: qty, grossIncome: gross, netIncome: net, note: dayForm.note }];
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+    }));
+    setDayForm({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
+    setShowAddDay(false);
+  }
+
+  function deleteDayEntry(dayId) {
+    updateBizData(d => d.map(e => {
+      if (e.id !== selectedMonth) return e;
+      const days = (e.days || []).filter(d => d.id !== dayId);
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+    }));
+  }
+
+  function updateDayQty(dayId, qtyStr, field = "qty1") {
+    const qty = qtyStr === "" || qtyStr == null ? null : parseFloat(qtyStr);
+    updateBizData(d => d.map(e => {
+      if (e.id !== selectedMonth) return e;
+      const price = e.price || 0;
+      const days = (e.days || []).map(d => {
+        if (d.id !== dayId) return d;
+        const updated = { ...d, [field]: qty };
+        const q1 = field === "qty1" ? qty : (updated.qty1 != null ? updated.qty1 : (updated.quantity != null && updated.qty2 == null ? updated.quantity : null));
+        const q2 = field === "qty2" ? qty : (updated.qty2 ?? null);
+        const totalQty = (q1 != null || q2 != null) ? ((q1 || 0) + (q2 || 0)) : null;
+        const gross = totalQty != null ? totalQty * price : 0;
+        return { ...updated, quantity: totalQty, grossIncome: gross, netIncome: gross };
+      });
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+    }));
+  }
+
   function updateBizData(fn) {
     if (!activeBiz) return;
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fn(b.data || []) } : b) }));
@@ -7938,10 +8043,48 @@ function BusinessPage({ data, update }) {
   function deleteEntry(id) {
     updateBizData(d => d.filter(e => e.id !== id));
   }
+
+  // ── Auto-repair: silently fix any day-wise month whose date strings don't match its monthIndex ──
+  // Runs whenever a business is opened. No-ops if all dates are already correct.
+  useEffect(() => {
+    if (!activeBiz) return;
+    const MONTHS_ALL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const entries = activeBiz.data || [];
+    let needsFix = false;
+    const fixed = entries.map(e => {
+      if (!e.days || e.days.length === 0) return e;
+      const mIdx = e.monthIndex != null ? e.monthIndex : MONTHS_ALL.indexOf(e.month);
+      if (mIdx < 0 || mIdx > 11) return e;
+      const yr = e.year;
+      const expectedM = String(mIdx + 1).padStart(2, "0");
+      const daysInMonth = new Date(yr, mIdx + 1, 0).getDate();
+      const hasBad = e.days.some(d => {
+        const p = (d.date || "").split("-");
+        return p.length !== 3 || p[1] !== expectedM || parseInt(p[2], 10) > daysInMonth;
+      });
+      if (!hasBad) return e;
+      needsFix = true;
+      const byDayNum = {};
+      e.days.forEach(od => { const n = parseInt((od.date || "").split("-")[2], 10); if (n >= 1 && n <= 31) byDayNum[n] = od; });
+      const newDays = Array.from({ length: daysInMonth }, (_, i) => {
+        const n = i + 1;
+        const ds = `${yr}-${expectedM}-${String(n).padStart(2, "0")}`;
+        const old = byDayNum[n];
+        return old ? { ...old, date: ds } : { id: `day_${ds}`, date: ds, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+      });
+      const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
+      const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
+      return { ...e, days: newDays, grossIncome: newGross, netIncome: newNet };
+    });
+    if (needsFix) {
+      update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fixed } : b) }));
+    }
+  }, [selectedBiz]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function deleteYear(yr) {
     if (!confirm(`Delete all data for ${yr}?`)) return;
     updateBizData(d => d.filter(e => e.year !== yr));
-    if (selectedYear === yr) setSelectedYear(null);
+    if (selectedYear === yr) { setSelectedYear(null); setSelectedMonth(null); }
   }
 
   function addBusiness() {
@@ -7954,8 +8097,25 @@ function BusinessPage({ data, update }) {
   function deleteBusiness(id) {
     if (!confirm("Delete this business and all its data?")) return;
     update(p => ({ businesses: (p.businesses || []).filter(b => b.id !== id) }));
-    if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); }
+    if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); }
   }
+
+  // ── Business Liabilities helpers ─────────────────────────────────────────
+  function addBizLiability(bizId) {
+    const name = bizLiabForm.name.trim();
+    const amount = parseFloat(bizLiabForm.amount);
+    if (!name || isNaN(amount) || amount <= 0) return;
+    const newLiab = { id: "liab_" + Date.now(), name, amount, paid: false };
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: [...(b.liabilities || []), newLiab] } : b) }));
+    setBizLiabForm({ name: "", amount: "" });
+  }
+  function deleteBizLiability(bizId, liabId) {
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: (b.liabilities || []).filter(l => l.id !== liabId) } : b) }));
+  }
+  function toggleBizLiabilityPaid(bizId, liabId) {
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: (b.liabilities || []).map(l => l.id === liabId ? { ...l, paid: !l.paid } : l) } : b) }));
+  }
+
   function renameBusiness(id, newName) {
     const n = newName.trim(); if (!n) return;
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, name: n } : b) }));
@@ -7964,20 +8124,34 @@ function BusinessPage({ data, update }) {
   function addYear() {
     const y = parseInt(newYear);
     if (!y || years.includes(y)) return;
-    setSelectedYear(y); setShowAddYear(false); setNewYear("");
+    setSelectedYear(y); setShowAddYear(false); setNewYear(""); setSelectedMonth(null); setSelectedNonDayMonth(null);
   }
 
   function addMonthEntry() {
     const monthIdx = MONTHS.indexOf(monthForm.month);
-    if (monthIdx === -1 || !monthForm.grossIncome || !monthForm.netIncome) return;
-    const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
-    if (existing) {
-      updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx
-        ? { ...e, grossIncome: parseFloat(monthForm.grossIncome), netIncome: parseFloat(monthForm.netIncome) } : e));
+    if (monthIdx === -1) return;
+    // Never overwrite an existing month — dropdown already blocks it, but guard here too
+    const alreadyExists = bizData.some(e => e.year === selectedYear && e.month === monthForm.month);
+    if (alreadyExists) return;
+    if (isDayWise) {
+      const price = parseFloat(monthForm.rows[0]?.price) || 0;
+      const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
+      const days = Array.from({ length: daysInMonth }, (_, i) => {
+        const dayNum = i + 1;
+        const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+        return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+      });
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
     } else {
-      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: parseFloat(monthForm.grossIncome), netIncome: parseFloat(monthForm.netIncome) }]);
+      const filledRows = monthForm.rows.filter(r => r.qty !== "" && r.price !== "");
+      if (filledRows.length === 0) return;
+      const gross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
+      const qty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0) || null;
+      const price = parseFloat(filledRows[0].price) || 0;
+      const qtyBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, qty, price, qtyBreakdown, grossIncome: gross, netIncome: gross }]);
     }
-    setMonthForm({ month: "", grossIncome: "", netIncome: "" }); setShowAddMonth(false);
+    setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); setShowAddMonth(false);
   }
 
   function saveEdit() {
@@ -8223,11 +8397,14 @@ function BusinessPage({ data, update }) {
       {/* ── HEADER / BREADCRUMB ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {selectedBiz && (
-            <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
+          {selectedBiz && !selectedYear && (
+            <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
           )}
-          {selectedYear && (
-            <button onClick={() => setSelectedYear(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
+          {selectedYear && !selectedMonth && (
+            <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
+          )}
+          {selectedMonth && isDayWise && (
+            <button onClick={() => { setSelectedMonth(null); setShowAddDay(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Months</button>
           )}
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
             {!selectedBiz ? "Business"
@@ -8240,10 +8417,69 @@ function BusinessPage({ data, update }) {
                         style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 }} />
                     : <><span>{activeBiz?.name}</span><button onClick={() => setRenamingBiz({ id: selectedBiz, value: activeBiz?.name || "" })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Rename">✏️</button></>
                   )
-                : `${activeBiz?.name} · ${selectedYear}`}
+                : !selectedMonth
+                  ? `${activeBiz?.name} · ${selectedYear}`
+                  : <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {activeBiz?.name} · {selectedYear} ·{" "}
+                      {renamingDayMonth ? (
+                        <>
+                          <select autoFocus value={renamingDayMonthVal}
+                            onChange={e => setRenamingDayMonthVal(e.target.value)}
+                            style={{ fontSize: 16, fontFamily: "'DM Serif Display', serif", border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "2px 8px", outline: "none", background: "var(--color-background-secondary)" }}>
+                            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => {
+                              const usedByOther = yearEntries.some(e => e.month === m && e.id !== selectedMonth);
+                              return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
+                            })}
+                          </select>
+                          <button onClick={() => {
+                            const MONTHS_ALL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                            const newMIdx = MONTHS_ALL.indexOf(renamingDayMonthVal);
+                            updateBizData(d => d.map(e => {
+                              if (e.id !== selectedMonth) return e;
+                              const yr = e.year;
+                              const mIdx = newMIdx !== -1 ? newMIdx : e.monthIndex;
+                              const expectedM = String(mIdx + 1).padStart(2, "0");
+                              const daysInMonth = new Date(yr, mIdx + 1, 0).getDate();
+                              const byDayNum = {};
+                              (e.days || []).forEach(od => { const n = parseInt((od.date || "").split("-")[2], 10); if (n >= 1) byDayNum[n] = od; });
+                              const newDays = Array.from({ length: daysInMonth }, (_, i) => {
+                                const n = i + 1;
+                                const ds = `${yr}-${expectedM}-${String(n).padStart(2, "0")}`;
+                                const old = byDayNum[n];
+                                return old ? { ...old, date: ds } : { id: `day_${ds}`, date: ds, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+                              });
+                              const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
+                              const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
+                              return { ...e, month: renamingDayMonthVal, monthIndex: mIdx, days: newDays, grossIncome: newGross, netIncome: newNet };
+                            }));
+                            setRenamingDayMonth(false);
+                          }} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "3px 12px", cursor: "pointer", fontSize: 13, color: "#fff", fontWeight: 600 }}>✓</button>
+                          <button onClick={() => setRenamingDayMonth(false)}
+                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>✕</button>
+                        </>
+                      ) : (
+                        <>
+                          {activeMonthEntry?.month}
+                          <button onClick={() => { setRenamingDayMonthVal(activeMonthEntry?.month || ""); setRenamingDayMonth(true); }}
+                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Change month">✏️ Month</button>
+                        </>
+                      )}
+                    </span>}
           </h1>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {selectedBiz && !selectedMonth && (
+            <button onClick={toggleDayWise} title={isDayWise ? "Day-wise ON — click to disable" : "Enable day-wise tracking"}
+              style={{ background: isDayWise ? "#e8f5ee" : "var(--color-background-secondary)", color: isDayWise ? "#1a6b3c" : "var(--color-text-secondary)", border: isDayWise ? "0.5px solid #bbf7d0" : "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: isDayWise ? 600 : 400, display: "flex", alignItems: "center", gap: 5 }}>
+              📅 {isDayWise ? "Day-wise ON" : "Day-wise"}
+            </button>
+          )}
+          {selectedBiz && !selectedYear && (
+            <button onClick={() => setShowLiabilitiesSection(p => !p)}
+              style={{ background: showLiabilitiesSection ? "#fff5f5" : "var(--color-background-secondary)", color: showLiabilitiesSection ? "#c0392b" : "var(--color-text-secondary)", border: showLiabilitiesSection ? "0.5px solid #f5c0c0" : "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: showLiabilitiesSection ? 600 : 400, display: "flex", alignItems: "center", gap: 5 }}>
+              ⚖️ Liabilities
+            </button>
+          )}
           {!selectedBiz && (
             <button onClick={() => setShowAddBiz(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
               {showAddBiz ? "✕ Cancel" : "+ New Business"}
@@ -8254,10 +8490,15 @@ function BusinessPage({ data, update }) {
               {showAddYear ? "✕ Cancel" : "+ Add Year"}
             </button>
           )}
-          {selectedYear && (
-            <button onClick={() => setShowAddMonth(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+          {selectedYear && !selectedMonth && (
+            <button onClick={() => { setShowAddMonth(p => !p); setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); }} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
               {showAddMonth ? "✕ Cancel" : "+ Add Month"}
             </button>
+          )}
+          {selectedMonth && isDayWise && (
+            <span style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 8, padding: "6px 13px", fontWeight: 500 }}>
+              📝 Type qty in each row
+            </span>
           )}
         </div>
       </div>
@@ -8286,8 +8527,13 @@ function BusinessPage({ data, update }) {
                 const bizYears = [...new Set((biz.data || []).map(e => e.year))];
                 const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
                 const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
+                const bizLiabilities = biz.liabilities || [];
+                const paidLiab   = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                const unpaidLiab = bizLiabilities.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                const finalNet   = totalNet - paidLiab - unpaidLiab;
+                const hasLiab    = bizLiabilities.length > 0;
                 return (
-                  <div key={biz.id} onClick={() => { if (!renamingBiz) setSelectedBiz(biz.id); }}
+                  <div key={biz.id} onClick={() => { if (!renamingBiz) { setSelectedBiz(biz.id); setShowLiabilitiesSection(false); } }}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
@@ -8309,10 +8555,41 @@ function BusinessPage({ data, update }) {
                       <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
                     )}
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
-                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(totalNet)}</span>
+
+                    {/* Gross row — always shown */}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                      <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(totalGross)}</span>
                     </div>
+
+                    {/* Net row */}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: hasLiab ? 4 : 0 }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                      <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(totalNet)}</span>
+                    </div>
+
+                    {/* Liabilities breakdown — shown only if any liabilities exist */}
+                    {hasLiab && (
+                      <>
+                        <div style={{ borderTop: "0.5px dashed var(--color-border-tertiary)", margin: "6px 0" }} />
+                        {paidLiab > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ color: "#c0392b" }}>Liabilities (paid)</span>
+                            <span style={{ color: "#c0392b", fontWeight: 600 }}>-{fmtCur(paidLiab)}</span>
+                          </div>
+                        )}
+                        {unpaidLiab > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ color: "#f59e0b" }}>Liabilities (pending)</span>
+                            <span style={{ color: "#f59e0b", fontWeight: 500 }}>{fmtCur(unpaidLiab)}</span>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 5, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 2 }}>
+                          <span style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>Final Net</span>
+                          <span style={{ fontWeight: 700, color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", fontSize: 14 }}>{fmtCur(finalNet)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -8338,6 +8615,104 @@ function BusinessPage({ data, update }) {
               <button onClick={addYear} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create Year</button>
             </div>
           )}
+
+          {/* ── Liabilities Section (inline panel) ── */}
+          {showLiabilitiesSection && activeBiz && (() => {
+            const bizLiabs = activeBiz.liabilities || [];
+            const totalNet = bizData.reduce((s, e) => s + (e.netIncome || 0), 0);
+            const paidTotal = bizLiabs.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+            const unpaidTotal = bizLiabs.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+            const finalNet = totalNet - paidTotal;
+            return (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid #f5c0c0", padding: "1.25rem 1.4rem", marginBottom: 16, borderTop: "3px solid #c0392b" }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>⚖️ Liabilities — {activeBiz.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "3px 9px" }}>
+                    💡 Mark as Paid → deducted from Net Income
+                  </div>
+                </div>
+
+                {/* Summary tiles */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
+                  {[
+                    { label: "Net Income", val: fmtCur(totalNet), color: "#4da6ff", bg: "#f0f7ff" },
+                    { label: "Paid Liabilities", val: paidTotal > 0 ? "-" + fmtCur(paidTotal) : fmtCur(0), color: "#c0392b", bg: "#fff5f5" },
+                    { label: "Final Net Income", val: fmtCur(finalNet), color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", bg: finalNet >= 0 ? "#f0faf4" : "#fff5f5" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: c.bg, borderRadius: 10, padding: "0.75rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Liabilities list */}
+                {bizLiabs.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, padding: "1.5rem 0", borderTop: "0.5px dashed var(--color-border-tertiary)", borderBottom: "0.5px dashed var(--color-border-tertiary)", marginBottom: 16 }}>
+                    No liabilities added yet. Use the form below to add one.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {/* Column headers */}
+                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div/>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Name</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Amount</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" }}>Status</div>
+                      <div/>
+                    </div>
+                    {bizLiabs.map(l => (
+                      <div key={l.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", background: l.paid ? "#f0faf4" : "#fff5f5", borderRadius: 9, padding: "9px 12px", border: "0.5px solid " + (l.paid ? "#bbf7d0" : "#f5c0c0"), transition: "all 0.15s" }}>
+                        {/* Paid checkbox */}
+                        <button onClick={() => toggleBizLiabilityPaid(activeBiz.id, l.id)}
+                          title={l.paid ? "Mark as Unpaid" : "Mark as Paid"}
+                          style={{ width: 26, height: 26, borderRadius: 6, border: "2px solid " + (l.paid ? "#1a6b3c" : "#c0392b"), background: l.paid ? "#1a6b3c" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#fff", flexShrink: 0, padding: 0, transition: "all 0.15s" }}>
+                          {l.paid ? "✓" : ""}
+                        </button>
+                        {/* Name */}
+                        <span style={{ fontSize: 13, fontWeight: 500, color: l.paid ? "#1a6b3c" : "#c0392b", textDecoration: l.paid ? "none" : "none" }}>{l.name}</span>
+                        {/* Amount */}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: l.paid ? "#1a6b3c" : "#c0392b", whiteSpace: "nowrap" }}>{l.paid ? "-" : ""}{fmtCur(l.amount)}</span>
+                        {/* Status badge */}
+                        <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 6, padding: "2px 8px", background: l.paid ? "#1a6b3c" : "#fff0f0", color: l.paid ? "#fff" : "#c0392b", border: "0.5px solid " + (l.paid ? "#1a6b3c" : "#f5c0c0"), whiteSpace: "nowrap" }}>
+                          {l.paid ? "✅ Paid" : "⏳ Pending"}
+                        </span>
+                        {/* Delete */}
+                        <button onClick={() => deleteBizLiability(activeBiz.id, l.id)}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 0 }}>🗑</button>
+                      </div>
+                    ))}
+                    {/* Totals row */}
+                    {bizLiabs.length > 0 && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, fontSize: 12, paddingTop: 8, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                        {unpaidTotal > 0 && <span style={{ color: "#c0392b" }}>Pending: {fmtCur(unpaidTotal)}</span>}
+                        {paidTotal > 0 && <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Deducted: -{fmtCur(paidTotal)}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Add form */}
+                <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--color-text-secondary)" }}>+ Add New Liability</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input placeholder="e.g. Rent, Worker Salary, Loan EMI" value={bizLiabForm.name}
+                      onChange={e => setBizLiabForm(p => ({ ...p, name: e.target.value }))}
+                      style={{ flex: 2, boxSizing: "border-box" }} />
+                    <input type="number" placeholder="Amount (₹)" value={bizLiabForm.amount}
+                      onChange={e => setBizLiabForm(p => ({ ...p, amount: e.target.value }))}
+                      onKeyDown={e => e.key === "Enter" && addBizLiability(activeBiz.id)}
+                      style={{ flex: 1, boxSizing: "border-box" }} />
+                    <button onClick={() => addBizLiability(activeBiz.id)}
+                      style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {yearSummary.length === 0 ? (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
               No years yet. Click "+ Add Year" to create your first year folder.
@@ -8384,34 +8759,91 @@ function BusinessPage({ data, update }) {
       )}
 
       {/* ── YEAR DRILL-DOWN ── */}
-      {selectedYear && (
+      {selectedYear && !selectedMonth && (
         <>
           {/* Add Month form */}
           {showAddMonth && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Month Data</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                📁 {isDayWise ? "Create Month Folder" : "Add Month"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12, marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>💡 Qty × Price = Gross</span>
+                {isDayWise ? "Set price — Gross is auto-calculated from daily quantities" : "Enter total quantity and price for the month"}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isDayWise ? "1fr 1fr" : "1fr 1fr", gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
                   <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
                     <option value="">Select month</option>
-                    {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                    {MONTHS.map(m => {
+                      const used = yearEntries.some(e => e.month === m);
+                      return <option key={m} value={m} disabled={used}>{m}{used ? " ✓ already added" : ""}</option>;
+                    })}
                   </select>
                 </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹) *</label>
-                  <input type="text" inputMode="decimal" placeholder="e.g. 500000" value={monthForm.grossIncome}
-                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, grossIncome: v })); }}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹) *</label>
-                  <input type="text" inputMode="decimal" placeholder="e.g. 300000" value={monthForm.netIncome}
-                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, netIncome: v })); }}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
+                {isDayWise && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Price per unit (₹) *</label>
+                    <input type="text" inputMode="decimal" placeholder="e.g. 32"
+                      value={monthForm.rows[0]?.price || ""}
+                      onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[0] = { ...rows[0], price: v }; return { ...p, rows }; }); }}
+                      style={{ width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                )}
               </div>
-              <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>+ Add Month</button>
+              {!isDayWise && (
+                <div style={{ marginTop: 12 }}>
+                  {/* Header row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 4, alignItems: "center" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Qty (units)</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Price per unit (₹)</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, textAlign: "right" }}>Subtotal</div>
+                    <div />
+                  </div>
+                  {/* Rows */}
+                  {monthForm.rows.map((row, idx) => {
+                    const subtotal = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
+                    return (
+                      <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                        <input type="text" inputMode="decimal" placeholder="e.g. 120"
+                          value={row.qty}
+                          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], qty: v }; return { ...p, rows }; }); }}
+                          style={{ width: "100%", boxSizing: "border-box" }} />
+                        <input type="text" inputMode="decimal" placeholder="e.g. 32"
+                          value={row.price}
+                          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], price: v }; return { ...p, rows }; }); }}
+                          style={{ width: "100%", boxSizing: "border-box" }} />
+                        <div style={{ fontSize: 12, fontWeight: 600, color: subtotal > 0 ? "#1a6b3c" : "var(--color-text-secondary)", whiteSpace: "nowrap", minWidth: 70, textAlign: "right" }}>
+                          {subtotal > 0 ? `₹${fmt(subtotal)}` : "—"}
+                        </div>
+                        {monthForm.rows.length > 1 ? (
+                          <button onClick={() => setMonthForm(p => ({ ...p, rows: p.rows.filter((_, i) => i !== idx) }))}
+                            style={{ flexShrink: 0, background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                            ×
+                          </button>
+                        ) : <div />}
+                      </div>
+                    );
+                  })}
+                  {/* Add row + gross total */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                    <button
+                      onClick={() => setMonthForm(p => ({ ...p, rows: [...p.rows, { qty: "", price: "" }] }))}
+                      style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                      + Add Row
+                    </button>
+                    {monthForm.rows.some(r => r.qty && r.price) && (
+                      <div style={{ padding: "6px 14px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 700 }}>
+                        Gross = ₹{fmt(monthForm.rows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+                {isDayWise ? "📁 Create Month Folder" : "✓ Add Month"}
+              </button>
             </div>
           )}
 
@@ -8436,92 +8868,883 @@ function BusinessPage({ data, update }) {
                 ))}
               </div>
 
-              {/* Chart */}
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+              {/* ── Non-day-wise detail panel — inline, replaces grid when open ── */}
+              {selectedNonDayMonth && !isDayWise && (() => {
+                const entry = bizData.find(e => e.id === selectedNonDayMonth);
+                if (!entry) return null;
+                const gross = entry.grossIncome || 0;
+                const net   = entry.netIncome   || 0;
+                const breakdown = entry.qtyBreakdown || (entry.qty != null ? [{ qty: entry.qty, price: entry.price || 0 }] : []);
+                function InlineDetailPanel() {
+                  const [editing, setEditing]           = React.useState(false);
+                  const [editRows, setEditRows]         = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
+                  const [renamingMonth, setRenamingMonth] = React.useState(false);
+                  const [editMonth, setEditMonth]       = React.useState(entry.month);
+                  const ML = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                  function saveMonthRename() {
+                    if (!editMonth || editMonth === entry.month) { setRenamingMonth(false); return; }
+                    const idx = ML.indexOf(editMonth);
+                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, month: editMonth, monthIndex: idx !== -1 ? idx : en.monthIndex }));
+                    setRenamingMonth(false);
+                  }
+                  function saveEdits() {
+                    const rows = editRows.filter(r => r.qty !== "" && r.price !== "");
+                    if (!rows.length) return;
+                    const newGross = rows.reduce((s, r) => s + (parseFloat(r.qty)||0)*(parseFloat(r.price)||0), 0);
+                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, qty: rows.reduce((s,r)=>s+(parseFloat(r.qty)||0),0), price: parseFloat(rows[0].price)||0, qtyBreakdown: rows.map(r=>({qty:parseFloat(r.qty)||0,price:parseFloat(r.price)||0})), grossIncome: newGross, netIncome: newGross-(en.spending||0) }));
+                    setEditing(false);
+                  }
+                  return (
+                    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <button onClick={() => setSelectedNonDayMonth(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0 }}>←</button>
+                          {renamingMonth ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <select value={editMonth} onChange={e => setEditMonth(e.target.value)} style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
+                                {ML.map(m => { const used = yearEntries.some(e => e.month === m && e.id !== entry.id); return <option key={m} value={m} disabled={used}>{m}{used?" ✓ already added":""}</option>; })}
+                              </select>
+                              <button onClick={saveMonthRename} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
+                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {!editing
+                            ? <button onClick={() => { setEditRows(breakdown.map(r=>({qty:String(r.qty),price:String(r.price)}))); setEditing(true); }} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>✏️ Edit</button>
+                            : <><button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                               <button onClick={saveEdits} style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓ Save</button></>}
+                          <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+                        {editing ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 }}>
+                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Qty (units)</div>
+                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Price (₹)</div>
+                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 }}>Subtotal</div>
+                              <div />
+                            </div>
+                            {editRows.map((row, idx) => {
+                              const sub = (parseFloat(row.qty)||0)*(parseFloat(row.price)||0);
+                              return (
+                                <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 120" value={row.qty} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],qty:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#1a6b3c",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #1a6b3c";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 30" value={row.price} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],price:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#9b59b6",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #9b59b6";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                  <div style={{ fontSize:13,fontWeight:700,color:sub>0?"#1a6b3c":"var(--color-text-secondary)",minWidth:80,textAlign:"right" }}>{sub>0?`₹${fmt(sub)}`:"—"}</div>
+                                  {editRows.length>1 ? <button onClick={()=>setEditRows(p=>p.filter((_,i)=>i!==idx))} style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:5,padding:"4px 9px",cursor:"pointer",fontSize:13,fontWeight:700 }}>×</button> : <div style={{width:28}}/>}
+                                </div>
+                              );
+                            })}
+                            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4 }}>
+                              <button onClick={()=>setEditRows(p=>[...p,{qty:"",price:""}])} style={{ fontSize:12,background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontWeight:600 }}>+ Add Row</button>
+                              {editRows.some(r=>r.qty&&r.price)&&<div style={{fontSize:13,fontWeight:700,color:"#1a6b3c"}}>Gross = ₹{fmt(editRows.reduce((s,r)=>s+(parseFloat(r.qty)||0)*(parseFloat(r.price)||0),0))}</div>}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ borderRadius:8,overflow:"hidden",border:"0.5px solid var(--color-border-tertiary)" }}>
+                            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0 }}>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)" }}>Qty (units)</div>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"center" }}>Price (₹)</div>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"right" }}>Subtotal</div>
+                              {breakdown.map((row,idx)=>(
+                                <React.Fragment key={idx}>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#1a6b3c",borderTop:"0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)"}}>units</span></div>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#9b59b6",textAlign:"center",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:700,color:"#1a6b3c",textAlign:"right",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty*row.price)}</div>
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display:"flex",flexDirection:"column",gap:8,fontSize:13 }}>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#e8f5ee",borderRadius:8 }}>
+                          <span style={{color:"#1a6b3c",fontWeight:600}}>Gross Income</span>
+                          <span style={{color:"#1a6b3c",fontWeight:700,fontSize:16}}>{fmtCur(gross)}</span>
+                        </div>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 12px" }}>
+                          <span style={{color:"var(--color-text-secondary)"}}>Spend (₹)</span>
+                          <input type="text" inputMode="decimal" key={`spend-${entry.id}-${entry.spending}`} defaultValue={entry.spending!=null?String(entry.spending):""} placeholder="0"
+                            onBlur={ev => { const sp=ev.target.value.trim()===""?0:parseFloat(ev.target.value.trim()); updateBizData(d=>d.map(en=>en.id!==entry.id?en:{...en,spending:sp,netIncome:(entry.grossIncome||0)-sp})); }}
+                            style={{width:110,padding:"5px 10px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:7,background:"var(--color-background-secondary)",color:"#e55",outline:"none",textAlign:"right"}}
+                            onFocus={ev=>{ev.target.style.border="1.5px solid #e55";ev.target.style.background="#fff";}}
+                            onBlurCapture={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                        </div>
+                        {/* Bill Attachment Section */}
+                        <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
+                          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                            <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
+                          </div>
+                          {(() => {
+                            const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
+                            return (
+                              <>
+                                {bills.length > 0 && (
+                                  <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
+                                    {bills.map((bill,idx) => (
+                                      <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
+                                        <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
+                                          <span>📄</span>
+                                          <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
+                                        </div>
+                                        <div style={{ display:"flex",gap:4,flexShrink:0 }}>
+                                          <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                            style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
+                                            View
+                                          </button>
+                                          <button onClick={() => {
+                                            setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                          }}
+                                            style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
+                                            ×
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <input
+                                  type="file"
+                                  id={`bill-upload-${entry.id}`}
+                                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                  style={{ display:"none" }}
+                                  onChange={async (ev) => {
+                                    const file = ev.target.files?.[0];
+                                    if (!file) return;
+                                    
+                                    const driveContext = React.useContext(DriveContext);
+                                    if (!driveContext?.uploadFileToDrive) {
+                                      alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                                      return;
+                                    }
+
+                                    try {
+                                      const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                                      if (result?.id && result?.webViewLink) {
+                                        const newBill = {
+                                          monthId: entry.id,
+                                          fileName: file.name,
+                                          fileUrl: result.webViewLink,
+                                          fileId: result.id,
+                                          uploadDate: new Date().toISOString()
+                                        };
+                                        setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                        alert("Bill uploaded successfully!");
+                                      }
+                                    } catch (err) {
+                                      console.error("Upload failed:", err);
+                                      alert("Failed to upload bill. Please try again.");
+                                    }
+                                    ev.target.value = "";
+                                  }}
+                                />
+                                <label htmlFor={`bill-upload-${entry.id}`}
+                                  style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
+                                  <span>📎</span>
+                                  <span>Attach Bill</span>
+                                </label>
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 }}>
+                          <span style={{color:"#4da6ff",fontWeight:600}}>Net Income</span>
+                          <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return <InlineDetailPanel key={entry.id} />;
+              })()}
+
+              {/* ── Month folder cards grid (hidden while detail is open) ── */}
+              {!selectedNonDayMonth && <><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, marginBottom: 16 }}>
+                {yearEntries.map(e => {
+                  const dayCount = (e.days || []).length;
+                  const gross = e.grossIncome || 0;
+                  return (
+                    <div key={e.id}
+                      onClick={() => { if (isDayWise) { setSelectedMonth(e.id); setShowAddDay(false); } else { setSelectedNonDayMonth(e.id); } }}
+                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: "pointer", borderTop: "3px solid #4da6ff", position: "relative" }}
+                      onMouseEnter={ev => { ev.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; }}
+                      onMouseLeave={ev => ev.currentTarget.style.boxShadow = "none"}>
+                      {/* Delete btn */}
+                      <button onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
+                        style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                      {/* Folder icon + name */}
+                      <div style={{ fontSize: 28, marginBottom: 4 }}>{isDayWise ? "📁" : "📋"}</div>
+                      <div style={{ fontWeight: 700, fontSize: 18, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{e.month}</div>
+
+                      {isDayWise ? (
+                        <>
+                          {/* Day-wise: show price pill + gross summary */}
+                          <div style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", display: "inline-block", marginBottom: 8, fontWeight: 500 }}>
+                            ₹{e.price ? fmt(e.price) : "—"} / unit
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(gross)}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Spend</span>
+                              <span style={{ color: "#e55", fontWeight: 600 }}>{fmtCur(e.spending || 0)}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome || 0)}</span>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
+                            <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
+                              📅 {dayCount} day{dayCount !== 1 ? "s" : ""} recorded
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Non-day-wise: show only Gross & Net — click card to open detail */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, marginTop: 4 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                              <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                              <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(e.netIncome || 0)}</span>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, textAlign: "center" }}>
+                            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>📂 Click to view details</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Chart — below month cards */}
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginTop: 4 }}>
                 <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
                 <LineChart entries={yearEntries} />
               </div>
-
-              {/* Monthly data table */}
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15 }}>Monthly Breakdown</div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: "var(--color-background-secondary)" }}>
-                      {["Month","Gross Income","Net Income","Margin","Bill",""].map(h => (
-                        <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {yearEntries.map((e, i) => {
-                      const margin = e.grossIncome > 0 ? ((e.netIncome / e.grossIncome) * 100).toFixed(1) : "0.0";
-                      return (
-                        <tr key={e.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
-                          <td style={{ padding: "9px 14px", fontWeight: 500 }}>{e.month}</td>
-                          <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</td>
-                          <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</td>
-                          <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
-                          {/* Bill column */}
-                          <td style={{ padding: "6px 14px" }}>
-                            {e.billImage ? (
-                              <img
-                                src={e.billImage}
-                                alt="bill"
-                                onClick={() => setBillModal({ url: e.billImage, link: e.billLink, driveId: e.billDriveId })}
-                                style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer", display: "block" }}
-                                title="Click to view full bill"
-                              />
-                            ) : (
-                              <BillUploadBtn onUploaded={result => updateEntry(e.id, { billImage: result.previewUrl || result.webViewLink, billDriveId: result.id, billLink: result.webViewLink })} />
-                            )}
-                          </td>
-                          <td style={{ padding: "9px 14px", textAlign: "right" }}>
-                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                              <button onClick={() => setEditEntry({ ...e })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️</button>
-                              <button onClick={() => deleteEntry(e.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "#d44" }}>🗑</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
-                      <td style={{ padding: "9px 14px", fontWeight: 600 }}>Total</td>
-                      <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0))}</td>
-                      <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0))}</td>
-                      <td colSpan={3} />
-                    </tr>
-                  </tfoot>
-                </table>
-                {/* Bill full-view modal */}
-                {billModal && (
-                  <div onClick={() => setBillModal(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.78)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
-                    <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"92vw", maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
-                      <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
-                        <span style={{ fontWeight:600, fontSize:13 }}>Bill Preview</span>
-                        <div style={{ display:"flex", gap:8 }}>
-                          {billModal.link && <a href={billModal.link} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
-                          <button onClick={()=>setBillModal(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:18, color:"#6b7280" }}>✕</button>
-                        </div>
-                      </div>
-                      <div style={{ flex:1, overflow:"auto", display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
-                        {billModal.driveId
-                          ? <iframe src={`https://drive.google.com/file/d/${billModal.driveId}/preview`} style={{ width:"80vw", height:"78vh", border:"none" }} title="Bill" allow="autoplay" />
-                          : billModal.url?.startsWith?.("data:image")
-                            ? <img src={billModal.url} alt="Bill" style={{ maxWidth:"80vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
-                            : <iframe src={billModal.url} style={{ width:"80vw", height:"78vh", border:"none" }} title="Bill" />
-                        }
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              </>}
             </>
           )}
         </>
       )}
+
+      {/* ── Non-day-wise Month Detail Panel — moved inline above, disabled here ── */}
+      {false && (() => {
+        const entry = bizData.find(e => e.id === selectedNonDayMonth);
+        if (!entry) return null;
+        const gross = entry.grossIncome || 0;
+        const net   = entry.netIncome || 0;
+        const breakdown = entry.qtyBreakdown || (entry.qty != null ? [{ qty: entry.qty, price: entry.price || 0 }] : []);
+
+        // Local edit state via a wrapper component so we can use useState
+        function DetailPanel() {
+          const [editing, setEditing] = React.useState(false);
+          const [editRows, setEditRows] = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
+          const [renamingMonth, setRenamingMonth] = React.useState(false);
+          const [editMonth, setEditMonth] = React.useState(entry.month);
+
+          const MONTHS_LIST = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+          function saveMonthRename() {
+            if (!editMonth || editMonth === entry.month) { setRenamingMonth(false); return; }
+            const newMonthIdx = MONTHS_LIST.indexOf(editMonth);
+            updateBizData(d => d.map(en => en.id !== entry.id ? en : {
+              ...en,
+              month: editMonth,
+              monthIndex: newMonthIdx !== -1 ? newMonthIdx : en.monthIndex,
+            }));
+            setRenamingMonth(false);
+          }
+
+          function saveEdits() {
+            const filledRows = editRows.filter(r => r.qty !== "" && r.price !== "");
+            if (filledRows.length === 0) return;
+            const newGross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
+            const newQty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
+            const newBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
+            updateBizData(d => d.map(en => en.id !== entry.id ? en : {
+              ...en,
+              qty: newQty,
+              price: parseFloat(filledRows[0].price) || 0,
+              qtyBreakdown: newBreakdown,
+              grossIncome: newGross,
+              netIncome: newGross - (en.spending || 0),
+            }));
+            setEditing(false);
+          }
+
+          return (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginTop: 4 }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={() => setSelectedNonDayMonth(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
+                  {renamingMonth ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <select value={editMonth} onChange={e => setEditMonth(e.target.value)}
+                        style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
+                        {MONTHS_LIST.map(m => {
+                          const usedByOther = yearEntries.some(e => e.month === m && e.id !== entry.id);
+                          return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
+                        })}
+                      </select>
+                      <button onClick={saveMonthRename}
+                        style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
+                      <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }}
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                      <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }}
+                        title="Change month"
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {!editing ? (
+                    <button onClick={() => { setEditRows(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) }))); setEditing(true); }}
+                      style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                      ✏️ Edit
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditing(false)}
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        Cancel
+                      </button>
+                      <button onClick={saveEdits}
+                        style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>
+                        ✓ Save
+                      </button>
+                    </>
+                  )}
+                  <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
+                </div>
+              </div>
+
+              {/* Breakdown */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+
+                {editing ? (
+                  /* ── Edit mode ── */
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {/* Column headers */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Qty (units)</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Price (₹)</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 }}>Subtotal</div>
+                      <div />
+                    </div>
+                    {editRows.map((row, idx) => {
+                      const sub = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
+                      return (
+                        <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
+                          <input type="text" inputMode="decimal" placeholder="e.g. 120"
+                            value={row.qty}
+                            onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], qty: v }; return r; }); }}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
+                            onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }}
+                            onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                          />
+                          <input type="text" inputMode="decimal" placeholder="e.g. 30"
+                            value={row.price}
+                            onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], price: v }; return r; }); }}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }}
+                            onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }}
+                            onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                          />
+                          <div style={{ fontSize: 13, fontWeight: 700, color: sub > 0 ? "#1a6b3c" : "var(--color-text-secondary)", minWidth: 80, textAlign: "right" }}>
+                            {sub > 0 ? `₹${fmt(sub)}` : "—"}
+                          </div>
+                          {editRows.length > 1 ? (
+                            <button onClick={() => setEditRows(p => p.filter((_, i) => i !== idx))}
+                              style={{ background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "4px 9px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>×</button>
+                          ) : <div style={{ width: 28 }} />}
+                        </div>
+                      );
+                    })}
+                    {/* Add row + live gross */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                      <button onClick={() => setEditRows(p => [...p, { qty: "", price: "" }])}
+                        style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                        + Add Row
+                      </button>
+                      {editRows.some(r => r.qty && r.price) && (
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1a6b3c" }}>
+                          Gross = ₹{fmt(editRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* ── View mode ── */
+                  <div style={{ borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 }}>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>Qty (units)</div>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" }}>Price (₹)</div>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" }}>Subtotal</div>
+                      {breakdown.map((row, idx) => (
+                        <React.Fragment key={idx}>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" }}>units</span></div>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty * row.price)}</div>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Gross / Spend / Net */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 }}>
+                  <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Gross Income</span>
+                  <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" }}>
+                  <span style={{ color: "var(--color-text-secondary)" }}>Spend (₹)</span>
+                  <input
+                    type="text" inputMode="decimal"
+                    key={`detail-spend-${entry.id}-${entry.spending}`}
+                    defaultValue={entry.spending != null ? String(entry.spending) : ""}
+                    placeholder="0"
+                    onBlur={ev => {
+                      const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
+                      const netIncome = (entry.grossIncome || 0) - spending;
+                      updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, spending, netIncome }));
+                    }}
+                    style={{ width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
+                    onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
+                    onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                  />
+                </div>
+                {/* Bill Attachment Section */}
+                <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
+                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                    <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
+                  </div>
+                  {(() => {
+                    const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
+                    return (
+                      <>
+                        {bills.length > 0 && (
+                          <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
+                            {bills.map((bill,idx) => (
+                              <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
+                                <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
+                                  <span>📄</span>
+                                  <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
+                                </div>
+                                <div style={{ display:"flex",gap:4,flexShrink:0 }}>
+                                  <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                    style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
+                                    View
+                                  </button>
+                                  <button onClick={() => {
+                                    setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                  }}
+                                    style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
+                                    ×
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          id={`bill-upload-detail-${entry.id}`}
+                          accept=".pdf,.jpg,.jpeg,.png,.webp"
+                          style={{ display:"none" }}
+                          onChange={async (ev) => {
+                            const file = ev.target.files?.[0];
+                            if (!file) return;
+                            
+                            const driveContext = React.useContext(DriveContext);
+                            if (!driveContext?.uploadFileToDrive) {
+                              alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                              return;
+                            }
+
+                            try {
+                              const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                              if (result?.id && result?.webViewLink) {
+                                const newBill = {
+                                  monthId: entry.id,
+                                  fileName: file.name,
+                                  fileUrl: result.webViewLink,
+                                  fileId: result.id,
+                                  uploadDate: new Date().toISOString()
+                                };
+                                setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                alert("Bill uploaded successfully!");
+                              }
+                            } catch (err) {
+                              console.error("Upload failed:", err);
+                              alert("Failed to upload bill. Please try again.");
+                            }
+                            ev.target.value = "";
+                          }}
+                        />
+                        <label htmlFor={`bill-upload-detail-${entry.id}`}
+                          style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
+                          <span>📎</span>
+                          <span>Attach Bill</span>
+                        </label>
+                      </>
+                    );
+                  })()}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
+                  <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
+                  <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return <DetailPanel key={entry.id} />;
+      })()}
+
+      {/* ── LEVEL 3: Day entries inside a month (Day-wise mode only) ── */}
+      {selectedMonth && activeMonthEntry && isDayWise && (() => {
+        // Dynamic quantity columns — stored as activeMonthEntry.qtyCols = [{id, label}]
+        // Each day stores qtyVals: { colId: number }
+        // Legacy qty1/qty2/quantity fields are migrated transparently on read
+        const qtyCols = activeMonthEntry.qtyCols && activeMonthEntry.qtyCols.length > 0
+          ? activeMonthEntry.qtyCols
+          : [{ id: "qty1", label: "Qty 1" }, { id: "qty2", label: "Qty 2" }];
+
+        function getColVal(day, colId) {
+          if (day.qtyVals && day.qtyVals[colId] != null) return day.qtyVals[colId];
+          // Legacy fallback
+          if (colId === "qty1") return day.qty1 != null ? day.qty1 : (day.qty2 == null && day.quantity != null ? day.quantity : null);
+          if (colId === "qty2") return day.qty2 ?? null;
+          return null;
+        }
+
+        function getTotalQty(day) {
+          if (qtyCols.length === 0) return null;
+          const vals = qtyCols.map(c => getColVal(day, c.id));
+          if (vals.every(v => v == null)) return null;
+          return vals.reduce((s, v) => s + (v || 0), 0);
+        }
+
+        function updateColVal(dayId, colId, valStr) {
+          const val = valStr === "" || valStr == null ? null : parseFloat(valStr);
+          updateBizData(d => d.map(e => {
+            if (e.id !== selectedMonth) return e;
+            const price = e.price || 0;
+            const cols = e.qtyCols && e.qtyCols.length > 0 ? e.qtyCols : [{ id: "qty1", label: "Qty 1" }, { id: "qty2", label: "Qty 2" }];
+            const days = (e.days || []).map(day => {
+              if (day.id !== dayId) return day;
+              const newVals = { ...(day.qtyVals || {}), [colId]: val };
+              // Also migrate legacy fields into qtyVals on first edit
+              if (!day.qtyVals) {
+                if (day.qty1 != null && !newVals["qty1"]) newVals["qty1"] = day.qty1;
+                if (day.qty2 != null && !newVals["qty2"]) newVals["qty2"] = day.qty2;
+              }
+              const totalQty = cols.map(c => newVals[c.id]).every(v => v == null) ? null : cols.reduce((s, c) => s + (newVals[c.id] || 0), 0);
+              const gross = totalQty != null ? totalQty * price : 0;
+              return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
+            });
+            const cG = days.reduce((s,d)=>s+d.grossIncome,0);
+            return { ...e, days, grossIncome: cG, netIncome: cG - (e.spending || 0) };
+          }));
+        }
+
+        function addQtyCol() {
+          const newId = "qty_" + Date.now();
+          const newLabel = "Qty " + (qtyCols.length + 1);
+          const newCols = [...qtyCols, { id: newId, label: newLabel }];
+          updateBizData(d => d.map(e => e.id !== selectedMonth ? e : { ...e, qtyCols: newCols }));
+        }
+
+        function removeQtyCol(colId) {
+          if (qtyCols.length <= 1) return;
+          const newCols = qtyCols.filter(c => c.id !== colId);
+          updateBizData(d => d.map(e => {
+            if (e.id !== selectedMonth) return e;
+            const price = e.price || 0;
+            const days = (e.days || []).map(day => {
+              const newVals = { ...(day.qtyVals || {}) };
+              delete newVals[colId];
+              const totalQty = newCols.map(c => newVals[c.id]).every(v => v == null) ? null : newCols.reduce((s,c)=>s+(newVals[c.id]||0),0);
+              const gross = totalQty != null ? totalQty * price : 0;
+              return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
+            });
+            const rG = days.reduce((s,d)=>s+d.grossIncome,0);
+            return { ...e, qtyCols: newCols, days, grossIncome: rG, netIncome: rG - (e.spending || 0) };
+          }));
+        }
+
+        function renameQtyCol(colId, newLabel) {
+          if (!newLabel.trim()) return;
+          updateBizData(d => d.map(e => e.id !== selectedMonth ? e : {
+            ...e, qtyCols: (e.qtyCols || qtyCols).map(c => c.id === colId ? { ...c, label: newLabel.trim() } : c)
+          }));
+        }
+
+        const filledDays = dayEntries.filter(d => getTotalQty(d) != null);
+        const totalQtyAll = filledDays.reduce((s,d) => s + (getTotalQty(d) || 0), 0);
+        const totalGross  = filledDays.reduce((s,d) => s + d.grossIncome, 0);
+        const qtyInputStyle = (has) => ({ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: has ? 600 : 400, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: has ? "#f0faf5" : "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" });
+
+        return (
+          <>
+            {/* Price editor card */}
+            <PriceEditor monthEntry={activeMonthEntry} onSave={newPrice => {
+              updateBizData(d => d.map(e => {
+                if (e.id !== selectedMonth) return e;
+                const days = (e.days || []).map(d => { const tq = d.quantity != null ? d.quantity : 0; const gross = tq * newPrice; return { ...d, grossIncome: gross, netIncome: gross }; });
+                const newGross = days.reduce((s,d)=>s+d.grossIncome,0);
+                const spending = e.spending || 0;
+                return { ...e, price: newPrice, days, grossIncome: newGross, netIncome: newGross - spending };
+              }));
+            }} />
+
+            {/* Summary stat cards */}
+            {filledDays.length > 0 && (() => {
+              const spending = activeMonthEntry.spending || 0;
+              const netIncome = totalGross - spending;
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
+                  {[
+                    { label: "Days Filled",   val: `${filledDays.length} / ${dayEntries.length}`, color: "#f0a020" },
+                    { label: "Total Quantity", val: fmt(totalQtyAll) + " units",                   color: "#9b59b6" },
+                    { label: "Gross Income",   val: fmtCur(totalGross),                            color: "#1a6b3c" },
+                    { label: "Spending",       val: fmtCur(spending),                              color: "#e55",   editable: true },
+                    { label: "Net Income",     val: fmtCur(netIncome),                             color: "#4da6ff" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: c.label === "Spending" ? "0.5px solid #fca5a5" : "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      {c.editable ? (
+                        <input
+                          type="text" inputMode="decimal"
+                          key={`spending-card-${activeMonthEntry.id}-${activeMonthEntry.spending}`}
+                          defaultValue={spending > 0 ? String(spending) : ""}
+                          placeholder="0"
+                          onBlur={e => {
+                            const s = e.target.value.trim() === "" ? 0 : parseFloat(e.target.value.trim());
+                            const net = totalGross - s;
+                            updateBizData(d => d.map(en => en.id !== selectedMonth ? en : { ...en, spending: s, netIncome: net }));
+                          }}
+                          style={{ fontSize: 18, fontWeight: 600, color: "#e55", border: "none", background: "transparent", outline: "none", width: "100%", padding: 0 }}
+                          onFocus={e => { e.target.style.borderBottom = "1.5px solid #e55"; }}
+                          onBlurCapture={e => { e.target.style.borderBottom = "none"; }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Bill Attachment Section for Day-wise Mode */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+                <span style={{fontWeight:500,fontSize:14}}>📎 Bill Attachments</span>
+              </div>
+              {(() => {
+                const bills = (data.billAttachments || []).filter(b => b.monthId === activeMonthEntry.id);
+                return (
+                  <>
+                    {bills.length > 0 && (
+                      <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:10 }}>
+                        {bills.map((bill,idx) => (
+                          <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"8px 12px",borderRadius:8,fontSize:12 }}>
+                            <div style={{ display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0 }}>
+                              <span style={{fontSize:16}}>📄</span>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</div>
+                                <div style={{ fontSize:10,color:"var(--color-text-secondary)",marginTop:2 }}>
+                                  {new Date(bill.uploadDate).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display:"flex",gap:6,flexShrink:0 }}>
+                              <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:500 }}>
+                                View
+                              </button>
+                              <button onClick={() => {
+                                setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                              }}
+                                style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600 }}>
+                                ×
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      id={`bill-upload-daywise-${activeMonthEntry.id}`}
+                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      style={{ display:"none" }}
+                      onChange={async (ev) => {
+                        const file = ev.target.files?.[0];
+                        if (!file) return;
+                        
+                        const driveContext = React.useContext(DriveContext);
+                        if (!driveContext?.uploadFileToDrive) {
+                          alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                          return;
+                        }
+
+                        try {
+                          const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${activeMonthEntry.month}`);
+                          if (result?.id && result?.webViewLink) {
+                            const newBill = {
+                              monthId: activeMonthEntry.id,
+                              fileName: file.name,
+                              fileUrl: result.webViewLink,
+                              fileId: result.id,
+                              uploadDate: new Date().toISOString()
+                            };
+                            setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                            alert("Bill uploaded successfully!");
+                          }
+                        } catch (err) {
+                          console.error("Upload failed:", err);
+                          alert("Failed to upload bill. Please try again.");
+                        }
+                        ev.target.value = "";
+                      }}
+                    />
+                    <label htmlFor={`bill-upload-daywise-${activeMonthEntry.id}`}
+                      style={{ display:"inline-flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500 }}>
+                      <span>📎</span>
+                      <span>Attach Bill</span>
+                    </label>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Inline editable daily table */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+              {/* Table header bar */}
+              <div style={{ padding: "0.75rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 500, fontSize: 15 }}>Daily Quantities — {activeMonthEntry.month} {selectedYear}</span>
+                {activeMonthEntry.price
+                  ? <span style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>💰 ₹{fmt(activeMonthEntry.price)}/unit</span>
+                  : <span style={{ fontSize: 11, color: "#e55", background: "#fff0f0", borderRadius: 6, padding: "2px 8px" }}>⚠ Set a price above first</span>}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={addQtyCol}
+                    style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #1a6b3c", background: "#e8f5ee", color: "#1a6b3c", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                    + Add Column
+                  </button>
+                  {qtyCols.length > 1 && (
+                    <button onClick={() => removeQtyCol(qtyCols[qtyCols.length - 1].id)}
+                      style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #e55", background: "#fff0f0", color: "#e55", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                      − Remove Last
+                    </button>
+                  )}
+                </div>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "var(--color-background-secondary)" }}>
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Date</th>
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Day</th>
+                    {qtyCols.map((col, ci) => (
+                      <th key={col.id} style={{ padding: "4px 8px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, minWidth: 90 }}>
+                        <input
+                          defaultValue={col.label}
+                          onBlur={e => renameQtyCol(col.id, e.target.value)}
+                          style={{ border: "none", background: "transparent", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", width: "100%", outline: "none", cursor: "text", padding: "2px 4px", borderRadius: 4 }}
+                          onFocus={e => { e.target.style.background = "var(--color-background-primary)"; e.target.style.border = "1px solid var(--color-border-secondary)"; }}
+                          onBlurCapture={e => { e.target.style.background = "transparent"; e.target.style.border = "none"; }}
+                          title="Click to rename"
+                        />
+                      </th>
+                    ))}
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Total Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dayEntries.map((d) => {
+                    const dateObj = new Date(d.date + "T00:00:00");
+                    const dayName = dateObj.toLocaleDateString("en-IN", { weekday: "short" });
+                    const dateStr = dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+                    const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                    const totalQtyVal = getTotalQty(d);
+                    const hasSomeQty = totalQtyVal != null;
+                    return (
+                      <tr key={d.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: isWeekend ? "var(--color-background-secondary)" : "transparent" }}>
+                        <td style={{ padding: "7px 14px", fontWeight: 600, color: isWeekend ? "#9b59b6" : "var(--color-text-primary)", whiteSpace: "nowrap" }}>{dateStr}</td>
+                        <td style={{ padding: "7px 14px", color: isWeekend ? "#9b59b6" : "var(--color-text-secondary)", fontSize: 11, width: 40 }}>{dayName}</td>
+                        {qtyCols.map((col, ci) => {
+                          const val = getColVal(d, col.id);
+                          return (
+                            <td key={col.id} style={{ padding: "4px 8px", width: 100 }}>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="—"
+                                key={`${d.id}-${col.id}-${val}`}
+                                defaultValue={val != null ? String(val) : ""}
+                                onBlur={e => updateColVal(d.id, col.id, e.target.value.trim())}
+                                onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("td")?.nextElementSibling?.querySelector("input")?.focus(); } }}
+                                style={qtyInputStyle(val != null)}
+                                onFocus={e => { e.target.style.border = "1.5px solid #1a6b3c"; e.target.style.background = "#fff"; }}
+                                onBlurCapture={e => { e.target.style.border = "0.5px solid var(--color-border-secondary)"; e.target.style.background = val != null ? "#f0faf5" : "var(--color-background-secondary)"; }}
+                              />
+                            </td>
+                          );
+                        })}
+                        <td style={{ padding: "7px 14px", fontWeight: hasSomeQty ? 700 : 400, color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 13, whiteSpace: "nowrap" }}>
+                          {hasSomeQty ? fmt(totalQtyVal) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {filledDays.length > 0 && (
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
+                      <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
+                      {qtyCols.map(col => (
+                        <td key={col.id} style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                          {fmt(dayEntries.reduce((s,d) => s + (getColVal(d, col.id) || 0), 0))}
+                        </td>
+                      ))}
+                      <td style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                        {fmt(dayEntries.reduce((s,d) => s + (getTotalQty(d) || 0), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -9087,17 +10310,27 @@ function ProjectsPage({ data, update }) {
                                 </div>
                                 {/* Time timeline progress bar — only shown when ETA is set */}
                                 {t.eta && (() => {
-                                  const created = new Date(t.createdAt || t.id);
-                                  const due = new Date(t.eta);
                                   const now = new Date();
+                                  // Normalize due date to end of that day
+                                  const due = new Date(t.eta + "T23:59:59");
+                                  const isOverdue = now > due;
+                                  // Use createdAt if available, else fall back to task id (timestamp)
+                                  const createdRaw = t.createdAt ? new Date(t.createdAt) : new Date(typeof t.id === "number" ? t.id : Date.now());
+                                  // If created on same day or after due, use 1 day before due as start
+                                  const created = createdRaw >= due ? new Date(due.getTime() - 86400000) : createdRaw;
                                   const total = due - created;
                                   const elapsed = now - created;
-                                  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((elapsed / total) * 100))) : 0;
-                                  const barColor = pct >= 90 ? "#d44" : pct >= 70 ? "#f0a020" : "#4da6ff";
+                                  const rawPct = total > 0 ? Math.round((elapsed / total) * 100) : 100;
+                                  const pct = Math.min(100, Math.max(0, rawPct));
+                                  const delayed = isOverdue && !t.done;
+                                  const barColor = delayed ? "#d44" : pct >= 90 ? "#f0a020" : pct >= 70 ? "#f59e0b" : "#4da6ff";
                                   return (
                                     <div>
                                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
-                                        <span>Time Elapsed</span>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                          Time Elapsed
+                                          {delayed && <span style={{ background: "#fde8e8", color: "#d44", borderRadius: 3, padding: "0px 4px", fontWeight: 700, fontSize: 8, letterSpacing: 0.3 }}>⚠ DELAYED</span>}
+                                        </span>
                                         <span style={{ color: barColor, fontWeight: 600 }}>{pct}%</span>
                                       </div>
                                       <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
