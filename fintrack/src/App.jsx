@@ -263,64 +263,8 @@ function DriveProvider({ children, firebaseUser }) {
     } catch (e) { return false; }
   }
 
-  // ── getOrCreateFolder — finds existing folder by name+parent, or creates it ──
-  async function getOrCreateFolder(name, parentId, tok) {
-    try {
-      let q = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g,"\\'")}' and trashed=false`;
-      if (parentId) q += ` and '${parentId}' in parents`;
-      const search = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=1`,
-        { headers: { Authorization: "Bearer " + tok } }
-      );
-      const { files } = await search.json();
-      if (files?.length) return files[0].id;
-      // Not found — create it
-      const meta = { name, mimeType: "application/vnd.google-apps.folder", ...(parentId ? { parents: [parentId] } : {}) };
-      const res = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" },
-        body: JSON.stringify(meta),
-      });
-      const d = await res.json();
-      return d.id || null;
-    } catch (e) { return null; }
-  }
-
-  // ── uploadWithStructure — builds fintrack folder tree then uploads renamed file ──
-  // section: "Business" | "Projects" | "Documents"
-  // contextName: business name / project name / folder name
-  // headerName: month name / task type / sub-folder name (used in file rename)
-  async function uploadWithStructure(file, section, contextName, headerName) {
-    let tok = localStorage.getItem("ft_drv_tok");
-    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    if (!tok || Date.now() >= expiry) {
-      tok = await getFreshDriveToken();
-      if (tok) setToken(tok);
-    }
-    if (!tok) return null;
-    try {
-      // Build: fintrack → section → contextName
-      const fintrackId   = await getOrCreateFolder("fintrack", null, tok);
-      if (!fintrackId) return null;
-      const sectionId    = await getOrCreateFolder(section, fintrackId, tok);
-      if (!sectionId) return null;
-      const contextId    = await getOrCreateFolder(contextName, sectionId, tok);
-      if (!contextId) return null;
-
-      // Rename file: originalName_contextName (keep extension)
-      const ext      = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
-      const baseName = file.name.includes(".") ? file.name.slice(0, file.name.lastIndexOf(".")) : file.name;
-      const newName  = headerName
-        ? `${baseName}_${headerName}${ext}`
-        : `${baseName}_${contextName}${ext}`;
-      const renamedFile = new File([file], newName, { type: file.type });
-
-      return await uploadToDrive(renamedFile, contextId);
-    } catch (e) { return null; }
-  }
-
   return (
-    <DriveContext.Provider value={{ connected: !!token, token, email, loading, clearDrive, uploadToDrive, deleteFromDrive, uploadWithStructure }}>
+    <DriveContext.Provider value={{ connected: !!token, token, email, loading, clearDrive, uploadToDrive, deleteFromDrive }}>
       {children}
     </DriveContext.Provider>
   );
@@ -4313,15 +4257,9 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
   }
   async function uploadFile(folderId, file, driveFId, parentId=null) {
     setUploading(p => ({ ...p, [folderId]:true }));
-    // Resolve the folder name for Drive structure
-    const parentFolder = parentId ? folders.find(f => f.id === parentId) : null;
-    const thisFolder   = parentFolder
-      ? (parentFolder.subFolders || []).find(s => s.id === folderId)
-      : folders.find(f => f.id === folderId);
-    const folderName   = thisFolder?.name || "Documents";
     let rec;
     if (drive?.connected) {
-      const r = await drive.uploadWithStructure(file, "Documents", folderName, null);
+      const r = await drive.uploadToDrive(file, driveFId||null);
       if (r) rec = { id:r.id, name:r.name, type:r.mimeType, size:r.size, previewUrl:r.previewUrl, webViewLink:r.webViewLink, downloadUrl:r.downloadUrl, source:"gdrive", uploadedAt:new Date().toISOString() };
     }
     if (!rec) {
@@ -9224,19 +9162,30 @@ function BusinessPage({ data, update }) {
                                   onChange={async (ev) => {
                                     const file = ev.target.files?.[0];
                                     if (!file) return;
-                                    const driveCtx = useDrive();
-                                    if (!driveCtx?.connected) {
-                                      alert("Google Drive not connected. Please sign in with Google to upload bills.");
-                                      ev.target.value = ""; return;
+                                    
+                                    const driveContext = React.useContext(DriveContext);
+                                    if (!driveContext?.uploadFileToDrive) {
+                                      alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                                      return;
                                     }
+
                                     try {
-                                      const bizName = activeBiz?.name || "Business";
-                                      const result = await driveCtx.uploadWithStructure(file, "Business", bizName, entry.month);
+                                      const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
                                       if (result?.id && result?.webViewLink) {
-                                        const newBill = { monthId: entry.id, fileName: result.name, fileUrl: result.webViewLink, fileId: result.id, uploadDate: new Date().toISOString() };
+                                        const newBill = {
+                                          monthId: entry.id,
+                                          fileName: file.name,
+                                          fileUrl: result.webViewLink,
+                                          fileId: result.id,
+                                          uploadDate: new Date().toISOString()
+                                        };
                                         setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                        alert("Bill uploaded successfully!");
                                       }
-                                    } catch (err) { console.error("Upload failed:", err); alert("Failed to upload bill. Please try again."); }
+                                    } catch (err) {
+                                      console.error("Upload failed:", err);
+                                      alert("Failed to upload bill. Please try again.");
+                                    }
                                     ev.target.value = "";
                                   }}
                                 />
@@ -9580,19 +9529,30 @@ function BusinessPage({ data, update }) {
                           onChange={async (ev) => {
                             const file = ev.target.files?.[0];
                             if (!file) return;
-                            const driveCtx = useDrive();
-                            if (!driveCtx?.connected) {
-                              alert("Google Drive not connected. Please sign in with Google to upload bills.");
-                              ev.target.value = ""; return;
+                            
+                            const driveContext = React.useContext(DriveContext);
+                            if (!driveContext?.uploadFileToDrive) {
+                              alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                              return;
                             }
+
                             try {
-                              const bizName = activeBiz?.name || "Business";
-                              const result = await driveCtx.uploadWithStructure(file, "Business", bizName, entry.month);
+                              const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
                               if (result?.id && result?.webViewLink) {
-                                const newBill = { monthId: entry.id, fileName: result.name, fileUrl: result.webViewLink, fileId: result.id, uploadDate: new Date().toISOString() };
+                                const newBill = {
+                                  monthId: entry.id,
+                                  fileName: file.name,
+                                  fileUrl: result.webViewLink,
+                                  fileId: result.id,
+                                  uploadDate: new Date().toISOString()
+                                };
                                 setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                alert("Bill uploaded successfully!");
                               }
-                            } catch (err) { console.error("Upload failed:", err); alert("Failed to upload bill. Please try again."); }
+                            } catch (err) {
+                              console.error("Upload failed:", err);
+                              alert("Failed to upload bill. Please try again.");
+                            }
                             ev.target.value = "";
                           }}
                         />
@@ -9804,19 +9764,30 @@ function BusinessPage({ data, update }) {
                       onChange={async (ev) => {
                         const file = ev.target.files?.[0];
                         if (!file) return;
-                        const driveCtx = useDrive();
-                        if (!driveCtx?.connected) {
-                          alert("Google Drive not connected. Please sign in with Google to upload bills.");
-                          ev.target.value = ""; return;
+                        
+                        const driveContext = React.useContext(DriveContext);
+                        if (!driveContext?.uploadFileToDrive) {
+                          alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                          return;
                         }
+
                         try {
-                          const bizName = activeBiz?.name || "Business";
-                          const result = await driveCtx.uploadWithStructure(file, "Business", bizName, activeMonthEntry.month);
+                          const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${activeMonthEntry.month}`);
                           if (result?.id && result?.webViewLink) {
-                            const newBill = { monthId: activeMonthEntry.id, fileName: result.name, fileUrl: result.webViewLink, fileId: result.id, uploadDate: new Date().toISOString() };
+                            const newBill = {
+                              monthId: activeMonthEntry.id,
+                              fileName: file.name,
+                              fileUrl: result.webViewLink,
+                              fileId: result.id,
+                              uploadDate: new Date().toISOString()
+                            };
                             setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                            alert("Bill uploaded successfully!");
                           }
-                        } catch (err) { console.error("Upload failed:", err); alert("Failed to upload bill. Please try again."); }
+                        } catch (err) {
+                          console.error("Upload failed:", err);
+                          alert("Failed to upload bill. Please try again.");
+                        }
                         ev.target.value = "";
                       }}
                     />
@@ -10084,7 +10055,7 @@ function ProjectsPage({ data, update }) {
     for (const file of fileList) {
       let fileEntry;
       if (drive?.connected) {
-        const result = await drive.uploadWithStructure(file, "Projects", project.name, null);
+        const result = await drive.uploadToDrive(file, null);
         fileEntry = result
           ? { id: result.id, name: result.name, type: result.mimeType, size: result.size, previewUrl: result.previewUrl, webViewLink: result.webViewLink, downloadUrl: result.downloadUrl, source: "gdrive", uploadedAt: new Date().toISOString() }
           : null;
