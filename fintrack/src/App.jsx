@@ -8473,7 +8473,7 @@ function BusinessPage({ data, update }) {
                 const bizLiabilities = biz.liabilities || [];
                 const paidLiab   = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
                 const unpaidLiab = bizLiabilities.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
-                const finalNet   = totalNet - paidLiab;
+                const finalNet   = totalNet - paidLiab - unpaidLiab;
                 const hasLiab    = bizLiabilities.length > 0;
                 return (
                   <div key={biz.id} onClick={() => { if (!renamingBiz) { setSelectedBiz(biz.id); setShowLiabilitiesSection(false); } }}
