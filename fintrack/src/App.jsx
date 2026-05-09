@@ -402,7 +402,7 @@ export default function App() {
   const linkedBankIds = new Set((data.banks || []).map(b => String(b.id)));
   const unlinkedIncome = data.transactions.filter(t => t.type === "income" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
   const unlinkedExpense = data.transactions.filter(t => t.type === "expense" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
-  const netWorth = (data.banks || []).reduce((s, b) => {
+  const netWorth = ((data.banks || []).reduce((s, b) => {
     const inc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
     const exp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
     if (b.type === "Credit Card") {
@@ -410,10 +410,12 @@ export default function App() {
       return s - outstanding;
     }
     return s + (b.openingBalance || 0) + inc - exp;
-  }, 0) + (unlinkedIncome - unlinkedExpense);
+  }, 0) + (unlinkedIncome - unlinkedExpense)) - excludedGoalSavings;
 
   const totalAssets = data.assets.reduce((s, a) => s + Number(a.value || 0), 0);
   const totalLiabilities = data.liabilities.reduce((s, l) => s + Number(l.value || 0), 0);
+  // Subtract saved amounts for goals marked "exclude from net worth"
+  const excludedGoalSavings = (data.needsWants || []).filter(g => g.excludeFromNetWorth && !g.completed).reduce((s, g) => s + Number(g.savedAmount || 0), 0);
 
   const foNetPnl = data.foTrades.reduce((s, t) => {
     const gross = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
@@ -6038,55 +6040,40 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     if (p.freq !== "custom" || p.customUnit !== "weeks" || !p.customWeekDays || p.customWeekDays.length === 0) {
       return [];
     }
-
+    
     const startStr = p.startDate || (p.startMonth + "-01");
     const [sy, sm, sd] = startStr.split("-").map(Number);
+    let d = new Date(sy, sm-1, sd);
+    d.setHours(0,0,0,0);
+    
     const everyN = parseInt(p.customEveryN || 1);
-
-    // Find the Monday of the week containing the start date
-    // This anchors all "every N weeks" cycles to a consistent Monday boundary
-    const startDate = new Date(sy, sm-1, sd);
-    startDate.setHours(0,0,0,0);
-    const startDow = startDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    const mondayOffset = startDow === 0 ? -6 : 1 - startDow;
-    const weekAnchor = new Date(startDate);
-    weekAnchor.setDate(weekAnchor.getDate() + mondayOffset);
-    weekAnchor.setHours(0,0,0,0);
-
     const dueKeys = [];
-
-    // Walk week-group by week-group (everyN weeks per iteration)
-    let weekGroupStart = new Date(weekAnchor);
     let ct = 0;
-    while (ct < 500) {
-      if (weekGroupStart > nowDate) break;
-
-      // Check each selected weekday within this week group
-      p.customWeekDays.forEach(dow => {
-        // dow convention: 1=Mon..6=Sat, 7=Sun  (getDay()===0 → stored as 7)
-        const jsDay = dow === 7 ? 0 : dow;
-        const dayOffset = (jsDay - 1 + 7) % 7; // Mon=0, Tue=1, ..., Sun=6
-        const candidate = new Date(weekGroupStart);
-        candidate.setDate(weekGroupStart.getDate() + dayOffset);
-        candidate.setHours(0,0,0,0);
-
-        // Skip dates before the payment's own start date
-        if (candidate < startDate) return;
-        // Skip future dates
-        if (candidate > nowDate) return;
-
-        const k = dateKey(candidate);
-        if (!p.paid.includes(k) && !dueKeys.includes(k)) {
-          dueKeys.push(k);
+    
+    // Calculate which week we're in relative to start date
+    const weekStartDate = new Date(sy, sm-1, sd);
+    weekStartDate.setHours(0,0,0,0);
+    
+    while (ct < 500 && d <= nowDate) {
+      const currentWeekDay = d.getDay() === 0 ? 7 : d.getDay();
+      
+      // Check if this day is in the selected weekdays
+      if (p.customWeekDays.includes(currentWeekDay)) {
+        const daysSinceStart = Math.floor((d - weekStartDate) / (1000 * 60 * 60 * 24));
+        const weeksSinceStart = Math.floor(daysSinceStart / 7);
+        
+        // Only include dates that fall on the correct week interval
+        if (weeksSinceStart % everyN === 0) {
+          const k = dateKey(d);
+          if (!p.paid.includes(k) && d <= nowDate) {
+            dueKeys.push(k);
+          }
         }
-      });
-
-      // Advance by everyN weeks
-      weekGroupStart = new Date(weekGroupStart);
-      weekGroupStart.setDate(weekGroupStart.getDate() + everyN * 7);
+      }
+      d.setDate(d.getDate() + 1);
       ct++;
     }
-
+    
     return dueKeys;
   }
 
@@ -7548,7 +7535,7 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
-  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -7575,9 +7562,10 @@ function GoalsPage({ data, update }) {
         urls: (form.urls || []).filter(u => u.trim()),
         createdAt: today(),
         completed: false,
+        excludeFromNetWorth: form.excludeFromNetWorth || false,
       }]
     }));
-    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
     setShowAdd(false);
   }
 
@@ -7592,6 +7580,7 @@ function GoalsPage({ data, update }) {
         notes: editItem.notes,
         priority: editItem.priority,
         urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
+        excludeFromNetWorth: editItem.excludeFromNetWorth || false,
       } : x)
     }));
     setEditItem(null);
@@ -7680,10 +7669,22 @@ function GoalsPage({ data, update }) {
             ))}
           </div>
         </div>
-        <div>
+        <div style={{ marginBottom: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
           <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
+        {values.goalType === "money" && (
+          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px", border: "0.5px solid var(--color-border-secondary)" }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>🚫 Exclude from Net Worth</div>
+              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Saved amount won't be counted in your net worth</div>
+            </div>
+            <div onClick={() => onChange({ ...values, excludeFromNetWorth: !values.excludeFromNetWorth })}
+              style={{ width: 40, height: 22, borderRadius: 11, background: values.excludeFromNetWorth ? "#ef4444" : "var(--color-border-primary)", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+              <div style={{ position: "absolute", top: 3, left: values.excludeFromNetWorth ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>🔗 Links (optional)</label>
           {(values.urls || [""]).map((url, i) => (
@@ -7784,6 +7785,11 @@ function GoalsPage({ data, update }) {
               <span>{pct.toFixed(1)}% complete</span>
               {remaining > 0 ? <span>{fmtCur(remaining)} remaining</span> : <span style={{ color: "#1a6b3c", fontWeight: 500 }}>🎉 Goal reached!</span>}
             </div>
+            {item.excludeFromNetWorth && (
+              <div style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 4, background: "#fef2f2", border: "0.5px solid #fecaca", borderRadius: 5, padding: "2px 7px", fontSize: 10, color: "#ef4444", fontWeight: 500 }}>
+                🚫 Excluded from Net Worth
+              </div>
+            )}
           </div>
         )}
 
