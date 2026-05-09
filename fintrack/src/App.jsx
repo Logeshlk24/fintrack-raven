@@ -7952,7 +7952,7 @@ function BusinessPage({ data, update }) {
   const [showAddYear,  setShowAddYear]  = useState(false);
   const [newYear,      setNewYear]      = useState("");
   const [showAddMonth, setShowAddMonth] = useState(false);
-  const [monthForm,    setMonthForm]    = useState({ month: "", grossIncome: "", netIncome: "", price: "" });
+  const [monthForm,    setMonthForm]    = useState({ month: "", qty: "", price: "" });
   const [editEntry,    setEditEntry]    = useState(null);
   const [billModal,    setBillModal]    = useState(null);
   const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
@@ -8070,20 +8070,31 @@ function BusinessPage({ data, update }) {
     const monthIdx = MONTHS.indexOf(monthForm.month);
     if (monthIdx === -1) return;
     const price = monthForm.price !== "" ? parseFloat(monthForm.price) : 0;
+    const qty   = monthForm.qty   !== "" ? parseFloat(monthForm.qty)   : null;
+    const gross = (qty != null && price) ? qty * price : 0;
     const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
     if (!existing) {
-      // Pre-populate every day of the month as an empty slot
-      const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
-      const days = Array.from({ length: daysInMonth }, (_, i) => {
-        const dayNum = i + 1;
-        const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-        return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
-      });
-      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
+      if (isDayWise) {
+        // Pre-populate every day of the month as an empty slot
+        const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
+        const days = Array.from({ length: daysInMonth }, (_, i) => {
+          const dayNum = i + 1;
+          const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+          return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+        });
+        updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
+      } else {
+        // Non-day-wise: just store month qty + price → gross
+        updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, qty, price, grossIncome: gross, netIncome: gross }]);
+      }
     } else {
-      updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx ? { ...e, price } : e));
+      updateBizData(d => d.map(e => {
+        if (!(e.year === selectedYear && e.monthIndex === monthIdx)) return e;
+        const newGross = (qty != null && price) ? qty * price : (e.qty != null ? e.qty * price : e.grossIncome);
+        return { ...e, price, qty: qty ?? e.qty, grossIncome: newGross, netIncome: newGross };
+      }));
     }
-    setMonthForm({ month: "", grossIncome: "", netIncome: "", price: "" }); setShowAddMonth(false);
+    setMonthForm({ month: "", qty: "", price: "" }); setShowAddMonth(false);
   }
 
   function saveEdit() {
@@ -8335,7 +8346,7 @@ function BusinessPage({ data, update }) {
           {selectedYear && !selectedMonth && (
             <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
           )}
-          {selectedMonth && (
+          {selectedMonth && isDayWise && (
             <button onClick={() => { setSelectedMonth(null); setShowAddDay(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Months</button>
           )}
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
@@ -8376,7 +8387,7 @@ function BusinessPage({ data, update }) {
               {showAddMonth ? "✕ Cancel" : "+ Add Month"}
             </button>
           )}
-          {selectedMonth && (
+          {selectedMonth && isDayWise && (
             <span style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 8, padding: "6px 13px", fontWeight: 500 }}>
               📝 Type qty in each row
             </span>
@@ -8512,13 +8523,13 @@ function BusinessPage({ data, update }) {
           {showAddMonth && (
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
               <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-                📁 Create Month Folder
+                📁 {isDayWise ? "Create Month Folder" : "Add Month"}
               </div>
               <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12, marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>💡 Qty × Price</span>
-                Set a fixed price for the month — Gross is auto-calculated from daily quantities
+                <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>💡 Qty × Price = Gross</span>
+                {isDayWise ? "Set price — Gross is auto-calculated from daily quantities" : "Enter total quantity and price for the month"}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isDayWise ? "1fr 1fr" : "1fr 1fr 1fr", gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
                   <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
@@ -8526,15 +8537,29 @@ function BusinessPage({ data, update }) {
                     {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
+                {!isDayWise && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Total Qty (units)</label>
+                    <input type="text" inputMode="decimal" placeholder="e.g. 120"
+                      value={monthForm.qty}
+                      onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, qty: v })); }}
+                      style={{ width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                )}
                 <div>
                   <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Price per unit (₹) *</label>
-                  <input type="text" inputMode="decimal" placeholder="e.g. 32 (fixed for this month)" value={monthForm.price}
+                  <input type="text" inputMode="decimal" placeholder="e.g. 32" value={monthForm.price}
                     onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => ({ ...p, price: v })); }}
                     style={{ width: "100%", boxSizing: "border-box" }} />
                 </div>
               </div>
+              {!isDayWise && monthForm.qty && monthForm.price && (
+                <div style={{ marginTop: 10, padding: "8px 12px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 600 }}>
+                  Gross Income = {fmt(parseFloat(monthForm.qty) * parseFloat(monthForm.price))} ₹
+                </div>
+              )}
               <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-                📁 Create Month Folder
+                {isDayWise ? "📁 Create Month Folder" : "✓ Add Month"}
               </button>
             </div>
           )}
@@ -8569,45 +8594,92 @@ function BusinessPage({ data, update }) {
               {/* ── Month folder cards grid ── */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
                 {yearEntries.map(e => {
-                  const margin = e.grossIncome > 0 ? ((e.netIncome / e.grossIncome) * 100).toFixed(1) : "0.0";
                   const dayCount = (e.days || []).length;
+                  const gross = e.grossIncome || 0;
                   return (
                     <div key={e.id}
-                      onClick={() => { setSelectedMonth(e.id); setShowAddDay(false); }}
-                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: "pointer", borderTop: "3px solid #4da6ff", position: "relative" }}
-                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
-                      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                      onClick={() => { if (isDayWise) { setSelectedMonth(e.id); setShowAddDay(false); } }}
+                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: isDayWise ? "pointer" : "default", borderTop: "3px solid #4da6ff", position: "relative" }}
+                      onMouseEnter={ev => { if (isDayWise) ev.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; }}
+                      onMouseLeave={ev => ev.currentTarget.style.boxShadow = "none"}>
                       {/* Delete btn */}
                       <button onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
                         style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
                       {/* Folder icon + name */}
-                      <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
-                      <div style={{ fontWeight: 700, fontSize: 18, fontFamily: "'DM Serif Display', serif", marginBottom: 2 }}>{e.month}</div>
-                      {/* Price pill */}
-                      <div style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", display: "inline-block", marginBottom: 8, fontWeight: 500 }}>
-                        ₹{e.price ? fmt(e.price) : "—"} / unit
-                      </div>
-                      {/* Stats */}
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
-                          <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(e.grossIncome)}</span>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
-                          <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome)}</span>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span style={{ color: "var(--color-text-secondary)" }}>Margin</span>
-                          <span style={{ color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020", fontWeight: 500 }}>{margin}%</span>
-                        </div>
-                      </div>
-                      {/* Day count badge */}
-                      <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
-                        <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
-                          📅 {dayCount} day{dayCount !== 1 ? "s" : ""} recorded
-                        </span>
-                      </div>
+                      <div style={{ fontSize: 28, marginBottom: 4 }}>{isDayWise ? "📁" : "📋"}</div>
+                      <div style={{ fontWeight: 700, fontSize: 18, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{e.month}</div>
+
+                      {isDayWise ? (
+                        <>
+                          {/* Day-wise: show price pill + gross summary */}
+                          <div style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", display: "inline-block", marginBottom: 8, fontWeight: 500 }}>
+                            ₹{e.price ? fmt(e.price) : "—"} / unit
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(gross)}</span>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
+                            <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
+                              📅 {dayCount} day{dayCount !== 1 ? "s" : ""} recorded
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Non-day-wise: inline editable Qty + Price + auto Gross */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ color: "var(--color-text-secondary)", minWidth: 36 }}>Qty</span>
+                              <input
+                                type="text" inputMode="decimal"
+                                key={`qty-${e.id}-${e.qty}`}
+                                defaultValue={e.qty != null ? String(e.qty) : ""}
+                                placeholder="—"
+                                onClick={ev => ev.stopPropagation()}
+                                onBlur={ev => {
+                                  ev.stopPropagation();
+                                  const qty = ev.target.value.trim() === "" ? null : parseFloat(ev.target.value.trim());
+                                  const price = e.price || 0;
+                                  const newGross = qty != null ? qty * price : 0;
+                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, qty, grossIncome: newGross, netIncome: newGross }));
+                                }}
+                                style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
+                                onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }}
+                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                              />
+                              <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>units</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ color: "var(--color-text-secondary)", minWidth: 36 }}>Price</span>
+                              <input
+                                type="text" inputMode="decimal"
+                                key={`price-${e.id}-${e.price}`}
+                                defaultValue={e.price != null ? String(e.price) : ""}
+                                placeholder="₹ / unit"
+                                onClick={ev => ev.stopPropagation()}
+                                onBlur={ev => {
+                                  ev.stopPropagation();
+                                  const price = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
+                                  const qty = e.qty || 0;
+                                  const newGross = qty * price;
+                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, price, grossIncome: newGross, netIncome: newGross }));
+                                }}
+                                style={{ flex: 1, padding: "4px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }}
+                                onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }}
+                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                              />
+                              <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>₹</span>
+                            </div>
+                            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                              <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 15 }}>{fmtCur(gross)}</span>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -8617,8 +8689,8 @@ function BusinessPage({ data, update }) {
         </>
       )}
 
-      {/* ── LEVEL 3: Day entries inside a month ── */}
-      {selectedMonth && activeMonthEntry && (() => {
+      {/* ── LEVEL 3: Day entries inside a month (Day-wise mode only) ── */}
+      {selectedMonth && activeMonthEntry && isDayWise && (() => {
         // Dynamic quantity columns — stored as activeMonthEntry.qtyCols = [{id, label}]
         // Each day stores qtyVals: { colId: number }
         // Legacy qty1/qty2/quantity fields are migrated transparently on read
