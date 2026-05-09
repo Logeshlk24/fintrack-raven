@@ -8042,6 +8042,48 @@ function BusinessPage({ data, update }) {
   function deleteEntry(id) {
     updateBizData(d => d.filter(e => e.id !== id));
   }
+
+  // ── Auto-repair: fix any day-wise month whose stored dates don't match its month label ──
+  // Runs once whenever a business is opened. Safe — no-ops if dates are already correct.
+  useEffect(() => {
+    if (!activeBiz) return;
+    const MONTHS_ALL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const entries = activeBiz.data || [];
+    let needsFix = false;
+    const fixed = entries.map(e => {
+      if (!e.days || e.days.length === 0) return e;
+      const mIdx = e.monthIndex != null ? e.monthIndex : MONTHS_ALL.indexOf(e.month);
+      if (mIdx === -1) return e;
+      const yr = e.year;
+      const daysInMonth = new Date(yr, mIdx + 1, 0).getDate();
+      const expectedMonthStr = String(mIdx + 1).padStart(2, "0");
+      const hasBadDates = e.days.some(d => {
+        const parts = (d.date || "").split("-");
+        return parts.length !== 3 || parts[1] !== expectedMonthStr || parseInt(parts[2], 10) > daysInMonth;
+      });
+      if (!hasBadDates) return e;
+      needsFix = true;
+      const oldByDayNum = {};
+      e.days.forEach(od => {
+        const dn = parseInt((od.date || "").split("-")[2], 10);
+        if (!isNaN(dn) && dn >= 1 && dn <= 31) oldByDayNum[dn] = od;
+      });
+      const newDays = Array.from({ length: daysInMonth }, (_, i) => {
+        const dayNum = i + 1;
+        const dateStr = `${yr}-${expectedMonthStr}-${String(dayNum).padStart(2, "0")}`;
+        const old = oldByDayNum[dayNum];
+        if (old) return { ...old, date: dateStr };
+        return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+      });
+      const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
+      const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
+      return { ...e, days: newDays, grossIncome: newGross, netIncome: newNet };
+    });
+    if (needsFix) {
+      update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fixed } : b) }));
+    }
+  }, [selectedBiz]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function deleteYear(yr) {
     if (!confirm(`Delete all data for ${yr}?`)) return;
     updateBizData(d => d.filter(e => e.year !== yr));
@@ -8400,22 +8442,19 @@ function BusinessPage({ data, update }) {
                               const yr = e.year;
                               const mIdx = newMonthIdx !== -1 ? newMonthIdx : e.monthIndex;
                               const daysInNewMonth = new Date(yr, mIdx + 1, 0).getDate();
-                              const oldDays = e.days || [];
-                              // Map old days by day-number so we can reuse recorded data
+                              const expectedMonthStr = String(mIdx + 1).padStart(2, "0");
                               const oldByDayNum = {};
-                              oldDays.forEach(od => {
-                                const dn = parseInt(od.date.split("-")[2], 10);
-                                if (!isNaN(dn)) oldByDayNum[dn] = od;
+                              (e.days || []).forEach(od => {
+                                const dn = parseInt((od.date || "").split("-")[2], 10);
+                                if (!isNaN(dn) && dn >= 1) oldByDayNum[dn] = od;
                               });
-                              // Rebuild days array for the new month (correct dates, trimmed to valid days)
                               const newDays = Array.from({ length: daysInNewMonth }, (_, i) => {
                                 const dayNum = i + 1;
-                                const dateStr = `${yr}-${String(mIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+                                const dateStr = `${yr}-${expectedMonthStr}-${String(dayNum).padStart(2, "0")}`;
                                 const old = oldByDayNum[dayNum];
                                 if (old) return { ...old, date: dateStr };
                                 return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
                               });
-                              // Recompute gross & net from the trimmed days
                               const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
                               const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
                               return { ...e, month: renamingDayMonthVal, monthIndex: mIdx, days: newDays, grossIncome: newGross, netIncome: newNet };
