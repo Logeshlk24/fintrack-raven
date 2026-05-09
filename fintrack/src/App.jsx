@@ -8009,6 +8009,20 @@ function BusinessPage({ data, update }) {
     }));
   }
 
+  function updateDayQty(dayId, qtyStr) {
+    const qty = qtyStr === "" || qtyStr == null ? null : parseFloat(qtyStr);
+    updateBizData(d => d.map(e => {
+      if (e.id !== selectedMonth) return e;
+      const price = e.price || 0;
+      const days = (e.days || []).map(d => {
+        if (d.id !== dayId) return d;
+        const gross = qty != null ? qty * price : 0;
+        return { ...d, quantity: qty, grossIncome: gross, netIncome: gross };
+      });
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+    }));
+  }
+
   function updateBizData(fn) {
     if (!activeBiz) return;
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fn(b.data || []) } : b) }));
@@ -8051,13 +8065,18 @@ function BusinessPage({ data, update }) {
   function addMonthEntry() {
     const monthIdx = MONTHS.indexOf(monthForm.month);
     if (monthIdx === -1) return;
-    // Month is always a folder — gross/net auto-calculated from daily entries (qty × price)
     const price = monthForm.price !== "" ? parseFloat(monthForm.price) : 0;
     const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
     if (!existing) {
-      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days: [] }]);
+      // Pre-populate every day of the month as an empty slot
+      const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
+      const days = Array.from({ length: daysInMonth }, (_, i) => {
+        const dayNum = i + 1;
+        const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+        return { id: `day_${dateStr}`, date: dateStr, quantity: null, grossIncome: 0, netIncome: 0, note: "" };
+      });
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
     } else {
-      // Update price on existing
       updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx ? { ...e, price } : e));
     }
     setMonthForm({ month: "", grossIncome: "", netIncome: "", price: "" }); setShowAddMonth(false);
@@ -8354,9 +8373,9 @@ function BusinessPage({ data, update }) {
             </button>
           )}
           {selectedMonth && (
-            <button onClick={() => setShowAddDay(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-              {showAddDay ? "✕ Cancel" : "+ Add Day"}
-            </button>
+            <span style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 8, padding: "6px 13px", fontWeight: 500 }}>
+              📝 Type qty in each row
+            </span>
           )}
         </div>
       </div>
@@ -8597,68 +8616,29 @@ function BusinessPage({ data, update }) {
       {/* ── LEVEL 3: Day entries inside a month ── */}
       {selectedMonth && activeMonthEntry && (
         <>
-          {/* Price editor card — always visible at top of month folder */}
+          {/* Price editor card */}
           <PriceEditor monthEntry={activeMonthEntry} onSave={newPrice => {
             updateBizData(d => d.map(e => {
               if (e.id !== selectedMonth) return e;
-              // Recalculate all day grosses with new price
-              const days = (e.days || []).map(d => ({ ...d, grossIncome: (d.quantity || 0) * newPrice }));
+              const days = (e.days || []).map(d => ({ ...d, grossIncome: (d.quantity != null ? d.quantity : 0) * newPrice, netIncome: (d.quantity != null ? d.quantity : 0) * newPrice }));
               return { ...e, price: newPrice, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
             }));
           }} />
-          {showAddDay && (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Day Entry — {activeMonthEntry.month} {selectedYear}</div>
-              {/* Price pill */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, marginTop: 6 }}>
-                <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>
-                  💰 Price: {activeMonthEntry.price ? fmtCur(activeMonthEntry.price) + " / unit" : "Not set"}
-                </span>
-                {dayForm.quantity && activeMonthEntry.price ? (
-                  <span style={{ background: "#f0faf5", color: "#1a6b3c", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 500 }}>
-                    → Gross = {fmtCur(parseFloat(dayForm.quantity) * activeMonthEntry.price)}
-                  </span>
-                ) : null}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px,100%), 1fr))", gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date *</label>
-                  <input type="date" value={dayForm.date} onChange={e => setDayForm(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Quantity (litres/units) *</label>
-                  <input type="text" inputMode="decimal" placeholder="e.g. 150" value={dayForm.quantity}
-                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setDayForm(p => ({ ...p, quantity: v })); }}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹) <span style={{ color: "var(--color-text-secondary)", fontWeight: 400 }}>(optional)</span></label>
-                  <input type="text" inputMode="decimal" placeholder="Leave blank = same as gross" value={dayForm.netIncome}
-                    onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setDayForm(p => ({ ...p, netIncome: v })); }}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Note (optional)</label>
-                  <input type="text" placeholder="e.g. Market sale" value={dayForm.note}
-                    onChange={e => setDayForm(p => ({ ...p, note: e.target.value }))}
-                    style={{ width: "100%", boxSizing: "border-box" }} />
-                </div>
-              </div>
-              <button onClick={addDayEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>+ Add Day</button>
-            </div>
-          )}
-          {dayEntries.length === 0 ? (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-              No day entries yet for {activeMonthEntry.month} {selectedYear}. Click "+ Add Day" to start.
-            </div>
-          ) : (
-            <>
+
+          {/* Summary stat cards — only days with qty entered */}
+          {(() => {
+            const filledDays = dayEntries.filter(d => d.quantity != null);
+            if (filledDays.length === 0) return null;
+            const totalQty   = filledDays.reduce((s,d)=>s+(d.quantity||0),0);
+            const totalGross = filledDays.reduce((s,d)=>s+d.grossIncome,0);
+            const totalNet   = filledDays.reduce((s,d)=>s+d.netIncome,0);
+            return (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
                 {[
-                  { label: "Total Quantity",   val: fmt(dayEntries.reduce((s,d)=>s+(d.quantity||0),0)) + " units", color: "#f0a020" },
-                  { label: "Total Gross",       val: fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0)), color: "#1a6b3c" },
-                  { label: "Total Net",         val: fmtCur(dayEntries.reduce((s,d)=>s+d.netIncome,0)),   color: "#4da6ff" },
-                  { label: "Avg Daily Gross",   val: fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0)/dayEntries.length), color: "#9b59b6" },
+                  { label: "Days Filled",     val: `${filledDays.length} / ${dayEntries.length}`,              color: "#f0a020" },
+                  { label: "Total Quantity",   val: fmt(totalQty) + " units",                                   color: "#9b59b6" },
+                  { label: "Total Gross",      val: fmtCur(totalGross),                                         color: "#1a6b3c" },
+                  { label: "Total Net",        val: fmtCur(totalNet),                                           color: "#4da6ff" },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
@@ -8666,58 +8646,88 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15, display: "flex", alignItems: "center", gap: 10 }}>
-                  Daily Breakdown — {activeMonthEntry.month} {selectedYear}
-                  {activeMonthEntry.price ? (
-                    <span style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>
-                      💰 ₹{fmt(activeMonthEntry.price)}/unit
-                    </span>
-                  ) : null}
-                </div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: "var(--color-background-secondary)" }}>
-                      {["Date","Day","Quantity","Gross Income","Net Income","Margin","Note",""].map(h => (
-                        <th key={h} style={{ padding: "8px 14px", textAlign: h === "" ? "right" : "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
-                      ))}
+            );
+          })()}
+
+          {/* Inline editable daily table */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+            <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, fontSize: 15, display: "flex", alignItems: "center", gap: 10 }}>
+              Daily Quantities — {activeMonthEntry.month} {selectedYear}
+              {activeMonthEntry.price ? (
+                <span style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>
+                  💰 ₹{fmt(activeMonthEntry.price)}/unit · Just type quantities below
+                </span>
+              ) : <span style={{ fontSize: 11, color: "#e55", background: "#fff0f0", borderRadius: 6, padding: "2px 8px" }}>⚠ Set a price above first</span>}
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "var(--color-background-secondary)" }}>
+                  {["Date","Day","Quantity","Gross Income","Note"].map(h => (
+                    <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dayEntries.map((d, i) => {
+                  const dateObj = new Date(d.date + "T00:00:00");
+                  const dayName = dateObj.toLocaleDateString("en-IN", { weekday: "short" });
+                  const dateStr = dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+                  const isSun = dateObj.getDay() === 0;
+                  const isSat = dateObj.getDay() === 6;
+                  const isWeekend = isSun || isSat;
+                  const hasSomeQty = d.quantity != null;
+                  return (
+                    <tr key={d.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: isWeekend ? "var(--color-background-secondary)" : "transparent" }}>
+                      <td style={{ padding: "7px 14px", fontWeight: 600, color: isWeekend ? "#9b59b6" : "var(--color-text-primary)", whiteSpace: "nowrap" }}>{dateStr}</td>
+                      <td style={{ padding: "7px 14px", color: isWeekend ? "#9b59b6" : "var(--color-text-secondary)", fontSize: 11, width: 40 }}>{dayName}</td>
+                      <td style={{ padding: "4px 8px", width: 120 }}>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="—"
+                          defaultValue={d.quantity != null ? String(d.quantity) : ""}
+                          onBlur={e => updateDayQty(d.id, e.target.value.trim())}
+                          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("tr")?.nextElementSibling?.querySelector("input")?.focus(); } }}
+                          style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: hasSomeQty ? 600 : 400, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: hasSomeQty ? "#f0faf5" : "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
+                          onFocus={e => { e.target.style.border = "1.5px solid #1a6b3c"; e.target.style.background = "#fff"; }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px 14px", color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: hasSomeQty ? 600 : 400 }}>
+                        {hasSomeQty ? fmtCur(d.grossIncome) : "—"}
+                      </td>
+                      <td style={{ padding: "4px 8px" }}>
+                        <input
+                          type="text"
+                          placeholder="note..."
+                          defaultValue={d.note || ""}
+                          onBlur={e => {
+                            const note = e.target.value.trim();
+                            updateBizData(dd => dd.map(ee => {
+                              if (ee.id !== selectedMonth) return ee;
+                              return { ...ee, days: (ee.days || []).map(dy => dy.id === d.id ? { ...dy, note } : dy) };
+                            }));
+                          }}
+                          style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 12, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "transparent", color: "var(--color-text-secondary)" }}
+                          onFocus={e => e.target.style.border = "1.5px solid #1a6b3c"}
+                          onBlurCapture={e => e.target.style.border = "0.5px solid var(--color-border-secondary)"}
+                        />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {dayEntries.map((d, i) => {
-                      const margin = d.grossIncome > 0 ? ((d.netIncome / d.grossIncome) * 100).toFixed(1) : "0.0";
-                      const dateObj = new Date(d.date + "T00:00:00");
-                      const dayName = dateObj.toLocaleDateString("en-IN", { weekday: "short" });
-                      const dateStr = dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-                      return (
-                        <tr key={d.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
-                          <td style={{ padding: "9px 14px", fontWeight: 500 }}>{dateStr}</td>
-                          <td style={{ padding: "9px 14px", color: "var(--color-text-secondary)", fontSize: 11 }}>{dayName}</td>
-                          <td style={{ padding: "9px 14px", fontWeight: 500 }}>{d.quantity != null ? fmt(d.quantity) : "—"}</td>
-                          <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(d.grossIncome)}</td>
-                          <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 600 }}>{fmtCur(d.netIncome)}</td>
-                          <td style={{ padding: "9px 14px", color: parseFloat(margin) >= 50 ? "#1a6b3c" : "#f0a020" }}>{margin}%</td>
-                          <td style={{ padding: "9px 14px", color: "var(--color-text-secondary)", fontSize: 12 }}>{d.note || "—"}</td>
-                          <td style={{ padding: "9px 14px", textAlign: "right" }}>
-                            <button onClick={() => deleteDayEntry(d.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "#d44" }}>🗑</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
-                      <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
-                      <td style={{ padding: "9px 14px", fontWeight: 700 }}>{fmt(dayEntries.reduce((s,d)=>s+(d.quantity||0),0))}</td>
-                      <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0))}</td>
-                      <td style={{ padding: "9px 14px", color: "#4da6ff", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s,d)=>s+d.netIncome,0))}</td>
-                      <td colSpan={3} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </>
-          )}
+                  );
+                })}
+              </tbody>
+              {dayEntries.filter(d=>d.quantity!=null).length > 0 && (
+                <tfoot>
+                  <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
+                    <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
+                    <td style={{ padding: "9px 14px", fontWeight: 700 }}>{fmt(dayEntries.reduce((s,d)=>s+(d.quantity||0),0))}</td>
+                    <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0))}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         </>
       )}
     </div>
