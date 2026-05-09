@@ -8811,14 +8811,8 @@ function BusinessPage({ data, update }) {
                 ))}
               </div>
 
-              {/* Chart */}
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
-                <LineChart entries={yearEntries} />
-              </div>
-
               {/* ── Month folder cards grid ── */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, marginBottom: 16 }}>
                 {yearEntries.map(e => {
                   const dayCount = (e.days || []).length;
                   const gross = e.grossIncome || 0;
@@ -8882,6 +8876,12 @@ function BusinessPage({ data, update }) {
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Chart — below month cards */}
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginTop: 4 }}>
+                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
+                <LineChart entries={yearEntries} />
               </div>
             </>
           )}
