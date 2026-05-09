@@ -8730,68 +8730,167 @@ function BusinessPage({ data, update }) {
         const gross = entry.grossIncome || 0;
         const net   = entry.netIncome || 0;
         const breakdown = entry.qtyBreakdown || (entry.qty != null ? [{ qty: entry.qty, price: entry.price || 0 }] : []);
-        return (
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginTop: 4 }}>
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button onClick={() => setSelectedNonDayMonth(null)}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
-                <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
-              </div>
-              <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
-            </div>
 
-            {/* Qty × Price breakdown table */}
-            {breakdown.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
-                  <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>Qty (units)</div>
-                  <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" }}>Price (₹)</div>
-                  <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" }}>Subtotal</div>
-                  {breakdown.map((row, idx) => (
-                    <React.Fragment key={idx}>
-                      <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" }}>units</span></div>
-                      <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
-                      <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty * row.price)}</div>
-                    </React.Fragment>
-                  ))}
+        // Local edit state via a wrapper component so we can use useState
+        function DetailPanel() {
+          const [editing, setEditing] = React.useState(false);
+          const [editRows, setEditRows] = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
+
+          function saveEdits() {
+            const filledRows = editRows.filter(r => r.qty !== "" && r.price !== "");
+            if (filledRows.length === 0) return;
+            const newGross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
+            const newQty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
+            const newBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
+            updateBizData(d => d.map(en => en.id !== entry.id ? en : {
+              ...en,
+              qty: newQty,
+              price: parseFloat(filledRows[0].price) || 0,
+              qtyBreakdown: newBreakdown,
+              grossIncome: newGross,
+              netIncome: newGross - (en.spending || 0),
+            }));
+            setEditing(false);
+          }
+
+          return (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginTop: 4 }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={() => setSelectedNonDayMonth(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
+                  <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {!editing ? (
+                    <button onClick={() => { setEditRows(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) }))); setEditing(true); }}
+                      style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                      ✏️ Edit
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditing(false)}
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        Cancel
+                      </button>
+                      <button onClick={saveEdits}
+                        style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>
+                        ✓ Save
+                      </button>
+                    </>
+                  )}
+                  <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
                 </div>
               </div>
-            )}
 
-            {/* Gross / Spend / Net */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 }}>
-                <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Gross Income</span>
-                <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+              {/* Breakdown */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+
+                {editing ? (
+                  /* ── Edit mode ── */
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {/* Column headers */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Qty (units)</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Price (₹)</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 }}>Subtotal</div>
+                      <div />
+                    </div>
+                    {editRows.map((row, idx) => {
+                      const sub = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
+                      return (
+                        <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
+                          <input type="text" inputMode="decimal" placeholder="e.g. 120"
+                            value={row.qty}
+                            onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], qty: v }; return r; }); }}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
+                            onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }}
+                            onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                          />
+                          <input type="text" inputMode="decimal" placeholder="e.g. 30"
+                            value={row.price}
+                            onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], price: v }; return r; }); }}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }}
+                            onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }}
+                            onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                          />
+                          <div style={{ fontSize: 13, fontWeight: 700, color: sub > 0 ? "#1a6b3c" : "var(--color-text-secondary)", minWidth: 80, textAlign: "right" }}>
+                            {sub > 0 ? `₹${fmt(sub)}` : "—"}
+                          </div>
+                          {editRows.length > 1 ? (
+                            <button onClick={() => setEditRows(p => p.filter((_, i) => i !== idx))}
+                              style={{ background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "4px 9px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>×</button>
+                          ) : <div style={{ width: 28 }} />}
+                        </div>
+                      );
+                    })}
+                    {/* Add row + live gross */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                      <button onClick={() => setEditRows(p => [...p, { qty: "", price: "" }])}
+                        style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                        + Add Row
+                      </button>
+                      {editRows.some(r => r.qty && r.price) && (
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1a6b3c" }}>
+                          Gross = ₹{fmt(editRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* ── View mode ── */
+                  <div style={{ borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 }}>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>Qty (units)</div>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" }}>Price (₹)</div>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" }}>Subtotal</div>
+                      {breakdown.map((row, idx) => (
+                        <React.Fragment key={idx}>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" }}>units</span></div>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty * row.price)}</div>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" }}>
-                <span style={{ color: "var(--color-text-secondary)" }}>Spend (₹)</span>
-                <input
-                  type="text" inputMode="decimal"
-                  key={`detail-spend-${entry.id}-${entry.spending}`}
-                  defaultValue={entry.spending != null ? String(entry.spending) : ""}
-                  placeholder="0"
-                  onBlur={ev => {
-                    const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
-                    const netIncome = (entry.grossIncome || 0) - spending;
-                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, spending, netIncome }));
-                  }}
-                  style={{ width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
-                  onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
-                  onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
-                />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
-                <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
-                <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
+
+              {/* Gross / Spend / Net */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 }}>
+                  <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Gross Income</span>
+                  <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" }}>
+                  <span style={{ color: "var(--color-text-secondary)" }}>Spend (₹)</span>
+                  <input
+                    type="text" inputMode="decimal"
+                    key={`detail-spend-${entry.id}-${entry.spending}`}
+                    defaultValue={entry.spending != null ? String(entry.spending) : ""}
+                    placeholder="0"
+                    onBlur={ev => {
+                      const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
+                      const netIncome = (entry.grossIncome || 0) - spending;
+                      updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, spending, netIncome }));
+                    }}
+                    style={{ width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
+                    onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
+                    onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                  />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
+                  <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
+                  <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
+                </div>
               </div>
             </div>
-          </div>
-        );
+          );
+        }
+        return <DetailPanel key={entry.id} />;
       })()}
 
       {/* ── LEVEL 3: Day entries inside a month (Day-wise mode only) ── */}
