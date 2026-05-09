@@ -8735,6 +8735,21 @@ function BusinessPage({ data, update }) {
         function DetailPanel() {
           const [editing, setEditing] = React.useState(false);
           const [editRows, setEditRows] = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
+          const [renamingMonth, setRenamingMonth] = React.useState(false);
+          const [editMonth, setEditMonth] = React.useState(entry.month);
+
+          const MONTHS_LIST = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+          function saveMonthRename() {
+            if (!editMonth || editMonth === entry.month) { setRenamingMonth(false); return; }
+            const newMonthIdx = MONTHS_LIST.indexOf(editMonth);
+            updateBizData(d => d.map(en => en.id !== entry.id ? en : {
+              ...en,
+              month: editMonth,
+              monthIndex: newMonthIdx !== -1 ? newMonthIdx : en.monthIndex,
+            }));
+            setRenamingMonth(false);
+          }
 
           function saveEdits() {
             const filledRows = editRows.filter(r => r.qty !== "" && r.price !== "");
@@ -8760,7 +8775,25 @@ function BusinessPage({ data, update }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <button onClick={() => setSelectedNonDayMonth(null)}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
-                  <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                  {renamingMonth ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <select value={editMonth} onChange={e => setEditMonth(e.target.value)}
+                        style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
+                        {MONTHS_LIST.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <button onClick={saveMonthRename}
+                        style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
+                      <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }}
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                      <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }}
+                        title="Change month"
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {!editing ? (
