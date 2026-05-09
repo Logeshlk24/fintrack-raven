@@ -8043,7 +8043,8 @@ function BusinessPage({ data, update }) {
     updateBizData(d => d.filter(e => e.id !== id));
   }
 
-  // ── Auto-repair: fix existing day-wise months with wrong date strings ──────
+  // ── Auto-repair: silently fix any day-wise month whose date strings don't match its monthIndex ──
+  // Runs whenever a business is opened. No-ops if all dates are already correct.
   useEffect(() => {
     if (!activeBiz) return;
     const MONTHS_ALL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -8052,24 +8053,23 @@ function BusinessPage({ data, update }) {
     const fixed = entries.map(e => {
       if (!e.days || e.days.length === 0) return e;
       const mIdx = e.monthIndex != null ? e.monthIndex : MONTHS_ALL.indexOf(e.month);
-      if (mIdx === -1) return e;
+      if (mIdx < 0 || mIdx > 11) return e;
       const yr = e.year;
+      const expectedM = String(mIdx + 1).padStart(2, "0");
       const daysInMonth = new Date(yr, mIdx + 1, 0).getDate();
-      const expectedMonthStr = String(mIdx + 1).padStart(2, "0");
-      const hasBadDates = e.days.some(d => {
-        const parts = (d.date || "").split("-");
-        return parts.length !== 3 || parts[1] !== expectedMonthStr || parseInt(parts[2], 10) > daysInMonth;
+      const hasBad = e.days.some(d => {
+        const p = (d.date || "").split("-");
+        return p.length !== 3 || p[1] !== expectedM || parseInt(p[2], 10) > daysInMonth;
       });
-      if (!hasBadDates) return e;
+      if (!hasBad) return e;
       needsFix = true;
-      const oldByDayNum = {};
-      e.days.forEach(od => { const dn = parseInt((od.date || "").split("-")[2], 10); if (!isNaN(dn) && dn >= 1 && dn <= 31) oldByDayNum[dn] = od; });
+      const byDayNum = {};
+      e.days.forEach(od => { const n = parseInt((od.date || "").split("-")[2], 10); if (n >= 1 && n <= 31) byDayNum[n] = od; });
       const newDays = Array.from({ length: daysInMonth }, (_, i) => {
-        const dayNum = i + 1;
-        const dateStr = `${yr}-${expectedMonthStr}-${String(dayNum).padStart(2, "0")}`;
-        const old = oldByDayNum[dayNum];
-        if (old) return { ...old, date: dateStr };
-        return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+        const n = i + 1;
+        const ds = `${yr}-${expectedM}-${String(n).padStart(2, "0")}`;
+        const old = byDayNum[n];
+        return old ? { ...old, date: ds } : { id: `day_${ds}`, date: ds, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
       });
       const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
       const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
@@ -8432,21 +8432,20 @@ function BusinessPage({ data, update }) {
                           </select>
                           <button onClick={() => {
                             const MONTHS_ALL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-                            const newMonthIdx = MONTHS_ALL.indexOf(renamingDayMonthVal);
+                            const newMIdx = MONTHS_ALL.indexOf(renamingDayMonthVal);
                             updateBizData(d => d.map(e => {
                               if (e.id !== selectedMonth) return e;
                               const yr = e.year;
-                              const mIdx = newMonthIdx !== -1 ? newMonthIdx : e.monthIndex;
-                              const daysInNewMonth = new Date(yr, mIdx + 1, 0).getDate();
-                              const expectedMonthStr = String(mIdx + 1).padStart(2, "0");
-                              const oldByDayNum = {};
-                              (e.days || []).forEach(od => { const dn = parseInt((od.date || "").split("-")[2], 10); if (!isNaN(dn) && dn >= 1) oldByDayNum[dn] = od; });
-                              const newDays = Array.from({ length: daysInNewMonth }, (_, i) => {
-                                const dayNum = i + 1;
-                                const dateStr = `${yr}-${expectedMonthStr}-${String(dayNum).padStart(2, "0")}`;
-                                const old = oldByDayNum[dayNum];
-                                if (old) return { ...old, date: dateStr };
-                                return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+                              const mIdx = newMIdx !== -1 ? newMIdx : e.monthIndex;
+                              const expectedM = String(mIdx + 1).padStart(2, "0");
+                              const daysInMonth = new Date(yr, mIdx + 1, 0).getDate();
+                              const byDayNum = {};
+                              (e.days || []).forEach(od => { const n = parseInt((od.date || "").split("-")[2], 10); if (n >= 1) byDayNum[n] = od; });
+                              const newDays = Array.from({ length: daysInMonth }, (_, i) => {
+                                const n = i + 1;
+                                const ds = `${yr}-${expectedM}-${String(n).padStart(2, "0")}`;
+                                const old = byDayNum[n];
+                                return old ? { ...old, date: ds } : { id: `day_${ds}`, date: ds, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
                               });
                               const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
                               const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
@@ -8868,43 +8867,41 @@ function BusinessPage({ data, update }) {
                 ))}
               </div>
 
-              {/* ── Non-day-wise Month Detail Panel — shown inline, replaces grid ── */}
+              {/* ── Non-day-wise detail panel — inline, replaces grid when open ── */}
               {selectedNonDayMonth && !isDayWise && (() => {
                 const entry = bizData.find(e => e.id === selectedNonDayMonth);
                 if (!entry) return null;
                 const gross = entry.grossIncome || 0;
-                const net   = entry.netIncome || 0;
+                const net   = entry.netIncome   || 0;
                 const breakdown = entry.qtyBreakdown || (entry.qty != null ? [{ qty: entry.qty, price: entry.price || 0 }] : []);
                 function InlineDetailPanel() {
-                  const [editing, setEditing] = React.useState(false);
-                  const [editRows, setEditRows] = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
+                  const [editing, setEditing]           = React.useState(false);
+                  const [editRows, setEditRows]         = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
                   const [renamingMonth, setRenamingMonth] = React.useState(false);
-                  const [editMonth, setEditMonth] = React.useState(entry.month);
-                  const MONTHS_LIST = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                  const [editMonth, setEditMonth]       = React.useState(entry.month);
+                  const ML = ["January","February","March","April","May","June","July","August","September","October","November","December"];
                   function saveMonthRename() {
                     if (!editMonth || editMonth === entry.month) { setRenamingMonth(false); return; }
-                    const newMonthIdx = MONTHS_LIST.indexOf(editMonth);
-                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, month: editMonth, monthIndex: newMonthIdx !== -1 ? newMonthIdx : en.monthIndex }));
+                    const idx = ML.indexOf(editMonth);
+                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, month: editMonth, monthIndex: idx !== -1 ? idx : en.monthIndex }));
                     setRenamingMonth(false);
                   }
                   function saveEdits() {
-                    const filledRows = editRows.filter(r => r.qty !== "" && r.price !== "");
-                    if (filledRows.length === 0) return;
-                    const newGross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
-                    const newQty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
-                    const newBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
-                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, qty: newQty, price: parseFloat(filledRows[0].price) || 0, qtyBreakdown: newBreakdown, grossIncome: newGross, netIncome: newGross - (en.spending || 0) }));
+                    const rows = editRows.filter(r => r.qty !== "" && r.price !== "");
+                    if (!rows.length) return;
+                    const newGross = rows.reduce((s, r) => s + (parseFloat(r.qty)||0)*(parseFloat(r.price)||0), 0);
+                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, qty: rows.reduce((s,r)=>s+(parseFloat(r.qty)||0),0), price: parseFloat(rows[0].price)||0, qtyBreakdown: rows.map(r=>({qty:parseFloat(r.qty)||0,price:parseFloat(r.price)||0})), grossIncome: newGross, netIncome: newGross-(en.spending||0) }));
                     setEditing(false);
                   }
                   return (
                     <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginBottom: 16 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <button onClick={() => setSelectedNonDayMonth(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
+                          <button onClick={() => setSelectedNonDayMonth(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0 }}>←</button>
                           {renamingMonth ? (
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <select value={editMonth} onChange={e => setEditMonth(e.target.value)} style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
-                                {MONTHS_LIST.map(m => { const usedByOther = yearEntries.some(e => e.month === m && e.id !== entry.id); return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>; })}
+                                {ML.map(m => { const used = yearEntries.some(e => e.month === m && e.id !== entry.id); return <option key={m} value={m} disabled={used}>{m}{used?" ✓ already added":""}</option>; })}
                               </select>
                               <button onClick={saveMonthRename} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
                               <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
@@ -8912,19 +8909,15 @@ function BusinessPage({ data, update }) {
                           ) : (
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
-                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }} title="Change month" style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
                             </div>
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          {!editing ? (
-                            <button onClick={() => { setEditRows(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) }))); setEditing(true); }} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>✏️ Edit</button>
-                          ) : (
-                            <>
-                              <button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
-                              <button onClick={saveEdits} style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓ Save</button>
-                            </>
-                          )}
+                          {!editing
+                            ? <button onClick={() => { setEditRows(breakdown.map(r=>({qty:String(r.qty),price:String(r.price)}))); setEditing(true); }} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>✏️ Edit</button>
+                            : <><button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                               <button onClick={saveEdits} style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓ Save</button></>}
                           <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
                         </div>
                       </div>
@@ -8939,54 +8932,54 @@ function BusinessPage({ data, update }) {
                               <div />
                             </div>
                             {editRows.map((row, idx) => {
-                              const sub = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
+                              const sub = (parseFloat(row.qty)||0)*(parseFloat(row.price)||0);
                               return (
                                 <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
-                                  <input type="text" inputMode="decimal" placeholder="e.g. 120" value={row.qty} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], qty: v }; return r; }); }} style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }} onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }} onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }} />
-                                  <input type="text" inputMode="decimal" placeholder="e.g. 30" value={row.price} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], price: v }; return r; }); }} style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }} onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }} onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }} />
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: sub > 0 ? "#1a6b3c" : "var(--color-text-secondary)", minWidth: 80, textAlign: "right" }}>{sub > 0 ? `₹${fmt(sub)}` : "—"}</div>
-                                  {editRows.length > 1 ? <button onClick={() => setEditRows(p => p.filter((_, i) => i !== idx))} style={{ background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "4px 9px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>×</button> : <div style={{ width: 28 }} />}
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 120" value={row.qty} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],qty:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#1a6b3c",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #1a6b3c";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 30" value={row.price} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],price:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#9b59b6",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #9b59b6";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                  <div style={{ fontSize:13,fontWeight:700,color:sub>0?"#1a6b3c":"var(--color-text-secondary)",minWidth:80,textAlign:"right" }}>{sub>0?`₹${fmt(sub)}`:"—"}</div>
+                                  {editRows.length>1 ? <button onClick={()=>setEditRows(p=>p.filter((_,i)=>i!==idx))} style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:5,padding:"4px 9px",cursor:"pointer",fontSize:13,fontWeight:700 }}>×</button> : <div style={{width:28}}/>}
                                 </div>
                               );
                             })}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-                              <button onClick={() => setEditRows(p => [...p, { qty: "", price: "" }])} style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>+ Add Row</button>
-                              {editRows.some(r => r.qty && r.price) && <div style={{ fontSize: 13, fontWeight: 700, color: "#1a6b3c" }}>Gross = ₹{fmt(editRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}</div>}
+                            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4 }}>
+                              <button onClick={()=>setEditRows(p=>[...p,{qty:"",price:""}])} style={{ fontSize:12,background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontWeight:600 }}>+ Add Row</button>
+                              {editRows.some(r=>r.qty&&r.price)&&<div style={{fontSize:13,fontWeight:700,color:"#1a6b3c"}}>Gross = ₹{fmt(editRows.reduce((s,r)=>s+(parseFloat(r.qty)||0)*(parseFloat(r.price)||0),0))}</div>}
                             </div>
                           </div>
                         ) : (
-                          <div style={{ borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 }}>
-                              <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>Qty (units)</div>
-                              <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" }}>Price (₹)</div>
-                              <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" }}>Subtotal</div>
-                              {breakdown.map((row, idx) => (
+                          <div style={{ borderRadius:8,overflow:"hidden",border:"0.5px solid var(--color-border-tertiary)" }}>
+                            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0 }}>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)" }}>Qty (units)</div>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"center" }}>Price (₹)</div>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"right" }}>Subtotal</div>
+                              {breakdown.map((row,idx)=>(
                                 <React.Fragment key={idx}>
-                                  <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" }}>units</span></div>
-                                  <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
-                                  <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty * row.price)}</div>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#1a6b3c",borderTop:"0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)"}}>units</span></div>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#9b59b6",textAlign:"center",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:700,color:"#1a6b3c",textAlign:"right",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty*row.price)}</div>
                                 </React.Fragment>
                               ))}
                             </div>
                           </div>
                         )}
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 }}>
-                          <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Gross Income</span>
-                          <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+                      <div style={{ display:"flex",flexDirection:"column",gap:8,fontSize:13 }}>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#e8f5ee",borderRadius:8 }}>
+                          <span style={{color:"#1a6b3c",fontWeight:600}}>Gross Income</span>
+                          <span style={{color:"#1a6b3c",fontWeight:700,fontSize:16}}>{fmtCur(gross)}</span>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" }}>
-                          <span style={{ color: "var(--color-text-secondary)" }}>Spend (₹)</span>
-                          <input type="text" inputMode="decimal" key={`detail-spend-${entry.id}-${entry.spending}`} defaultValue={entry.spending != null ? String(entry.spending) : ""} placeholder="0"
-                            onBlur={ev => { const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim()); const netIncome = (entry.grossIncome || 0) - spending; updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, spending, netIncome })); }}
-                            style={{ width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
-                            onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
-                            onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }} />
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 12px" }}>
+                          <span style={{color:"var(--color-text-secondary)"}}>Spend (₹)</span>
+                          <input type="text" inputMode="decimal" key={`spend-${entry.id}-${entry.spending}`} defaultValue={entry.spending!=null?String(entry.spending):""} placeholder="0"
+                            onBlur={ev => { const sp=ev.target.value.trim()===""?0:parseFloat(ev.target.value.trim()); updateBizData(d=>d.map(en=>en.id!==entry.id?en:{...en,spending:sp,netIncome:(entry.grossIncome||0)-sp})); }}
+                            style={{width:110,padding:"5px 10px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:7,background:"var(--color-background-secondary)",color:"#e55",outline:"none",textAlign:"right"}}
+                            onFocus={ev=>{ev.target.style.border="1.5px solid #e55";ev.target.style.background="#fff";}}
+                            onBlurCapture={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
-                          <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
-                          <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 }}>
+                          <span style={{color:"#4da6ff",fontWeight:600}}>Net Income</span>
+                          <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
                         </div>
                       </div>
                     </div>
@@ -8995,7 +8988,7 @@ function BusinessPage({ data, update }) {
                 return <InlineDetailPanel key={entry.id} />;
               })()}
 
-              {/* ── Month folder cards grid (hidden when detail is open) ── */}
+              {/* ── Month folder cards grid (hidden while detail is open) ── */}
               {!selectedNonDayMonth && <><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, marginBottom: 16 }}>
                 {yearEntries.map(e => {
                   const dayCount = (e.days || []).length;
@@ -9073,7 +9066,7 @@ function BusinessPage({ data, update }) {
         </>
       )}
 
-      {/* ── Non-day-wise Month Detail Panel (moved inline above — keeping stub to avoid ref errors) ── */}
+      {/* ── Non-day-wise Month Detail Panel — moved inline above, disabled here ── */}
       {false && (() => {
         const entry = bizData.find(e => e.id === selectedNonDayMonth);
         if (!entry) return null;
