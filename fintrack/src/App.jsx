@@ -8072,37 +8072,26 @@ function BusinessPage({ data, update }) {
   function addMonthEntry() {
     const monthIdx = MONTHS.indexOf(monthForm.month);
     if (monthIdx === -1) return;
+    // Never overwrite an existing month — dropdown already blocks it, but guard here too
+    const alreadyExists = bizData.some(e => e.year === selectedYear && e.month === monthForm.month);
+    if (alreadyExists) return;
     if (isDayWise) {
-      // Day-wise: single price from first row
       const price = parseFloat(monthForm.rows[0]?.price) || 0;
-      const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
-      if (!existing) {
-        const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
-        const days = Array.from({ length: daysInMonth }, (_, i) => {
-          const dayNum = i + 1;
-          const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-          return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
-        });
-        updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
-      } else {
-        updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx ? { ...e, price } : e));
-      }
+      const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
+      const days = Array.from({ length: daysInMonth }, (_, i) => {
+        const dayNum = i + 1;
+        const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+        return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+      });
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
     } else {
-      // Non-day-wise: each row has its own qty × price → subtotal; gross = sum
       const filledRows = monthForm.rows.filter(r => r.qty !== "" && r.price !== "");
       if (filledRows.length === 0) return;
       const gross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
       const qty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0) || null;
-      const price = parseFloat(filledRows[0].price) || 0; // reference price
+      const price = parseFloat(filledRows[0].price) || 0;
       const qtyBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
-      const existing = bizData.find(e => e.year === selectedYear && e.monthIndex === monthIdx);
-      if (!existing) {
-        updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, qty, price, qtyBreakdown, grossIncome: gross, netIncome: gross }]);
-      } else {
-        updateBizData(d => d.map(e => e.year === selectedYear && e.monthIndex === monthIdx
-          ? { ...e, qty, price, qtyBreakdown, grossIncome: gross, netIncome: gross }
-          : e));
-      }
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, qty, price, qtyBreakdown, grossIncome: gross, netIncome: gross }]);
     }
     setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); setShowAddMonth(false);
   }
@@ -8379,7 +8368,10 @@ function BusinessPage({ data, update }) {
                           <select autoFocus value={renamingDayMonthVal}
                             onChange={e => setRenamingDayMonthVal(e.target.value)}
                             style={{ fontSize: 16, fontFamily: "'DM Serif Display', serif", border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "2px 8px", outline: "none", background: "var(--color-background-secondary)" }}>
-                            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
+                            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => {
+                              const usedByOther = yearEntries.some(e => e.month === m && e.id !== selectedMonth);
+                              return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
+                            })}
                           </select>
                           <button onClick={() => {
                             const newMonthIdx = ["January","February","March","April","May","June","July","August","September","October","November","December"].indexOf(renamingDayMonthVal);
@@ -8568,7 +8560,10 @@ function BusinessPage({ data, update }) {
                   <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
                   <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
                     <option value="">Select month</option>
-                    {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                    {MONTHS.map(m => {
+                      const used = yearEntries.some(e => e.month === m);
+                      return <option key={m} value={m} disabled={used}>{m}{used ? " ✓ already added" : ""}</option>;
+                    })}
                   </select>
                 </div>
                 {isDayWise && (
@@ -8790,7 +8785,10 @@ function BusinessPage({ data, update }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <select value={editMonth} onChange={e => setEditMonth(e.target.value)}
                         style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
-                        {MONTHS_LIST.map(m => <option key={m} value={m}>{m}</option>)}
+                        {MONTHS_LIST.map(m => {
+                          const usedByOther = yearEntries.some(e => e.month === m && e.id !== entry.id);
+                          return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
+                        })}
                       </select>
                       <button onClick={saveMonthRename}
                         style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
