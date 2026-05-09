@@ -244,8 +244,83 @@ function DriveProvider({ children, firebaseUser }) {
     } catch (e) { return null; }
   }
 
+  async function deleteFromDrive(fileId) {
+    if (!fileId) return false;
+    let tok = localStorage.getItem("ft_drv_tok");
+    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    if (!tok || Date.now() >= expiry) {
+      tok = await getFreshDriveToken();
+      if (tok) setToken(tok);
+    }
+    if (!tok) return false;
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + tok },
+      });
+      // 204 = success, 404 = already gone — both are fine
+      return res.status === 204 || res.status === 404;
+    } catch (e) { return false; }
+  }
+
+  // ── getOrCreateFolder — finds existing folder by name+parent, or creates it ──
+  async function getOrCreateFolder(name, parentId, tok) {
+    try {
+      let q = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g,"\\'")}' and trashed=false`;
+      if (parentId) q += ` and '${parentId}' in parents`;
+      const search = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=1`,
+        { headers: { Authorization: "Bearer " + tok } }
+      );
+      const { files } = await search.json();
+      if (files?.length) return files[0].id;
+      // Not found — create it
+      const meta = { name, mimeType: "application/vnd.google-apps.folder", ...(parentId ? { parents: [parentId] } : {}) };
+      const res = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      });
+      const d = await res.json();
+      return d.id || null;
+    } catch (e) { return null; }
+  }
+
+  // ── uploadWithStructure — builds fintrack folder tree then uploads renamed file ──
+  // section: "Business" | "Projects" | "Documents"
+  // contextName: business name / project name / folder name
+  // headerName: month name / task type / sub-folder name (used in file rename)
+  async function uploadWithStructure(file, section, contextName, headerName) {
+    let tok = localStorage.getItem("ft_drv_tok");
+    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    if (!tok || Date.now() >= expiry) {
+      tok = await getFreshDriveToken();
+      if (tok) setToken(tok);
+    }
+    if (!tok) return null;
+    try {
+      // Build: fintrack → section → contextName
+      const fintrackId   = await getOrCreateFolder("fintrack", null, tok);
+      if (!fintrackId) return null;
+      const sectionId    = await getOrCreateFolder(section, fintrackId, tok);
+      if (!sectionId) return null;
+      const contextId    = await getOrCreateFolder(contextName, sectionId, tok);
+      if (!contextId) return null;
+
+      // Rename file: originalName_contextName (keep extension)
+      const ext      = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
+      const baseName = file.name.includes(".") ? file.name.slice(0, file.name.lastIndexOf(".")) : file.name;
+      const newName  = headerName
+        ? `${baseName}_${headerName}${ext}`
+        : `${baseName}_${contextName}${ext}`;
+      const renamedFile = new File([file], newName, { type: file.type });
+
+      return await uploadToDrive(renamedFile, contextId);
+    } catch (e) { return null; }
+  }
+
   return (
-    <DriveContext.Provider value={{ connected: !!token, token, email, loading, clearDrive, uploadToDrive }}>
+    <DriveContext.Provider value={{ connected: !!token, token, email, loading, clearDrive, uploadToDrive, deleteFromDrive, uploadWithStructure }}>
       {children}
     </DriveContext.Provider>
   );
@@ -3904,8 +3979,8 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   // Redirect legacy tab values to new names
   const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
 
-  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents", "backup"];
-  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents", "Backup"];
+  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents"];
+  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents"];
 
   return (
     <div>
@@ -3940,9 +4015,6 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
       {/* ── Documents ── */}
       {effectiveTab === "documents" && <DocumentsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
-
-      {/* ── Backup ── */}
-      {effectiveTab === "backup" && <BackupSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
     </div>
   );
 }
@@ -4085,193 +4157,6 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
   );
 }
 
-// ─── BackupSettings ────────────────────────────────────────────────────────────
-function BackupSettings({ data, update, cardStyle, sectionTitle }) {
-  const importRef = useRef(null);
-  const [importStatus, setImportStatus] = useState(null); // null | "success" | "error"
-  const [importMsg, setImportMsg]       = useState("");
-  const [importing, setImporting]       = useState(false);
-  const [showConfirm, setShowConfirm]   = useState(false);
-  const [pendingImport, setPendingImport] = useState(null);
-
-  // ── EXPORT ──────────────────────────────────────────────────────────────────
-  function handleExport() {
-    // Exclude live Firebase user object — it's re-populated on sign-in
-    const { user, ...exportable } = data;
-    const payload = {
-      _meta: {
-        exportedAt: new Date().toISOString(),
-        appVersion: "fintrack_v2",
-      },
-      ...exportable,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const ts   = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `fintrack_backup_${ts}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // ── IMPORT — step 1: read & validate file ───────────────────────────────────
-  function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!importRef.current) return;
-    importRef.current.value = "";          // reset so same file can be re-picked
-    if (!file) return;
-
-    setImporting(true);
-    setImportStatus(null);
-    setImportMsg("");
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const parsed = JSON.parse(evt.target.result);
-        // Basic sanity check — must look like a fintrack export
-        if (!parsed._meta || parsed._meta.appVersion !== "fintrack_v2") {
-          throw new Error("This file doesn't look like a FinTrack backup.");
-        }
-        setPendingImport(parsed);
-        setShowConfirm(true);
-      } catch (err) {
-        setImportStatus("error");
-        setImportMsg(err.message || "Invalid JSON file. Please choose a valid FinTrack backup.");
-      } finally {
-        setImporting(false);
-      }
-    };
-    reader.onerror = () => {
-      setImportStatus("error");
-      setImportMsg("Could not read the file. Please try again.");
-      setImporting(false);
-    };
-    reader.readAsText(file);
-  }
-
-  // ── IMPORT — step 2: user confirmed, apply data ──────────────────────────────
-  function confirmImport() {
-    if (!pendingImport) return;
-    const { _meta, ...restored } = pendingImport;
-    // Preserve current Firebase user identity
-    update(prev => ({ ...defaultData, ...restored, user: prev.user }));
-    setShowConfirm(false);
-    setPendingImport(null);
-    setImportStatus("success");
-    setImportMsg(`Backup restored successfully from ${_meta.exportedAt?.slice(0, 10) || "unknown date"}.`);
-  }
-
-  function cancelImport() {
-    setPendingImport(null);
-    setShowConfirm(false);
-  }
-
-  const btnBase = {
-    display: "flex", alignItems: "center", gap: 8,
-    padding: "10px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600,
-    cursor: "pointer", border: "none", transition: "opacity 0.15s",
-  };
-
-  return (
-    <div>
-      {/* ── Export Card ─────────────────────────────────────────────────── */}
-      <div style={cardStyle}>
-        {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 }}>
-          Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, commute logs, and all settings.
-          Store this file somewhere safe (e.g. Google Drive, email to yourself).
-        </p>
-        <button style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }} onClick={handleExport}>
-          <span style={{ fontSize: 18 }}>⬇️</span> Export All Data
-        </button>
-      </div>
-
-      {/* ── Import Card ─────────────────────────────────────────────────── */}
-      <div style={cardStyle}>
-        {sectionTitle("📥", "Import Data", "Restore your data from a previously exported FinTrack backup file.")}
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
-          Select a <strong>fintrack_backup_*.json</strong> file. This will <strong>replace all current data</strong> with the backup.
-          Your Google account stays signed in.
-        </p>
-        <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#92400e" }}>
-          ⚠️ Importing will overwrite your existing data. Make sure to export first if you want to keep the current state.
-        </div>
-
-        {/* Hidden file input */}
-        <input
-          ref={importRef}
-          type="file"
-          accept=".json,application/json"
-          style={{ display: "none" }}
-          onChange={handleFileChange}
-        />
-        <button
-          style={{ ...btnBase, background: "#1e40af", color: "#fff", opacity: importing ? 0.6 : 1 }}
-          onClick={() => importRef.current?.click()}
-          disabled={importing}
-        >
-          <span style={{ fontSize: 18 }}>📂</span>
-          {importing ? "Reading file…" : "Choose Backup File"}
-        </button>
-
-        {/* Status messages */}
-        {importStatus === "success" && (
-          <div style={{ marginTop: 12, background: "#d1fae5", border: "0.5px solid #6ee7b7", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#065f46" }}>
-            ✅ {importMsg}
-          </div>
-        )}
-        {importStatus === "error" && (
-          <div style={{ marginTop: 12, background: "#fee2e2", border: "0.5px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#991b1b" }}>
-            ❌ {importMsg}
-          </div>
-        )}
-      </div>
-
-      {/* ── Confirm Dialog ───────────────────────────────────────────────── */}
-      {showConfirm && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 9999, padding: 16,
-        }}>
-          <div style={{
-            background: "var(--color-background-primary)", borderRadius: 16,
-            padding: "1.6rem", maxWidth: 420, width: "100%",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-          }}>
-            <div style={{ fontSize: 28, marginBottom: 8, textAlign: "center" }}>⚠️</div>
-            <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, textAlign: "center" }}>Replace All Data?</h3>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center", lineHeight: 1.6 }}>
-              This will <strong>permanently overwrite</strong> all your current data with the selected backup.
-            </p>
-            {pendingImport?._meta?.exportedAt && (
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center", marginBottom: 16 }}>
-                Backup date: <strong>{pendingImport._meta.exportedAt.slice(0, 10)}</strong>
-              </p>
-            )}
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button
-                style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-primary)" }}
-                onClick={cancelImport}
-              >
-                Cancel
-              </button>
-              <button
-                style={{ ...btnBase, background: "#dc2626", color: "#fff" }}
-                onClick={confirmImport}
-              >
-                Yes, Restore Backup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ProjectSettings({ data, update, cardStyle, sectionTitle }) {
   const taskTypes = data.projectTaskTypes && data.projectTaskTypes.length > 0
     ? data.projectTaskTypes
@@ -4383,10 +4268,27 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
     }
   }
   function deleteFolder(id, parentId=null) {
+    // Collect all Drive file IDs inside this folder (including subfolders) and delete them
+    const allFolders = [...folders];
+    function collectDriveIds(folderId) {
+      const folder = allFolders.find(f => f.id === folderId) ||
+        allFolders.flatMap(f => f.subFolders || []).find(s => s.id === folderId);
+      if (!folder) return;
+      (folder.files || []).forEach(file => {
+        if (file.source === "gdrive" && file.id && drive?.connected)
+          drive.deleteFromDrive(file.id).catch(() => {});
+      });
+      (folder.subFolders || []).forEach(sub => collectDriveIds(sub.id));
+    }
+    collectDriveIds(id);
     if (!parentId) { setFolders(p => p.filter(f => f.id!==id)); if (openId===id) setOpenId(null); }
     else setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:(f.subFolders||[]).filter(s=>s.id!==id) } : f));
   }
-  function deleteFile(folderId, fileId, parentId=null) {
+  function deleteFile(folderId, fileId, parentId=null, driveFileId=null) {
+    // If file was uploaded to Google Drive, delete it there too
+    if (driveFileId && drive?.connected) {
+      drive.deleteFromDrive(driveFileId).catch(() => {});
+    }
     setFolders(p => p.map(f => {
       if (!parentId && f.id===folderId) return { ...f, files:(f.files||[]).filter(d=>d.id!==fileId) };
       if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, files:(s.files||[]).filter(d=>d.id!==fileId) } : s) };
@@ -4411,9 +4313,15 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
   }
   async function uploadFile(folderId, file, driveFId, parentId=null) {
     setUploading(p => ({ ...p, [folderId]:true }));
+    // Resolve the folder name for Drive structure
+    const parentFolder = parentId ? folders.find(f => f.id === parentId) : null;
+    const thisFolder   = parentFolder
+      ? (parentFolder.subFolders || []).find(s => s.id === folderId)
+      : folders.find(f => f.id === folderId);
+    const folderName   = thisFolder?.name || "Documents";
     let rec;
     if (drive?.connected) {
-      const r = await drive.uploadToDrive(file, driveFId||null);
+      const r = await drive.uploadWithStructure(file, "Documents", folderName, null);
       if (r) rec = { id:r.id, name:r.name, type:r.mimeType, size:r.size, previewUrl:r.previewUrl, webViewLink:r.webViewLink, downloadUrl:r.downloadUrl, source:"gdrive", uploadedAt:new Date().toISOString() };
     }
     if (!rec) {
@@ -4491,7 +4399,7 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
               : file.dataUrl && <a href={file.dataUrl} download={file.name} style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", padding:"3px 9px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇</a>
             }
             <button onClick={() => setPreview(file)} style={{ fontSize:11, color:"var(--color-text-secondary)", padding:"3px 7px", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, background:"none", cursor:"pointer", whiteSpace:"nowrap" }} title="Open fullscreen">⛶</button>
-            <button onClick={() => deleteFile(folderId, file.id, parentId)} style={{ background:"none", border:"0.5px solid #d44", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#d44", flexShrink:0 }}>🗑</button>
+            <button onClick={() => deleteFile(folderId, file.id, parentId, file.source === "gdrive" ? file.id : null)} style={{ background:"none", border:"0.5px solid #d44", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#d44", flexShrink:0 }}>🗑</button>
           </div>
         </div>
         {/* ── Inline preview panel ── */}
@@ -9291,7 +9199,13 @@ function BusinessPage({ data, update }) {
                                             style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
                                             View
                                           </button>
-                                          <button onClick={() => {
+                                          <button onClick={async () => {
+                                            if (bill.fileId) {
+                                              const driveCtx = React.useContext(DriveContext);
+                                              if (driveCtx?.connected && driveCtx?.deleteFromDrive) {
+                                                await driveCtx.deleteFromDrive(bill.fileId).catch(() => {});
+                                              }
+                                            }
                                             setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
                                           }}
                                             style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
@@ -9310,30 +9224,19 @@ function BusinessPage({ data, update }) {
                                   onChange={async (ev) => {
                                     const file = ev.target.files?.[0];
                                     if (!file) return;
-                                    
-                                    const driveContext = React.useContext(DriveContext);
-                                    if (!driveContext?.uploadFileToDrive) {
-                                      alert("Google Drive not connected. Please connect Google Drive to upload bills.");
-                                      return;
+                                    const driveCtx = useDrive();
+                                    if (!driveCtx?.connected) {
+                                      alert("Google Drive not connected. Please sign in with Google to upload bills.");
+                                      ev.target.value = ""; return;
                                     }
-
                                     try {
-                                      const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                                      const bizName = activeBiz?.name || "Business";
+                                      const result = await driveCtx.uploadWithStructure(file, "Business", bizName, entry.month);
                                       if (result?.id && result?.webViewLink) {
-                                        const newBill = {
-                                          monthId: entry.id,
-                                          fileName: file.name,
-                                          fileUrl: result.webViewLink,
-                                          fileId: result.id,
-                                          uploadDate: new Date().toISOString()
-                                        };
+                                        const newBill = { monthId: entry.id, fileName: result.name, fileUrl: result.webViewLink, fileId: result.id, uploadDate: new Date().toISOString() };
                                         setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                        alert("Bill uploaded successfully!");
                                       }
-                                    } catch (err) {
-                                      console.error("Upload failed:", err);
-                                      alert("Failed to upload bill. Please try again.");
-                                    }
+                                    } catch (err) { console.error("Upload failed:", err); alert("Failed to upload bill. Please try again."); }
                                     ev.target.value = "";
                                   }}
                                 />
@@ -9652,7 +9555,13 @@ function BusinessPage({ data, update }) {
                                     style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
                                     View
                                   </button>
-                                  <button onClick={() => {
+                                  <button onClick={async () => {
+                                    if (bill.fileId) {
+                                      const driveCtx = React.useContext(DriveContext);
+                                      if (driveCtx?.connected && driveCtx?.deleteFromDrive) {
+                                        await driveCtx.deleteFromDrive(bill.fileId).catch(() => {});
+                                      }
+                                    }
                                     setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
                                   }}
                                     style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
@@ -9671,30 +9580,19 @@ function BusinessPage({ data, update }) {
                           onChange={async (ev) => {
                             const file = ev.target.files?.[0];
                             if (!file) return;
-                            
-                            const driveContext = React.useContext(DriveContext);
-                            if (!driveContext?.uploadFileToDrive) {
-                              alert("Google Drive not connected. Please connect Google Drive to upload bills.");
-                              return;
+                            const driveCtx = useDrive();
+                            if (!driveCtx?.connected) {
+                              alert("Google Drive not connected. Please sign in with Google to upload bills.");
+                              ev.target.value = ""; return;
                             }
-
                             try {
-                              const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                              const bizName = activeBiz?.name || "Business";
+                              const result = await driveCtx.uploadWithStructure(file, "Business", bizName, entry.month);
                               if (result?.id && result?.webViewLink) {
-                                const newBill = {
-                                  monthId: entry.id,
-                                  fileName: file.name,
-                                  fileUrl: result.webViewLink,
-                                  fileId: result.id,
-                                  uploadDate: new Date().toISOString()
-                                };
+                                const newBill = { monthId: entry.id, fileName: result.name, fileUrl: result.webViewLink, fileId: result.id, uploadDate: new Date().toISOString() };
                                 setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                alert("Bill uploaded successfully!");
                               }
-                            } catch (err) {
-                              console.error("Upload failed:", err);
-                              alert("Failed to upload bill. Please try again.");
-                            }
+                            } catch (err) { console.error("Upload failed:", err); alert("Failed to upload bill. Please try again."); }
                             ev.target.value = "";
                           }}
                         />
@@ -9881,7 +9779,13 @@ function BusinessPage({ data, update }) {
                                 style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:500 }}>
                                 View
                               </button>
-                              <button onClick={() => {
+                              <button onClick={async () => {
+                                if (bill.fileId) {
+                                  const driveCtx = React.useContext(DriveContext);
+                                  if (driveCtx?.connected && driveCtx?.deleteFromDrive) {
+                                    await driveCtx.deleteFromDrive(bill.fileId).catch(() => {});
+                                  }
+                                }
                                 setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
                               }}
                                 style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600 }}>
@@ -9900,30 +9804,19 @@ function BusinessPage({ data, update }) {
                       onChange={async (ev) => {
                         const file = ev.target.files?.[0];
                         if (!file) return;
-                        
-                        const driveContext = React.useContext(DriveContext);
-                        if (!driveContext?.uploadFileToDrive) {
-                          alert("Google Drive not connected. Please connect Google Drive to upload bills.");
-                          return;
+                        const driveCtx = useDrive();
+                        if (!driveCtx?.connected) {
+                          alert("Google Drive not connected. Please sign in with Google to upload bills.");
+                          ev.target.value = ""; return;
                         }
-
                         try {
-                          const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${activeMonthEntry.month}`);
+                          const bizName = activeBiz?.name || "Business";
+                          const result = await driveCtx.uploadWithStructure(file, "Business", bizName, activeMonthEntry.month);
                           if (result?.id && result?.webViewLink) {
-                            const newBill = {
-                              monthId: activeMonthEntry.id,
-                              fileName: file.name,
-                              fileUrl: result.webViewLink,
-                              fileId: result.id,
-                              uploadDate: new Date().toISOString()
-                            };
+                            const newBill = { monthId: activeMonthEntry.id, fileName: result.name, fileUrl: result.webViewLink, fileId: result.id, uploadDate: new Date().toISOString() };
                             setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                            alert("Bill uploaded successfully!");
                           }
-                        } catch (err) {
-                          console.error("Upload failed:", err);
-                          alert("Failed to upload bill. Please try again.");
-                        }
+                        } catch (err) { console.error("Upload failed:", err); alert("Failed to upload bill. Please try again."); }
                         ev.target.value = "";
                       }}
                     />
@@ -10191,7 +10084,7 @@ function ProjectsPage({ data, update }) {
     for (const file of fileList) {
       let fileEntry;
       if (drive?.connected) {
-        const result = await drive.uploadToDrive(file, null);
+        const result = await drive.uploadWithStructure(file, "Projects", project.name, null);
         fileEntry = result
           ? { id: result.id, name: result.name, type: result.mimeType, size: result.size, previewUrl: result.previewUrl, webViewLink: result.webViewLink, downloadUrl: result.downloadUrl, source: "gdrive", uploadedAt: new Date().toISOString() }
           : null;
