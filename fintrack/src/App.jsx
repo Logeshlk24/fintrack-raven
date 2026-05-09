@@ -8471,8 +8471,10 @@ function BusinessPage({ data, update }) {
                 const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
                 const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
                 const bizLiabilities = biz.liabilities || [];
-                const paidLiab = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
-                const finalNet = totalNet - paidLiab;
+                const paidLiab   = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                const unpaidLiab = bizLiabilities.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                const finalNet   = totalNet - paidLiab;
+                const hasLiab    = bizLiabilities.length > 0;
                 return (
                   <div key={biz.id} onClick={() => { if (!renamingBiz) { setSelectedBiz(biz.id); setShowLiabilitiesSection(false); } }}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
@@ -8496,15 +8498,40 @@ function BusinessPage({ data, update }) {
                       <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
                     )}
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: paidLiab > 0 ? 5 : 0 }}>
-                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
-                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(totalNet)}</span>
+
+                    {/* Gross row — always shown */}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                      <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(totalGross)}</span>
                     </div>
-                    {paidLiab > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, paddingTop: 5, borderTop: "0.5px dashed var(--color-border-tertiary)" }}>
-                        <span style={{ color: "#e55" }}>Paid Liab: -{fmtCur(paidLiab)}</span>
-                        <span style={{ color: finalNet >= 0 ? "#1a6b3c" : "#e55", fontWeight: 600 }}>Final: {fmtCur(finalNet)}</span>
-                      </div>
+
+                    {/* Net row */}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: hasLiab ? 4 : 0 }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                      <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(totalNet)}</span>
+                    </div>
+
+                    {/* Liabilities breakdown — shown only if any liabilities exist */}
+                    {hasLiab && (
+                      <>
+                        <div style={{ borderTop: "0.5px dashed var(--color-border-tertiary)", margin: "6px 0" }} />
+                        {paidLiab > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ color: "#c0392b" }}>Liabilities (paid)</span>
+                            <span style={{ color: "#c0392b", fontWeight: 600 }}>-{fmtCur(paidLiab)}</span>
+                          </div>
+                        )}
+                        {unpaidLiab > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ color: "#f59e0b" }}>Liabilities (pending)</span>
+                            <span style={{ color: "#f59e0b", fontWeight: 500 }}>{fmtCur(unpaidLiab)}</span>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 5, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 2 }}>
+                          <span style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>Final Net</span>
+                          <span style={{ fontWeight: 700, color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", fontSize: 14 }}>{fmtCur(finalNet)}</span>
+                        </div>
+                      </>
                     )}
                   </div>
                 );
