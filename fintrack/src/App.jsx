@@ -8009,15 +8009,19 @@ function BusinessPage({ data, update }) {
     }));
   }
 
-  function updateDayQty(dayId, qtyStr) {
+  function updateDayQty(dayId, qtyStr, field = "qty1") {
     const qty = qtyStr === "" || qtyStr == null ? null : parseFloat(qtyStr);
     updateBizData(d => d.map(e => {
       if (e.id !== selectedMonth) return e;
       const price = e.price || 0;
       const days = (e.days || []).map(d => {
         if (d.id !== dayId) return d;
-        const gross = qty != null ? qty * price : 0;
-        return { ...d, quantity: qty, grossIncome: gross, netIncome: gross };
+        const updated = { ...d, [field]: qty };
+        const q1 = field === "qty1" ? qty : (updated.qty1 != null ? updated.qty1 : (updated.quantity != null && updated.qty2 == null ? updated.quantity : null));
+        const q2 = field === "qty2" ? qty : (updated.qty2 ?? null);
+        const totalQty = (q1 != null || q2 != null) ? ((q1 || 0) + (q2 || 0)) : null;
+        const gross = totalQty != null ? totalQty * price : 0;
+        return { ...updated, quantity: totalQty, grossIncome: gross, netIncome: gross };
       });
       return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
     }));
@@ -8073,7 +8077,7 @@ function BusinessPage({ data, update }) {
       const days = Array.from({ length: daysInMonth }, (_, i) => {
         const dayNum = i + 1;
         const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-        return { id: `day_${dateStr}`, date: dateStr, quantity: null, grossIncome: 0, netIncome: 0, note: "" };
+        return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
       });
       updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
     } else {
@@ -8620,14 +8624,14 @@ function BusinessPage({ data, update }) {
           <PriceEditor monthEntry={activeMonthEntry} onSave={newPrice => {
             updateBizData(d => d.map(e => {
               if (e.id !== selectedMonth) return e;
-              const days = (e.days || []).map(d => ({ ...d, grossIncome: (d.quantity != null ? d.quantity : 0) * newPrice, netIncome: (d.quantity != null ? d.quantity : 0) * newPrice }));
+              const days = (e.days || []).map(d => { const totalQty = d.quantity != null ? d.quantity : 0; const gross = totalQty * newPrice; return { ...d, grossIncome: gross, netIncome: gross }; });
               return { ...e, price: newPrice, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
             }));
           }} />
 
           {/* Summary stat cards — only days with qty entered */}
           {(() => {
-            const filledDays = dayEntries.filter(d => d.quantity != null);
+            const filledDays = dayEntries.filter(d => d.quantity != null || d.qty1 != null || d.qty2 != null);
             if (filledDays.length === 0) return null;
             const totalQty   = filledDays.reduce((s,d)=>s+(d.quantity||0),0);
             const totalGross = filledDays.reduce((s,d)=>s+d.grossIncome,0);
@@ -8662,7 +8666,7 @@ function BusinessPage({ data, update }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: "var(--color-background-secondary)" }}>
-                  {["Date","Day","Quantity","Gross Income","Note"].map(h => (
+                  {["Date","Day","Qty 1","Qty 2","Total Qty","Gross Income","Note"].map(h => (
                     <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>
                   ))}
                 </tr>
@@ -8675,22 +8679,46 @@ function BusinessPage({ data, update }) {
                   const isSun = dateObj.getDay() === 0;
                   const isSat = dateObj.getDay() === 6;
                   const isWeekend = isSun || isSat;
-                  const hasSomeQty = d.quantity != null;
+                  // Support legacy single qty and new qty1/qty2
+                  const qty1Val = d.qty1 != null ? d.qty1 : (d.qty2 == null && d.quantity != null ? d.quantity : null);
+                  const qty2Val = d.qty2 ?? null;
+                  const totalQtyVal = d.quantity; // always kept in sync by updateDayQty
+                  const hasSomeQty = totalQtyVal != null || qty1Val != null || qty2Val != null;
+                  const qtyInputStyle = (has) => ({ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: has ? 600 : 400, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: has ? "#f0faf5" : "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" });
                   return (
                     <tr key={d.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: isWeekend ? "var(--color-background-secondary)" : "transparent" }}>
                       <td style={{ padding: "7px 14px", fontWeight: 600, color: isWeekend ? "#9b59b6" : "var(--color-text-primary)", whiteSpace: "nowrap" }}>{dateStr}</td>
                       <td style={{ padding: "7px 14px", color: isWeekend ? "#9b59b6" : "var(--color-text-secondary)", fontSize: 11, width: 40 }}>{dayName}</td>
-                      <td style={{ padding: "4px 8px", width: 120 }}>
+                      <td style={{ padding: "4px 8px", width: 100 }}>
                         <input
                           type="text"
                           inputMode="decimal"
                           placeholder="—"
-                          defaultValue={d.quantity != null ? String(d.quantity) : ""}
-                          onBlur={e => updateDayQty(d.id, e.target.value.trim())}
-                          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("tr")?.nextElementSibling?.querySelector("input")?.focus(); } }}
-                          style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: hasSomeQty ? 600 : 400, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: hasSomeQty ? "#f0faf5" : "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
+                          key={`${d.id}-qty1-${qty1Val}`}
+                          defaultValue={qty1Val != null ? String(qty1Val) : ""}
+                          onBlur={e => updateDayQty(d.id, e.target.value.trim(), "qty1")}
+                          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("td")?.nextElementSibling?.querySelector("input")?.focus(); } }}
+                          style={qtyInputStyle(qty1Val != null)}
                           onFocus={e => { e.target.style.border = "1.5px solid #1a6b3c"; e.target.style.background = "#fff"; }}
+                          onBlurCapture={e => { e.target.style.border = "0.5px solid var(--color-border-secondary)"; }}
                         />
+                      </td>
+                      <td style={{ padding: "4px 8px", width: 100 }}>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="—"
+                          key={`${d.id}-qty2-${qty2Val}`}
+                          defaultValue={qty2Val != null ? String(qty2Val) : ""}
+                          onBlur={e => updateDayQty(d.id, e.target.value.trim(), "qty2")}
+                          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("tr")?.nextElementSibling?.querySelector("input")?.focus(); } }}
+                          style={qtyInputStyle(qty2Val != null)}
+                          onFocus={e => { e.target.style.border = "1.5px solid #9b59b6"; e.target.style.background = "#fff"; }}
+                          onBlurCapture={e => { e.target.style.border = "0.5px solid var(--color-border-secondary)"; }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px 14px", fontWeight: hasSomeQty ? 700 : 400, color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 13 }}>
+                        {hasSomeQty ? fmt(totalQtyVal || 0) : "—"}
                       </td>
                       <td style={{ padding: "7px 14px", color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: hasSomeQty ? 600 : 400 }}>
                         {hasSomeQty ? fmtCur(d.grossIncome) : "—"}
@@ -8720,6 +8748,8 @@ function BusinessPage({ data, update }) {
                 <tfoot>
                   <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
                     <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
+                    <td style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>{fmt(dayEntries.reduce((s,d)=>s+(d.qty1||0),0))}</td>
+                    <td style={{ padding: "9px 14px", fontWeight: 700, color: "#9b59b6" }}>{fmt(dayEntries.reduce((s,d)=>s+(d.qty2||0),0))}</td>
                     <td style={{ padding: "9px 14px", fontWeight: 700 }}>{fmt(dayEntries.reduce((s,d)=>s+(d.quantity||0),0))}</td>
                     <td style={{ padding: "9px 14px", color: "#1a6b3c", fontWeight: 700 }}>{fmtCur(dayEntries.reduce((s,d)=>s+d.grossIncome,0))}</td>
                     <td />
