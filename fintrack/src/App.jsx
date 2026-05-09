@@ -90,7 +90,6 @@ const defaultData = {
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
-  billAttachments: [], // { monthId, fileName, fileUrl, fileId, uploadDate }
 };
 
 
@@ -402,8 +401,7 @@ export default function App() {
   const linkedBankIds = new Set((data.banks || []).map(b => String(b.id)));
   const unlinkedIncome = data.transactions.filter(t => t.type === "income" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
   const unlinkedExpense = data.transactions.filter(t => t.type === "expense" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
-  const excludedGoalSavings = (data.needsWants || []).filter(g => g.excludeFromNetWorth && !g.completed).reduce((s, g) => s + Number(g.savedAmount || 0), 0);
-  const netWorth = ((data.banks || []).reduce((s, b) => {
+  const netWorth = (data.banks || []).reduce((s, b) => {
     const inc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
     const exp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
     if (b.type === "Credit Card") {
@@ -411,11 +409,10 @@ export default function App() {
       return s - outstanding;
     }
     return s + (b.openingBalance || 0) + inc - exp;
-  }, 0) + (unlinkedIncome - unlinkedExpense)) - excludedGoalSavings;
+  }, 0) + (unlinkedIncome - unlinkedExpense);
 
   const totalAssets = data.assets.reduce((s, a) => s + Number(a.value || 0), 0);
   const totalLiabilities = data.liabilities.reduce((s, l) => s + Number(l.value || 0), 0);
-  // Subtract saved amounts for goals marked "exclude from net worth"
 
   const foNetPnl = data.foTrades.reduce((s, t) => {
     const gross = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
@@ -3904,8 +3901,8 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   // Redirect legacy tab values to new names
   const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
 
-  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents", "backup"];
-  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents", "Backup"];
+  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents"];
+  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents"];
 
   return (
     <div>
@@ -3940,9 +3937,6 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
       {/* ── Documents ── */}
       {effectiveTab === "documents" && <DocumentsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
-
-      {/* ── Backup ── */}
-      {effectiveTab === "backup" && <BackupSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
     </div>
   );
 }
@@ -4081,193 +4075,6 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
           💡 Toggling a feature off hides it from the sidebar. All data (trades, records, history) is kept safe and will reappear the moment you turn it back on.
         </p>
       </div>
-    </div>
-  );
-}
-
-// ─── BackupSettings ────────────────────────────────────────────────────────────
-function BackupSettings({ data, update, cardStyle, sectionTitle }) {
-  const importRef = useRef(null);
-  const [importStatus, setImportStatus] = useState(null); // null | "success" | "error"
-  const [importMsg, setImportMsg]       = useState("");
-  const [importing, setImporting]       = useState(false);
-  const [showConfirm, setShowConfirm]   = useState(false);
-  const [pendingImport, setPendingImport] = useState(null);
-
-  // ── EXPORT ──────────────────────────────────────────────────────────────────
-  function handleExport() {
-    // Exclude live Firebase user object — it's re-populated on sign-in
-    const { user, ...exportable } = data;
-    const payload = {
-      _meta: {
-        exportedAt: new Date().toISOString(),
-        appVersion: "fintrack_v2",
-      },
-      ...exportable,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const ts   = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `fintrack_backup_${ts}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // ── IMPORT — step 1: read & validate file ───────────────────────────────────
-  function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!importRef.current) return;
-    importRef.current.value = "";          // reset so same file can be re-picked
-    if (!file) return;
-
-    setImporting(true);
-    setImportStatus(null);
-    setImportMsg("");
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const parsed = JSON.parse(evt.target.result);
-        // Basic sanity check — must look like a fintrack export
-        if (!parsed._meta || parsed._meta.appVersion !== "fintrack_v2") {
-          throw new Error("This file doesn't look like a FinTrack backup.");
-        }
-        setPendingImport(parsed);
-        setShowConfirm(true);
-      } catch (err) {
-        setImportStatus("error");
-        setImportMsg(err.message || "Invalid JSON file. Please choose a valid FinTrack backup.");
-      } finally {
-        setImporting(false);
-      }
-    };
-    reader.onerror = () => {
-      setImportStatus("error");
-      setImportMsg("Could not read the file. Please try again.");
-      setImporting(false);
-    };
-    reader.readAsText(file);
-  }
-
-  // ── IMPORT — step 2: user confirmed, apply data ──────────────────────────────
-  function confirmImport() {
-    if (!pendingImport) return;
-    const { _meta, ...restored } = pendingImport;
-    // Preserve current Firebase user identity
-    update(prev => ({ ...defaultData, ...restored, user: prev.user }));
-    setShowConfirm(false);
-    setPendingImport(null);
-    setImportStatus("success");
-    setImportMsg(`Backup restored successfully from ${_meta.exportedAt?.slice(0, 10) || "unknown date"}.`);
-  }
-
-  function cancelImport() {
-    setPendingImport(null);
-    setShowConfirm(false);
-  }
-
-  const btnBase = {
-    display: "flex", alignItems: "center", gap: 8,
-    padding: "10px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600,
-    cursor: "pointer", border: "none", transition: "opacity 0.15s",
-  };
-
-  return (
-    <div>
-      {/* ── Export Card ─────────────────────────────────────────────────── */}
-      <div style={cardStyle}>
-        {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 }}>
-          Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, commute logs, and all settings.
-          Store this file somewhere safe (e.g. Google Drive, email to yourself).
-        </p>
-        <button style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }} onClick={handleExport}>
-          <span style={{ fontSize: 18 }}>⬇️</span> Export All Data
-        </button>
-      </div>
-
-      {/* ── Import Card ─────────────────────────────────────────────────── */}
-      <div style={cardStyle}>
-        {sectionTitle("📥", "Import Data", "Restore your data from a previously exported FinTrack backup file.")}
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
-          Select a <strong>fintrack_backup_*.json</strong> file. This will <strong>replace all current data</strong> with the backup.
-          Your Google account stays signed in.
-        </p>
-        <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#92400e" }}>
-          ⚠️ Importing will overwrite your existing data. Make sure to export first if you want to keep the current state.
-        </div>
-
-        {/* Hidden file input */}
-        <input
-          ref={importRef}
-          type="file"
-          accept=".json,application/json"
-          style={{ display: "none" }}
-          onChange={handleFileChange}
-        />
-        <button
-          style={{ ...btnBase, background: "#1e40af", color: "#fff", opacity: importing ? 0.6 : 1 }}
-          onClick={() => importRef.current?.click()}
-          disabled={importing}
-        >
-          <span style={{ fontSize: 18 }}>📂</span>
-          {importing ? "Reading file…" : "Choose Backup File"}
-        </button>
-
-        {/* Status messages */}
-        {importStatus === "success" && (
-          <div style={{ marginTop: 12, background: "#d1fae5", border: "0.5px solid #6ee7b7", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#065f46" }}>
-            ✅ {importMsg}
-          </div>
-        )}
-        {importStatus === "error" && (
-          <div style={{ marginTop: 12, background: "#fee2e2", border: "0.5px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#991b1b" }}>
-            ❌ {importMsg}
-          </div>
-        )}
-      </div>
-
-      {/* ── Confirm Dialog ───────────────────────────────────────────────── */}
-      {showConfirm && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 9999, padding: 16,
-        }}>
-          <div style={{
-            background: "var(--color-background-primary)", borderRadius: 16,
-            padding: "1.6rem", maxWidth: 420, width: "100%",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-          }}>
-            <div style={{ fontSize: 28, marginBottom: 8, textAlign: "center" }}>⚠️</div>
-            <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, textAlign: "center" }}>Replace All Data?</h3>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center", lineHeight: 1.6 }}>
-              This will <strong>permanently overwrite</strong> all your current data with the selected backup.
-            </p>
-            {pendingImport?._meta?.exportedAt && (
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center", marginBottom: 16 }}>
-                Backup date: <strong>{pendingImport._meta.exportedAt.slice(0, 10)}</strong>
-              </p>
-            )}
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button
-                style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-primary)" }}
-                onClick={cancelImport}
-              >
-                Cancel
-              </button>
-              <button
-                style={{ ...btnBase, background: "#dc2626", color: "#fff" }}
-                onClick={confirmImport}
-              >
-                Yes, Restore Backup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -5991,46 +5798,26 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
     const updates = [];
     payments.forEach(pay => {
-      // For custom weekly payments with multiple days, get all due keys
-      if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
-        const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
-        allDueKeys.forEach(key => {
-          if (pay.paid.includes(key)) return; // already paid
-          
-          const parts = key.split("-").map(Number);
-          const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
-          dueDate.setHours(0,0,0,0);
-          
-          // If autoTime set, only trigger after that time today (or if overdue from past days)
-          if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
-            if (nowHHMM < pay.autoTime) return; // not time yet
-          }
-          
-          updates.push({ pay, key });
-        });
+      const key = getNextDueKey(pay);
+      if (!key) return;
+      // Determine due date from key
+      let dueDate;
+      if (pay.freq === "custom" && pay.customUnit === "weeks") {
+        const parts = key.split("-").map(Number);
+        dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
       } else {
-        // Original logic for non-weekly payments
-        const key = getNextDueKey(pay);
-        if (!key) return;
-        // Determine due date from key
-        let dueDate;
-        if (pay.freq === "custom" && pay.customUnit === "weeks") {
-          const parts = key.split("-").map(Number);
-          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
-        } else {
-          const [ky, km] = key.split("-").map(Number);
-          dueDate = new Date(ky, km-1, pay.day);
-        }
-        if (!dueDate) return;
-        dueDate.setHours(0,0,0,0);
-        if (dueDate > nowDate) return; // not due yet
-        if (pay.paid.includes(key)) return; // already paid
-        // If autoTime set, only trigger after that time today (or if overdue from past days)
-        if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
-          if (nowHHMM < pay.autoTime) return; // not time yet
-        }
-        updates.push({ pay, key });
+        const [ky, km] = key.split("-").map(Number);
+        dueDate = new Date(ky, km-1, pay.day);
       }
+      if (!dueDate) return;
+      dueDate.setHours(0,0,0,0);
+      if (dueDate > nowDate) return; // not due yet
+      if (pay.paid.includes(key)) return; // already paid
+      // If autoTime set, only trigger after that time today (or if overdue from past days)
+      if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
+        if (nowHHMM < pay.autoTime) return; // not time yet
+      }
+      updates.push({ pay, key });
     });
 
     if (!updates.length) return;
@@ -6092,40 +5879,22 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       const updates = [];
       payments.forEach(pay => {
         if (!pay.autoTime) return;
-        
-        // For custom weekly payments with multiple days, get all due keys
-        if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
-          const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
-          allDueKeys.forEach(key => {
-            if (pay.paid.includes(key)) return;
-            
-            const parts = key.split("-").map(Number);
-            const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
-            dueDate.setHours(0,0,0,0);
-            
-            if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
-            if (nowHHMM < pay.autoTime) return;
-            updates.push({ pay, key });
-          });
+        const key = getNextDueKey(pay);
+        if (!key) return;
+        let dueDate;
+        if (pay.freq === "custom" && pay.customUnit === "weeks") {
+          const parts = key.split("-").map(Number);
+          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
         } else {
-          // Original logic for non-weekly payments
-          const key = getNextDueKey(pay);
-          if (!key) return;
-          let dueDate;
-          if (pay.freq === "custom" && pay.customUnit === "weeks") {
-            const parts = key.split("-").map(Number);
-            dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
-          } else {
-            const [ky, km] = key.split("-").map(Number);
-            dueDate = new Date(ky, km-1, pay.day);
-          }
-          if (!dueDate) return;
-          dueDate.setHours(0,0,0,0);
-          if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
-          if (pay.paid.includes(key)) return;
-          if (nowHHMM < pay.autoTime) return;
-          updates.push({ pay, key });
+          const [ky, km] = key.split("-").map(Number);
+          dueDate = new Date(ky, km-1, pay.day);
         }
+        if (!dueDate) return;
+        dueDate.setHours(0,0,0,0);
+        if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
+        if (pay.paid.includes(key)) return;
+        if (nowHHMM < pay.autoTime) return;
+        updates.push({ pay, key });
       });
 
       if (!updates.length) return;
@@ -6224,48 +5993,6 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
   function pad2(n) { return String(n).padStart(2,"0"); }
   function dateKey(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
-
-  // Get all due keys for custom weekly payments (multiple days in same week)
-  function getAllDueKeysForWeekly(p, nowDate) {
-    if (p.freq !== "custom" || p.customUnit !== "weeks" || !p.customWeekDays || p.customWeekDays.length === 0) {
-      return [];
-    }
-    
-    const startStr = p.startDate || (p.startMonth + "-01");
-    const [sy, sm, sd] = startStr.split("-").map(Number);
-    let d = new Date(sy, sm-1, sd);
-    d.setHours(0,0,0,0);
-    
-    const everyN = parseInt(p.customEveryN || 1);
-    const dueKeys = [];
-    let ct = 0;
-    
-    // Calculate which week we're in relative to start date
-    const weekStartDate = new Date(sy, sm-1, sd);
-    weekStartDate.setHours(0,0,0,0);
-    
-    while (ct < 500 && d <= nowDate) {
-      const currentWeekDay = d.getDay() === 0 ? 7 : d.getDay();
-      
-      // Check if this day is in the selected weekdays
-      if (p.customWeekDays.includes(currentWeekDay)) {
-        const daysSinceStart = Math.floor((d - weekStartDate) / (1000 * 60 * 60 * 24));
-        const weeksSinceStart = Math.floor(daysSinceStart / 7);
-        
-        // Only include dates that fall on the correct week interval
-        if (weeksSinceStart % everyN === 0) {
-          const k = dateKey(d);
-          if (!p.paid.includes(k) && d <= nowDate) {
-            dueKeys.push(k);
-          }
-        }
-      }
-      d.setDate(d.getDate() + 1);
-      ct++;
-    }
-    
-    return dueKeys;
-  }
 
   function getNextDueKey(p) {
     const now = new Date(); now.setHours(0,0,0,0);
@@ -7725,7 +7452,7 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
-  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -7752,10 +7479,9 @@ function GoalsPage({ data, update }) {
         urls: (form.urls || []).filter(u => u.trim()),
         createdAt: today(),
         completed: false,
-        excludeFromNetWorth: form.excludeFromNetWorth || false,
       }]
     }));
-    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
     setShowAdd(false);
   }
 
@@ -7770,7 +7496,6 @@ function GoalsPage({ data, update }) {
         notes: editItem.notes,
         priority: editItem.priority,
         urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
-        excludeFromNetWorth: editItem.excludeFromNetWorth || false,
       } : x)
     }));
     setEditItem(null);
@@ -7859,22 +7584,10 @@ function GoalsPage({ data, update }) {
             ))}
           </div>
         </div>
-        <div style={{ marginBottom: 10 }}>
+        <div>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
           <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
-        {values.goalType === "money" && (
-          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px", border: "0.5px solid var(--color-border-secondary)" }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>🚫 Exclude from Net Worth</div>
-              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Saved amount won't be counted in your net worth</div>
-            </div>
-            <div onClick={() => onChange({ ...values, excludeFromNetWorth: !values.excludeFromNetWorth })}
-              style={{ width: 40, height: 22, borderRadius: 11, background: values.excludeFromNetWorth ? "#ef4444" : "var(--color-border-primary)", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-              <div style={{ position: "absolute", top: 3, left: values.excludeFromNetWorth ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
-            </div>
-          </div>
-        )}
         <div style={{ marginTop: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>🔗 Links (optional)</label>
           {(values.urls || [""]).map((url, i) => (
@@ -7975,11 +7688,6 @@ function GoalsPage({ data, update }) {
               <span>{pct.toFixed(1)}% complete</span>
               {remaining > 0 ? <span>{fmtCur(remaining)} remaining</span> : <span style={{ color: "#1a6b3c", fontWeight: 500 }}>🎉 Goal reached!</span>}
             </div>
-            {item.excludeFromNetWorth && (
-              <div style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 4, background: "#fef2f2", border: "0.5px solid #fecaca", borderRadius: 5, padding: "2px 7px", fontSize: 10, color: "#ef4444", fontWeight: 500 }}>
-                🚫 Excluded from Net Worth
-              </div>
-            )}
           </div>
         )}
 
@@ -9269,83 +8977,6 @@ function BusinessPage({ data, update }) {
                             onFocus={ev=>{ev.target.style.border="1.5px solid #e55";ev.target.style.background="#fff";}}
                             onBlurCapture={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
                         </div>
-                        {/* Bill Attachment Section */}
-                        <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
-                          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
-                            <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
-                          </div>
-                          {(() => {
-                            const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
-                            return (
-                              <>
-                                {bills.length > 0 && (
-                                  <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
-                                    {bills.map((bill,idx) => (
-                                      <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
-                                        <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
-                                          <span>📄</span>
-                                          <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
-                                        </div>
-                                        <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                                          <button onClick={() => window.open(bill.fileUrl, '_blank')}
-                                            style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
-                                            View
-                                          </button>
-                                          <button onClick={() => {
-                                            setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
-                                          }}
-                                            style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
-                                            ×
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                <input
-                                  type="file"
-                                  id={`bill-upload-${entry.id}`}
-                                  accept=".pdf,.jpg,.jpeg,.png,.webp"
-                                  style={{ display:"none" }}
-                                  onChange={async (ev) => {
-                                    const file = ev.target.files?.[0];
-                                    if (!file) return;
-                                    
-                                    const driveContext = React.useContext(DriveContext);
-                                    if (!driveContext?.uploadFileToDrive) {
-                                      alert("Google Drive not connected. Please connect Google Drive to upload bills.");
-                                      return;
-                                    }
-
-                                    try {
-                                      const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
-                                      if (result?.id && result?.webViewLink) {
-                                        const newBill = {
-                                          monthId: entry.id,
-                                          fileName: file.name,
-                                          fileUrl: result.webViewLink,
-                                          fileId: result.id,
-                                          uploadDate: new Date().toISOString()
-                                        };
-                                        setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                        alert("Bill uploaded successfully!");
-                                      }
-                                    } catch (err) {
-                                      console.error("Upload failed:", err);
-                                      alert("Failed to upload bill. Please try again.");
-                                    }
-                                    ev.target.value = "";
-                                  }}
-                                />
-                                <label htmlFor={`bill-upload-${entry.id}`}
-                                  style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
-                                  <span>📎</span>
-                                  <span>Attach Bill</span>
-                                </label>
-                              </>
-                            );
-                          })()}
-                        </div>
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 }}>
                           <span style={{color:"#4da6ff",fontWeight:600}}>Net Income</span>
                           <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
@@ -9630,83 +9261,6 @@ function BusinessPage({ data, update }) {
                     onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
                   />
                 </div>
-                {/* Bill Attachment Section */}
-                <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
-                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
-                    <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
-                  </div>
-                  {(() => {
-                    const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
-                    return (
-                      <>
-                        {bills.length > 0 && (
-                          <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
-                            {bills.map((bill,idx) => (
-                              <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
-                                <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
-                                  <span>📄</span>
-                                  <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
-                                </div>
-                                <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                                  <button onClick={() => window.open(bill.fileUrl, '_blank')}
-                                    style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
-                                    View
-                                  </button>
-                                  <button onClick={() => {
-                                    setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
-                                  }}
-                                    style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
-                                    ×
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <input
-                          type="file"
-                          id={`bill-upload-detail-${entry.id}`}
-                          accept=".pdf,.jpg,.jpeg,.png,.webp"
-                          style={{ display:"none" }}
-                          onChange={async (ev) => {
-                            const file = ev.target.files?.[0];
-                            if (!file) return;
-                            
-                            const driveContext = React.useContext(DriveContext);
-                            if (!driveContext?.uploadFileToDrive) {
-                              alert("Google Drive not connected. Please connect Google Drive to upload bills.");
-                              return;
-                            }
-
-                            try {
-                              const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
-                              if (result?.id && result?.webViewLink) {
-                                const newBill = {
-                                  monthId: entry.id,
-                                  fileName: file.name,
-                                  fileUrl: result.webViewLink,
-                                  fileId: result.id,
-                                  uploadDate: new Date().toISOString()
-                                };
-                                setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                alert("Bill uploaded successfully!");
-                              }
-                            } catch (err) {
-                              console.error("Upload failed:", err);
-                              alert("Failed to upload bill. Please try again.");
-                            }
-                            ev.target.value = "";
-                          }}
-                        />
-                        <label htmlFor={`bill-upload-detail-${entry.id}`}
-                          style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
-                          <span>📎</span>
-                          <span>Attach Bill</span>
-                        </label>
-                      </>
-                    );
-                  })()}
-                </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
                   <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
                   <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
@@ -9853,89 +9407,6 @@ function BusinessPage({ data, update }) {
                 </div>
               );
             })()}
-
-            {/* Bill Attachment Section for Day-wise Mode */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
-                <span style={{fontWeight:500,fontSize:14}}>📎 Bill Attachments</span>
-              </div>
-              {(() => {
-                const bills = (data.billAttachments || []).filter(b => b.monthId === activeMonthEntry.id);
-                return (
-                  <>
-                    {bills.length > 0 && (
-                      <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:10 }}>
-                        {bills.map((bill,idx) => (
-                          <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"8px 12px",borderRadius:8,fontSize:12 }}>
-                            <div style={{ display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0 }}>
-                              <span style={{fontSize:16}}>📄</span>
-                              <div style={{flex:1,minWidth:0}}>
-                                <div style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</div>
-                                <div style={{ fontSize:10,color:"var(--color-text-secondary)",marginTop:2 }}>
-                                  {new Date(bill.uploadDate).toLocaleDateString()}
-                                </div>
-                              </div>
-                            </div>
-                            <div style={{ display:"flex",gap:6,flexShrink:0 }}>
-                              <button onClick={() => window.open(bill.fileUrl, '_blank')}
-                                style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:500 }}>
-                                View
-                              </button>
-                              <button onClick={() => {
-                                setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
-                              }}
-                                style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600 }}>
-                                ×
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      id={`bill-upload-daywise-${activeMonthEntry.id}`}
-                      accept=".pdf,.jpg,.jpeg,.png,.webp"
-                      style={{ display:"none" }}
-                      onChange={async (ev) => {
-                        const file = ev.target.files?.[0];
-                        if (!file) return;
-                        
-                        const driveContext = React.useContext(DriveContext);
-                        if (!driveContext?.uploadFileToDrive) {
-                          alert("Google Drive not connected. Please connect Google Drive to upload bills.");
-                          return;
-                        }
-
-                        try {
-                          const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${activeMonthEntry.month}`);
-                          if (result?.id && result?.webViewLink) {
-                            const newBill = {
-                              monthId: activeMonthEntry.id,
-                              fileName: file.name,
-                              fileUrl: result.webViewLink,
-                              fileId: result.id,
-                              uploadDate: new Date().toISOString()
-                            };
-                            setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                            alert("Bill uploaded successfully!");
-                          }
-                        } catch (err) {
-                          console.error("Upload failed:", err);
-                          alert("Failed to upload bill. Please try again.");
-                        }
-                        ev.target.value = "";
-                      }}
-                    />
-                    <label htmlFor={`bill-upload-daywise-${activeMonthEntry.id}`}
-                      style={{ display:"inline-flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500 }}>
-                      <span>📎</span>
-                      <span>Attach Bill</span>
-                    </label>
-                  </>
-                );
-              })()}
-            </div>
 
             {/* Inline editable daily table */}
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
@@ -10601,27 +10072,17 @@ function ProjectsPage({ data, update }) {
                                 </div>
                                 {/* Time timeline progress bar — only shown when ETA is set */}
                                 {t.eta && (() => {
+                                  const created = new Date(t.createdAt || t.id);
+                                  const due = new Date(t.eta);
                                   const now = new Date();
-                                  // Normalize due date to end of that day
-                                  const due = new Date(t.eta + "T23:59:59");
-                                  const isOverdue = now > due;
-                                  // Use createdAt if available, else fall back to task id (timestamp)
-                                  const createdRaw = t.createdAt ? new Date(t.createdAt) : new Date(typeof t.id === "number" ? t.id : Date.now());
-                                  // If created on same day or after due, use 1 day before due as start
-                                  const created = createdRaw >= due ? new Date(due.getTime() - 86400000) : createdRaw;
                                   const total = due - created;
                                   const elapsed = now - created;
-                                  const rawPct = total > 0 ? Math.round((elapsed / total) * 100) : 100;
-                                  const pct = Math.min(100, Math.max(0, rawPct));
-                                  const delayed = isOverdue && !t.done;
-                                  const barColor = delayed ? "#d44" : pct >= 90 ? "#f0a020" : pct >= 70 ? "#f59e0b" : "#4da6ff";
+                                  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((elapsed / total) * 100))) : 0;
+                                  const barColor = pct >= 90 ? "#d44" : pct >= 70 ? "#f0a020" : "#4da6ff";
                                   return (
                                     <div>
                                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
-                                        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                          Time Elapsed
-                                          {delayed && <span style={{ background: "#fde8e8", color: "#d44", borderRadius: 3, padding: "0px 4px", fontWeight: 700, fontSize: 8, letterSpacing: 0.3 }}>⚠ DELAYED</span>}
-                                        </span>
+                                        <span>Time Elapsed</span>
                                         <span style={{ color: barColor, fontWeight: 600 }}>{pct}%</span>
                                       </div>
                                       <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
