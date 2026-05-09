@@ -8666,24 +8666,9 @@ function BusinessPage({ data, update }) {
                               <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
                               <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(gross)}</span>
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ color: "var(--color-text-secondary)", flex: 1 }}>Spending</span>
-                              <input
-                                type="text" inputMode="decimal"
-                                key={`spend-${e.id}-${e.spending}`}
-                                defaultValue={e.spending != null ? String(e.spending) : ""}
-                                placeholder="0"
-                                onClick={ev => ev.stopPropagation()}
-                                onBlur={ev => {
-                                  ev.stopPropagation();
-                                  const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
-                                  const netIncome = (e.grossIncome || 0) - spending;
-                                  updateBizData(d => d.map(en => en.id !== e.id ? en : { ...en, spending, netIncome }));
-                                }}
-                                style={{ width: 80, padding: "3px 6px", fontSize: 12, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
-                                onFocus={ev => { ev.stopPropagation(); ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
-                                onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
-                              />
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Spend</span>
+                              <span style={{ color: "#e55", fontWeight: 600 }}>{fmtCur(e.spending || 0)}</span>
                             </div>
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
                               <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
