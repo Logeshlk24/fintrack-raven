@@ -7963,6 +7963,8 @@ function BusinessPage({ data, update }) {
   const [renamingDayMonthVal, setRenamingDayMonthVal] = useState("");
   const [showAddDay,   setShowAddDay]   = useState(false);
   const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
+  const [showLiabilitiesModal, setShowLiabilitiesModal] = useState(null); // biz.id
+  const [liabilityForm, setLiabilityForm] = useState({ name: "", amount: "" });
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -8058,6 +8060,20 @@ function BusinessPage({ data, update }) {
     update(p => ({ businesses: (p.businesses || []).filter(b => b.id !== id) }));
     if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); }
   }
+
+  // ── Business Liabilities helpers ─────────────────────────────────────────
+  function addBizLiability(bizId) {
+    const name = liabilityForm.name.trim();
+    const amount = parseFloat(liabilityForm.amount);
+    if (!name || isNaN(amount) || amount <= 0) return;
+    const newLiab = { id: "liab_" + Date.now(), name, amount };
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: [...(b.liabilities || []), newLiab] } : b) }));
+    setLiabilityForm({ name: "", amount: "" });
+  }
+  function deleteBizLiability(bizId, liabId) {
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: (b.liabilities || []).filter(l => l.id !== liabId) } : b) }));
+  }
+
   function renameBusiness(id, newName) {
     const n = newName.trim(); if (!n) return;
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, name: n } : b) }));
@@ -8445,6 +8461,9 @@ function BusinessPage({ data, update }) {
                 const bizYears = [...new Set((biz.data || []).map(e => e.year))];
                 const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
                 const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
+                const bizLiabilities = biz.liabilities || [];
+                const totalLiab = bizLiabilities.reduce((s, l) => s + (l.amount || 0), 0);
+                const netAfterLiab = totalNet - totalLiab;
                 return (
                   <div key={biz.id} onClick={() => { if (!renamingBiz) setSelectedBiz(biz.id); }}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
@@ -8468,13 +8487,89 @@ function BusinessPage({ data, update }) {
                       <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
                     )}
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: totalLiab > 0 ? 6 : 0 }}>
                       <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(totalGross)}</span>
                       <span style={{ color: "#4da6ff" }}>Net: {fmtCur(totalNet)}</span>
                     </div>
+                    {totalLiab > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6, paddingTop: 5, borderTop: "0.5px dashed var(--color-border-tertiary)" }}>
+                        <span style={{ color: "#e55" }}>Liabilities: -{fmtCur(totalLiab)}</span>
+                        <span style={{ color: netAfterLiab >= 0 ? "#1a6b3c" : "#e55", fontWeight: 600 }}>Final: {fmtCur(netAfterLiab)}</span>
+                      </div>
+                    )}
+                    {/* Liabilities button */}
+                    <button
+                      onClick={ev => { ev.stopPropagation(); setShowLiabilitiesModal(biz.id); setLiabilityForm({ name: "", amount: "" }); }}
+                      style={{ marginTop: 6, width: "100%", background: bizLiabilities.length > 0 ? "#fff5f5" : "var(--color-background-secondary)", border: "0.5px solid " + (bizLiabilities.length > 0 ? "#f5c0c0" : "var(--color-border-secondary)"), borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11, color: bizLiabilities.length > 0 ? "#c0392b" : "var(--color-text-secondary)", fontWeight: 500, textAlign: "left" }}>
+                      ⚖️ Liabilities {bizLiabilities.length > 0 ? `(${bizLiabilities.length} · -${fmtCur(totalLiab)})` : "(none)"}
+                    </button>
                   </div>
                 );
               })}
+              {/* Liabilities Modal */}
+              {showLiabilitiesModal && (() => {
+                const biz = businesses.find(b => b.id === showLiabilitiesModal);
+                if (!biz) return null;
+                const bizLiabs = biz.liabilities || [];
+                const totalLiabModal = bizLiabs.reduce((s, l) => s + (l.amount || 0), 0);
+                const totalNetModal = (biz.data || []).reduce((s, e) => s + (e.netIncome || 0), 0);
+                return (
+                  <div onClick={() => setShowLiabilitiesModal(null)}
+                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                    <div onClick={e => e.stopPropagation()}
+                      style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                        <div style={{ fontWeight: 700, fontSize: 17 }}>⚖️ Liabilities — {biz.name}</div>
+                        <button onClick={() => setShowLiabilitiesModal(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--color-text-secondary)" }}>✕</button>
+                      </div>
+                      {/* Summary strip */}
+                      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                        {[
+                          { label: "Total Net Income", val: fmtCur(totalNetModal), color: "#4da6ff" },
+                          { label: "Total Liabilities", val: "-" + fmtCur(totalLiabModal), color: "#e55" },
+                          { label: "Net After Liabilities", val: fmtCur(totalNetModal - totalLiabModal), color: (totalNetModal - totalLiabModal) >= 0 ? "#1a6b3c" : "#e55" },
+                        ].map(c => (
+                          <div key={c.label} style={{ flex: 1, background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.6rem 0.7rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                            <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: c.color }}>{c.val}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Existing liabilities list */}
+                      {bizLiabs.length > 0 && (
+                        <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {bizLiabs.map(l => (
+                            <div key={l.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff5f5", borderRadius: 8, padding: "7px 12px", border: "0.5px solid #f5c0c0" }}>
+                              <span style={{ fontSize: 13, fontWeight: 500 }}>{l.name}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <span style={{ fontSize: 13, color: "#c0392b", fontWeight: 600 }}>-{fmtCur(l.amount)}</span>
+                                <button onClick={() => deleteBizLiability(biz.id, l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#c0392b", fontSize: 14, opacity: 0.7, padding: 0 }}>🗑</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Add form */}
+                      <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--color-text-secondary)" }}>Add Liability</div>
+                        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                          <input placeholder="e.g. Rent, Salary, Loan EMI" value={liabilityForm.name}
+                            onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))}
+                            style={{ flex: 2, boxSizing: "border-box" }} />
+                          <input type="number" placeholder="Amount" value={liabilityForm.amount}
+                            onChange={e => setLiabilityForm(p => ({ ...p, amount: e.target.value }))}
+                            onKeyDown={e => e.key === "Enter" && addBizLiability(biz.id)}
+                            style={{ flex: 1, boxSizing: "border-box" }} />
+                        </div>
+                        <button onClick={() => addBizLiability(biz.id)}
+                          style={{ width: "100%", background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "8px 0", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+                          + Add Liability
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </>
