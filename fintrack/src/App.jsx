@@ -39,6 +39,7 @@ const LIGHT_MODE_STYLE = `
     /* Tables scroll inside their container */
     table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     /* Inputs always fit */
+    input, select, textarea { min-width: 0 !important; max-width: 100% !important; box-sizing: border-box !important; }
     input[type="time"], input[type="date"] { min-width: 0; width: 100% !important; }
     /* Mobile holdings stats grid: 2 cols instead of 4 */
     .mobile-stats-2col { grid-template-columns: 1fr 1fr !important; }
@@ -46,6 +47,11 @@ const LIGHT_MODE_STYLE = `
     .pie-wrap { flex-direction: column !important; align-items: center !important; }
     /* Bar charts: don't overflow */
     svg { max-width: 100%; }
+    /* Fixed grids collapse gracefully */
+    .grid-3col { grid-template-columns: 1fr 1fr !important; }
+    .grid-4col { grid-template-columns: 1fr 1fr !important; }
+    /* Modals fit screen */
+    .modal-inner { width: 95vw !important; max-height: 90vh !important; overflow-y: auto !important; }
   }
 `;
 
@@ -602,7 +608,7 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%" }}>
+      <main style={{ flex: 1, padding: mobile ? "0.75rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%" }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
@@ -1005,7 +1011,7 @@ function ProfilePage({ data, update }) {
           <span style={{ fontWeight: 600, fontSize: 15 }}>Overview Widget</span>
         </div>
         <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>Choose what to display in the widget area on the right side of your Overview.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(130px,100%), 1fr))", gap: 10, marginBottom: 16 }}>
           {WIDGET_OPTIONS.map(opt => (
             <button key={opt.id} onClick={() => setWidgetType(opt.id)} style={{
               padding: "12px 14px", borderRadius: 10, textAlign: "left",
@@ -1222,7 +1228,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   return (
     <div>
       {/* Overview Header row: title left, widget pill right */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 }}>Overview</h1>
         {widgetType !== "none" && <OverviewWidget compact />}
       </div>
@@ -1261,7 +1267,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
         </div>
       ) : (
         /* ── DESKTOP: original grid layout ── */
-        <div style={{ display: "grid", gridTemplateColumns: foOn ? "repeat(auto-fit, minmax(160px, 1fr))" : "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: foOn ? "repeat(auto-fit, minmax(min(160px, 100%), 1fr))" : "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 12, marginBottom: 12 }}>
           <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
           {/* Income card with period toggle */}
@@ -1509,7 +1515,7 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       {/* Bank balances */}
       {bankBalances.length > 0 && (
         <Card title="Bank Balances" action={<button onClick={() => setPage("money")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>Manage →</button>}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(180px, 100%), 1fr))", gap: 10, marginTop: 8 }}>
             {bankBalances.map(b => (
               <div key={b.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>{b.name}</div>
@@ -1805,7 +1811,7 @@ function MoneyPage({ data, update, tab, setTab }) {
           </div>
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle || (tab === "recent" ? "Recent Transactions" : tab)}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
@@ -3664,7 +3670,9 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
             </div>
             <button onClick={nextMonth} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 16, color: "var(--color-text-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
           </div>
-
+          {/* Scrollable calendar grid on mobile */}
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ minWidth: 280 }}>
           {/* Day labels */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
             {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
@@ -3723,6 +3731,8 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
               );
             })}
           </div>
+          </div>{/* end minWidth wrapper */}
+          </div>{/* end overflowX scroll wrapper */}
         </div>
 
         {/* Day detail panel */}
@@ -3844,7 +3854,7 @@ function EssentialsPage({ data, update, tab, setTab }) {
             </div>
           )}
           {data.goals.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12, marginBottom: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(240px, 100%), 1fr))", gap: 12, marginBottom: 20 }}>
               {data.goals.map(g => {
                 const progress = Math.min((netWorth / Number(g.target)) * 100, 100);
                 return (
@@ -4374,7 +4384,7 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
         {subs.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Sub-folders</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginBottom: openSubId ? 12 : 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(150px, 100%), 1fr))", gap: 10, marginBottom: openSubId ? 12 : 0 }}>
               {subs.map(sub => {
                 const fcount = (sub.files || []).length;
                 const isOpen = openSubId === sub.id;
@@ -4462,7 +4472,7 @@ function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
         : <>
           {/* Grid of folder cards */}
           {!openId && (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))", gap:12, marginTop:4 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(min(200px, 100%), 1fr))", gap:12, marginTop:4 }}>
               {folders.map(folder => {
                 const fcount = (folder.files||[]).length + (folder.subFolders||[]).reduce((s,sf)=>s+(sf.files||[]).length,0);
                 const sfCount = (folder.subFolders||[]).length;
@@ -4628,8 +4638,7 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
     <div style={{ marginTop: 16 }}>
       <div style={cardStyle}>
         {sectionTitle("◉", "Index Options — Lot Sizes", "Default lot sizes for index contracts.")}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-          {[...indexItems, ...(custom["Index Options"] || [])].map(name => (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(130px, 100%), 1fr))", gap: 14 }}>
             <div key={name}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -4645,7 +4654,7 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
       </div>
       <div style={cardStyle}>
         {sectionTitle("◈", "Commodities — Lot Sizes", "Default lot sizes for commodity contracts on MCX.")}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(130px, 100%), 1fr))", gap: 14 }}>
           {[...commodityItems, ...(custom["Commodities"] || [])].map(name => (
             <div key={name}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
@@ -5640,6 +5649,8 @@ function AnalysisTab({ data, update, accounts }) {
               <span style={{fontWeight:700,fontSize:15}}>{MONTHS[calMonth]} {calYear}</span>
               <button onClick={next} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>›</button>
             </div>
+            <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            <div style={{minWidth:250}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
               {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600,padding:"4px 0"}}>{d}</div>)}
             </div>
@@ -5667,6 +5678,8 @@ function AnalysisTab({ data, update, accounts }) {
                 );
               })}
             </div>
+            </div>{/* end minWidth wrapper */}
+            </div>{/* end overflowX scroll wrapper */}
             <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:10}}>
               <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(mIncome)}</span>
               <span style={{color:"#ef4444",fontWeight:600}}>Expense: {fmtCur(mExpense)}</span>
@@ -5675,7 +5688,7 @@ function AnalysisTab({ data, update, accounts }) {
           </div>
 
           {/* Right panel — selected day transactions */}
-          <div style={{flex:1,minWidth:220}}>
+          <div style={{flex:1,minWidth:"min(220px,100%)"}}>
             {calDay ? (
               <>
                 <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>
@@ -7269,7 +7282,7 @@ function LiabilitiesTab({ data, update }) {
                   {isEditing ? (
                     <div>
                       <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 10, color: "#1a6b3c" }}>✏️ Edit Liability</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 8 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 8, marginBottom: 8 }}>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name</label>
                           <input value={editLiability.name} onChange={e => setEditLiability(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
@@ -7725,7 +7738,7 @@ function GoalsPage({ data, update }) {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
         <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
           {showAdd ? "✕ Cancel" : "+ Add Goal"}
@@ -7784,7 +7797,7 @@ function GoalsPage({ data, update }) {
               No {activeTab} goals yet. Click "+ Add Goal" to create one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))", gap: 14, alignItems: "stretch" }}>
               {displayed.sort((a, b) => {
                 const pOrder = { high: 0, medium: 1, low: 2 };
                 if (a.completed !== b.completed) return a.completed ? 1 : -1;
@@ -8395,7 +8408,7 @@ function BusinessPage({ data, update }) {
       )}
 
       {/* ── HEADER / BREADCRUMB ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {selectedBiz && !selectedYear && (
             <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
@@ -8522,7 +8535,7 @@ function BusinessPage({ data, update }) {
               No businesses yet. Click "+ New Business" to create your first one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))", gap: 12 }}>
               {businesses.map(biz => {
                 const bizYears = [...new Set((biz.data || []).map(e => e.year))];
                 const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
@@ -8626,7 +8639,7 @@ function BusinessPage({ data, update }) {
             return (
               <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid #f5c0c0", padding: "1.25rem 1.4rem", marginBottom: 16, borderTop: "3px solid #c0392b" }}>
                 {/* Header */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
                   <div style={{ fontWeight: 700, fontSize: 16 }}>⚖️ Liabilities — {activeBiz.name}</div>
                   <div style={{ fontSize: 11, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "3px 9px" }}>
                     💡 Mark as Paid → deducted from Net Income
@@ -8634,7 +8647,7 @@ function BusinessPage({ data, update }) {
                 </div>
 
                 {/* Summary tiles */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 18 }}>
                   {[
                     { label: "Net Income", val: fmtCur(totalNet), color: "#4da6ff", bg: "#f0f7ff" },
                     { label: "Paid Liabilities", val: paidTotal > 0 ? "-" + fmtCur(paidTotal) : fmtCur(0), color: "#c0392b", bg: "#fff5f5" },
@@ -8719,7 +8732,7 @@ function BusinessPage({ data, update }) {
             </div>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))", gap: 12, marginBottom: 16 }}>
                 {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
                   <div key={s.year} onClick={() => { if (!renamingYear) setSelectedYear(s.year); }}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingYear?.year === s.year ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
@@ -8737,7 +8750,7 @@ function BusinessPage({ data, update }) {
                   </div>
                 ))}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(180px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
                 {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
                   <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
                     <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{s.year} — Gross</div>
@@ -8854,7 +8867,7 @@ function BusinessPage({ data, update }) {
           ) : (
             <>
               {/* Summary stats for year */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
                 {[
                   { label: "Total Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0)), color: "#1a6b3c" },
                   { label: "Total Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0)), color: "#4da6ff" },
@@ -9067,7 +9080,7 @@ function BusinessPage({ data, update }) {
               })()}
 
               {/* ── Month folder cards grid (hidden while detail is open) ── */}
-              {!selectedNonDayMonth && <><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, marginBottom: 16 }}>
+              {!selectedNonDayMonth && <><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(210px, 100%), 1fr))", gap: 12, marginBottom: 16 }}>
                 {yearEntries.map(e => {
                   const dayCount = (e.days || []).length;
                   const gross = e.grossIncome || 0;
@@ -10009,7 +10022,7 @@ function ProjectsPage({ data, update }) {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {project && (
             <button onClick={() => { setSelectedProject(null); setShowAddTask(false); setEditTaskId(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
@@ -10063,7 +10076,7 @@ function ProjectsPage({ data, update }) {
               No projects yet. Click "+ New Project" to create your first one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(240px, 100%), 1fr))", gap: 14 }}>
               {projects.map(pr => {
                 const done = (pr.todos || []).filter(t => t.done).length;
                 const total = (pr.todos || []).length;
@@ -11696,7 +11709,7 @@ function PortfolioHub({ data, update }) {
                 {Object.keys(indPrices).length > 0 ? "Live prices loaded" : "Open tabs below & click Refresh to load prices"}
               </span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10 }}>
               {[
                 { label: "Invested",      val: fmtCur(totalInvested),  color: "var(--color-text-primary)" },
                 { label: "Current Value", val: fmtCur(totalCurrent),   color: "#1a6b3c" },
@@ -11726,7 +11739,7 @@ function PortfolioHub({ data, update }) {
             </div>
 
             {/* Breakdown by category */}
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 8 }}>
               {[
                 { label: "🇮🇳 Indian Stocks", invested: indInvested, current: indCurrent },
                 { label: "🇺🇸 US Stocks",     invested: usInvested,  current: usCurrent  },
@@ -12054,7 +12067,7 @@ function DividendView({ data }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 12 }}>
         {[
           { label: "💰 Est. Annual Dividend", val: loaded ? fmtCur(totalAnnualInr) : "—", color: "#1a6b3c" },
           { label: "📅 Est. Monthly Income",  val: loaded ? fmtCur(monthlyEstInr)  : "—", color: "#1a6b3c" },
@@ -12721,7 +12734,7 @@ function ComparativeAnalysisView({ data }) {
       </div>
 
       {/* ── Summary KPI cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10 }}>
         {[
           { label: "Total Invested",   val: fmtC(totalInvested), color: "var(--color-text-primary)" },
           { label: "Total Current",    val: fmtC(totalCurrent),  color: "#1a6b3c" },
@@ -12809,7 +12822,7 @@ function MutualFundsPage({ data, update }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>💼 Mutual Funds</h1>
         <button onClick={() => setShowForm(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
           {showForm ? "✕ Cancel" : "+ Add Fund"}
@@ -12817,7 +12830,7 @@ function MutualFundsPage({ data, update }) {
       </div>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(150px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
         {[
           { label: "Total Invested", val: fmt(totalInvested), color: "var(--color-text-primary)" },
           { label: "Current Value",  val: fmt(currentValue),  color: "#1a6b3c" },
@@ -13464,7 +13477,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
               ⚡ <strong>{holdings.length - mergedHoldings.length}</strong> duplicate entr{holdings.length - mergedHoldings.length === 1 ? "y" : "ies"} auto-merged into weighted avg price. Showing {mergedHoldings.length} unique holdings.
             </div>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10, marginBottom: 20 }}>
             <StatCard label={`Total Invested (${isUS && showUSD ? "USD" : "INR"})`} value={fmtVal(totalInvested)} icon="💰" />
             <StatCard label={`Current Value (${isUS && showUSD ? "USD" : "INR"})`}  value={fmtVal(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
             <StatCard label="Total P&L"      value={fmtPnlVal(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
@@ -13497,7 +13510,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       {showForm && (
         <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
           <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(150px, 100%), 1fr))", gap: 10 }}>
 
             {/* Exchange selector */}
             <div>
@@ -13626,7 +13639,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
       {showSellForm && (
         <div style={{ background: "var(--color-background-primary)", border: "0.5px solid #b6ddc2", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
           <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14, color: "#1a6b3c" }}>💰 Record Realized Profit</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(150px, 100%), 1fr))", gap: 10 }}>
             <div>
               <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Select Holding *</label>
               <select value={sellForm.holdingId} onChange={e => {
@@ -13892,7 +13905,7 @@ function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "p
               <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>({soldEntries.length} sale{soldEntries.length !== 1 ? "s" : ""})</span>
             </div>
             {/* Summary row */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(150px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
               <div style={{ background: totalRealized >= 0 ? "#e8f5ee" : "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid " + (totalRealized >= 0 ? "#b6ddc2" : "#f5c0c0") }}>
                 <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Net Realized P&L</div>
                 <div style={{ fontWeight: 700, fontSize: 18, color: totalRealized >= 0 ? "#1a6b3c" : "#cc2222" }}>{totalRealized >= 0 ? "+" : ""}{fmtCur(totalRealized)}</div>
