@@ -66,27 +66,200 @@ function migrateLocalStorage() {
 const defaultData = {
   user: null,
   profile: { age: "", income: "", expense: "", savings: "" },
+  assets: [],
+  liabilities: [],
   transactions: [],
   banks: [],
-  liabilities: [],
+  emis: [],
+  foTrades: [],
+  foCharges: { brokerage: 40, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 },
+  brokerProfiles: [
+    { id: 1, name: "Zerodha", charges: { brokerage: 20, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 } },
+  ],
+  lotSizes: { "Nifty 50": 65, "Bank Nifty": 30, "Sensex": 20, "Crude Oil": 100, "Crude Oil M": 10, "Natural Gas": 1250, "Natural Gas M": 250, "Gold": 100, "Gold M": 10 },
+  customInstruments: { "Index Options": [], "Stock Options": [], "Commodities": [] },
+  portfolioHoldings: [],
+  goals: [],
+  snapshots: [],
   scheduledPayments: [],
+  needsWants: [],
+  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare", timeLogs: [] },
+  commuteLeaves: [],
+  featureToggles: { fo: true, portfolio: true },
+  businessData: [],
+  projectsData: [],
+  projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
-  categories: { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] },
-  overviewTodos: [],
+  billAttachments: [], // { monthId, fileName, fileUrl, fileId, uploadDate }
 };
 
 
 
+const ASSET_TYPES = ["Stocks & Equity", "Equity Funds", "Gold & Silver", "FD & RD", "EPF / PPF / NPS", "Real Estate", "Crypto", "Cash", "Other"];
+const STRATEGIES = ["Call", "Put"];
+const INSTRUMENTS = ["Index Options", "Stock Options", "Commodities"];
 
 const fmt = (n) => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n || 0);
 const fmtCur = (n) => "₹" + fmt(n);
 const fmtPct = (n) => (n >= 0 ? "+" : "") + (n || 0).toFixed(2) + "%";
+
+// ── XIRR — Newton-Raphson solver ──────────────────────────────────────────────
+// cashflows: [{ amount, date }]  (negative = outflow, positive = inflow)
+function calcXIRR(cashflows, guess = 0.1, maxIter = 1000, tol = 1e-7) {
+  if (!cashflows || cashflows.length < 2) return null;
+  const t0 = cashflows[0].date;
+  const daysArr = cashflows.map(cf => (cf.date - t0) / (1000 * 60 * 60 * 24 * 365));
+  let rate = guess;
+  for (let i = 0; i < maxIter; i++) {
+    let f = 0, df = 0;
+    for (let j = 0; j < cashflows.length; j++) {
+      const t = daysArr[j];
+      const v = cashflows[j].amount / Math.pow(1 + rate, t);
+      f  += v;
+      df -= t * cashflows[j].amount / Math.pow(1 + rate, t + 1);
+    }
+    const newRate = rate - f / df;
+    if (Math.abs(newRate - rate) < tol) return isFinite(newRate) ? newRate : null;
+    rate = newRate;
+  }
+  return isFinite(rate) ? rate : null;
+}
+
+// ── CAGR — simple point-to-point ──────────────────────────────────────────────
+function calcCAGR(invested, current, buyDate) {
+  if (!buyDate || invested <= 0 || current <= 0) return null;
+  const years = (Date.now() - new Date(buyDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+  if (years < 0.01) return null;
+  return Math.pow(current / invested, 1 / years) - 1;
+}
+
+// ── Portfolio-level XIRR from multiple holdings ───────────────────────────────
+// Each holding contributes one outflow (buyDate) and one inflow (today at curVal)
+function calcPortfolioXIRR(holdings, getCurVal) {
+  const cashflows = [];
+  holdings.forEach(h => {
+    if (!h.buyDate) return;
+    const invested = (h.buyPrice || 0) * (h.qty || 0);
+    const curVal   = getCurVal(h);
+    if (!invested || curVal == null) return;
+    cashflows.push({ amount: -invested, date: new Date(h.buyDate) });
+    cashflows.push({ amount: curVal,    date: new Date() });
+  });
+  return calcXIRR(cashflows);
+}
+
+function fmtRate(r) {
+  if (r == null || !isFinite(r)) return "—";
+  return (r * 100).toFixed(2) + "%";
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GOOGLE DRIVE CONTEXT
+// ═══════════════════════════════════════════════════════════════════════════════
+const DriveContext = React.createContext(null);
+
+/*
+  Drive is connected for exactly as long as the user's Gmail/Google session
+  is alive in Firebase. No GIS, no Client ID, no popups, no timers.
+
+  How it works:
+  - At sign-in: firebase.js saves the Drive access_token to localStorage.
+  - On tab reopen: DriveProvider sees firebaseUser is present (Firebase
+    restored the session), calls getFreshDriveToken() which uses Firebase's
+    own internal refresh_token via securetoken.googleapis.com to get a fresh
+    Google access_token — completely silent, no UI at all.
+  - If Gmail session is alive → Drive is connected. If not → both are gone.
+    Exactly what you asked for.
+*/
+function DriveProvider({ children, firebaseUser }) {
+  const [token,  setToken]  = useState(() => {
+    const t = localStorage.getItem("ft_drv_tok");
+    const e = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    return (t && Date.now() < e) ? t : null;
+  });
+  const [email,   setEmail]   = useState(() => localStorage.getItem("ft_drv_email") || null);
+  const [loading, setLoading] = useState(false);
+
+  // When Firebase confirms user is signed in → silently get fresh Drive token
+  useEffect(() => {
+    if (!firebaseUser) return;
+    // Already have a valid token — nothing to do
+    const saved  = localStorage.getItem("ft_drv_tok");
+    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    if (saved && Date.now() < expiry) {
+      setToken(saved);
+      setEmail(localStorage.getItem("ft_drv_email") || firebaseUser.email);
+      return;
+    }
+    // Token expired or missing — get a fresh one using Firebase's refresh token
+    setLoading(true);
+    getFreshDriveToken().then(tok => {
+      setLoading(false);
+      if (tok) {
+        setToken(tok);
+        setEmail(firebaseUser.email || localStorage.getItem("ft_drv_email"));
+      }
+    });
+  }, [firebaseUser?.uid]); // eslint-disable-line
+
+  function clearDrive() {
+    ["ft_drv_tok", "ft_drv_exp", "ft_drv_email"].forEach(k => localStorage.removeItem(k));
+    setToken(null); setEmail(null);
+  }
+
+  async function uploadToDrive(file, driveFolderId) {
+    // Always get the freshest token before uploading
+    let tok = localStorage.getItem("ft_drv_tok");
+    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+    if (!tok || Date.now() >= expiry) {
+      tok = await getFreshDriveToken();
+      if (tok) setToken(tok);
+    }
+    if (!tok) return null;
+    try {
+      const ab   = await file.arrayBuffer();
+      const meta = JSON.stringify({ name: file.name, ...(driveFolderId ? { parents: [driveFolderId] } : {}) });
+      const form = new FormData();
+      form.append("metadata", new Blob([meta], { type: "application/json" }));
+      form.append("file",     new Blob([ab],   { type: file.type || "application/octet-stream" }), file.name);
+      const res = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink,size",
+        { method: "POST", headers: { Authorization: "Bearer " + tok }, body: form }
+      );
+      if (!res.ok) return null;
+      const d = await res.json();
+      await fetch(`https://www.googleapis.com/drive/v3/files/${d.id}/permissions`, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "reader", type: "anyone" }),
+      }).catch(() => {});
+      return {
+        id: d.id, name: d.name, mimeType: d.mimeType,
+        webViewLink: d.webViewLink,
+        downloadUrl: `https://drive.google.com/uc?export=download&id=${d.id}`,
+        previewUrl:  `https://drive.google.com/file/d/${d.id}/preview`,
+        size: file.size, source: "gdrive",
+      };
+    } catch (e) { return null; }
+  }
+
+  return (
+    <DriveContext.Provider value={{ connected: !!token, token, email, loading, clearDrive, uploadToDrive }}>
+      {children}
+    </DriveContext.Provider>
+  );
+}
+
+function useDrive() { return React.useContext(DriveContext); }
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export default function App() {
   // ── Mobile detection ──────────────────────────────────────────────────────
   const [mobile, setMobile] = useState(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
   );
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
     const handler = (e) => setMobile(e.matches);
@@ -101,9 +274,17 @@ export default function App() {
   const [dataReady, setDataReady]       = useState(false);
 
   const [page, setPage]                 = useState("overview");
-  const [settingsTab, setSettingsTab]   = useState("profile");
+  const [onboarding, setOnboarding]     = useState(false);
+  const [onboardStep, setOnboardStep]   = useState(0);
+  const [modal, setModal]               = useState(null);
+  const [foTab, setFoTab]               = useState("trades");
   const [moneyTab, setMoneyTab]         = useState("expenses");
+  const [essentialsTab, setEssentialsTab] = useState("essentials");
+  const [settingsTab, setSettingsTab]   = useState("profile");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const navDragIdx = useRef(null);
+  const [navDragOver, setNavDragOver] = useState(null);
+  const [navEditMode, setNavEditMode] = useState(false);
 
   // Debounce timer ref — avoids hammering Firestore on every keystroke
   const saveTimer = useRef(null);
@@ -157,27 +338,145 @@ export default function App() {
     });
   }, [firebaseUser]);
 
+  // ── Auto Bus Fare: runs on load (catch-up) + every minute (real-time) ────────
+  const autoAddBusFare = useCallback((currentData) => {
+    const settings = currentData.commuteSettings || {};
+    const timeLogs = settings.timeLogs || [];
+    if (!settings.busFare || !settings.bankId || timeLogs.length === 0) return;
 
-  // Net worth = bank balances
+    const now = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    const dow = now.getDay(); // 0=Sun,6=Sat
+    if (dow === 0 || dow === 6) return; // weekend
+    const leaves = currentData.commuteLeaves || [];
+    if (leaves.includes(todayKey)) return; // on leave
+
+    const nowHHMM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const txns = currentData.transactions || [];
+
+    const toAdd = [];
+    timeLogs.forEach(tl => {
+      if (!tl.time) return;
+      // Add if current time >= slot time and not already added today
+      if (nowHHMM < tl.time) return;
+      const alreadyAdded = txns.some(t => t.date === todayKey && t._busfare === true && t._timeLogId === tl.id);
+      if (alreadyAdded) return;
+      toAdd.push({
+        id: Date.now() + Math.random(),
+        date: todayKey,
+        time: tl.time,
+        type: "expense",
+        amount: Number(settings.busFare),
+        category: settings.category || "Transport",
+        note: (settings.note || "Bus fare") + " – " + tl.label,
+        bankId: settings.bankId,
+        _busfare: true,
+        _timeLogId: tl.id,
+        _autoAdded: true,
+      });
+    });
+
+    if (toAdd.length > 0) {
+      update(p => ({ transactions: [...(p.transactions || []), ...toAdd] }));
+    }
+  }, [update]);
+
+  // Run catch-up when data is ready (handles app-was-closed case)
+  useEffect(() => {
+    if (dataReady) autoAddBusFare(dataRef.current);
+  }, [dataReady]); // eslint-disable-line
+
+  // Run every minute to auto-add at exact time
+  useEffect(() => {
+    if (!dataReady) return;
+    const interval = setInterval(() => {
+      autoAddBusFare(dataRef.current);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [dataReady, autoAddBusFare]);
+
+  const totalIncome = data.transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+  // Net worth = sum of all bank balances (linked transactions) + unlinked transactions
   const linkedBankIds = new Set((data.banks || []).map(b => String(b.id)));
   const unlinkedIncome = data.transactions.filter(t => t.type === "income" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
   const unlinkedExpense = data.transactions.filter(t => t.type === "expense" && (!t.bankId || !linkedBankIds.has(String(t.bankId)))).reduce((s, t) => s + Number(t.amount || 0), 0);
   const netWorth = (data.banks || []).reduce((s, b) => {
     const inc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
     const exp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(b.id)).reduce((a, t) => a + Number(t.amount || 0), 0);
-    if (b.type === "Credit Card") return s - ((b.openingBalance || 0) + exp - inc);
+    if (b.type === "Credit Card") {
+      const outstanding = (b.openingBalance || 0) + exp - inc;
+      return s - outstanding;
+    }
     return s + (b.openingBalance || 0) + inc - exp;
   }, 0) + (unlinkedIncome - unlinkedExpense);
+
+  const totalAssets = data.assets.reduce((s, a) => s + Number(a.value || 0), 0);
+  const totalLiabilities = data.liabilities.reduce((s, l) => s + Number(l.value || 0), 0);
+
+  const foNetPnl = data.foTrades.reduce((s, t) => {
+    const gross = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
+    const charges = calcCharges(t, t.brokerCharges || data.foCharges);
+    return s + gross - charges;
+  }, 0);
+
+  function calcCharges(trade, charges) {
+    const c = charges || data.foCharges;
+    const turnover = (Number(trade.buyPremium || 0) + Number(trade.sellPremium || 0)) * Number(trade.lots || 1) * Number(trade.lotSize || 50);
+    const brokerage = c.brokerage * 2;
+    const stt = (Number(trade.sellPremium || 0) * Number(trade.lots || 1) * Number(trade.lotSize || 50)) * (c.stt / 100);
+    const exchange = turnover * (c.exchangeFee / 100);
+    const sebi = turnover * (c.sebi / 100);
+    const gstAmt = (brokerage + exchange) * (c.gst / 100);
+    const stamp = (Number(trade.buyPremium || 0) * Number(trade.lots || 1) * Number(trade.lotSize || 50)) * (c.stampDuty / 100);
+    return brokerage + stt + exchange + sebi + gstAmt + stamp;
+  }
 
   // ── Auth gates ────────────────────────────────────────────────────────────
   if (firebaseUser === undefined) return <SplashScreen msg="Loading…" />;
   if (firebaseUser === null)      return <SignInPage />;
   if (!dataReady)                 return <SplashScreen msg="Syncing your data…" />;
 
-  // Only Overview, Money, Settings tabs
+  if (onboarding) return <Onboarding step={onboardStep} setStep={setOnboardStep} data={data} update={update} done={() => setOnboarding(false)} />;
+
+  const toggles = data.featureToggles || { fo: true, portfolio: true };
+  const portfolioOn = toggles.portfolio !== false;
+  const allNavItems = [
+    { id: "money",      label: "Money",     icon: "⊕" },
+    ...(toggles.fo ? [{ id: "fo", label: "F&O", icon: "◉" }] : []),
+    ...(portfolioOn ? [{ id: "portfolio", label: "Portfolio", icon: "📈" }] : []),
+    { id: "goals",      label: "Goals",     icon: "◎" },
+    { id: "business",   label: "Business",  icon: "🏢" },
+    { id: "projects",   label: "Projects",  icon: "📋" },
+  ];
+
+  // Restore saved nav order, filtering out items that may have been toggled off
+  const savedNavOrder = data.navOrder || [];
+  const availableIds = allNavItems.map(i => i.id);
+  const orderedIds = [
+    ...savedNavOrder.filter(id => availableIds.includes(id)),
+    ...availableIds.filter(id => !savedNavOrder.includes(id)),
+  ];
+  const navItems = orderedIds.map(id => allNavItems.find(i => i.id === id)).filter(Boolean);
+
+  function onNavDragStart(e, i) { navDragIdx.current = i; e.dataTransfer.effectAllowed = "move"; }
+  function onNavDragOver(e, i) { e.preventDefault(); if (i !== navDragOver) setNavDragOver(i); }
+  function onNavDrop(e, i) {
+    e.preventDefault();
+    if (navDragIdx.current === null || navDragIdx.current === i) { setNavDragOver(null); return; }
+    const next = [...navItems.map(x => x.id)];
+    const [moved] = next.splice(navDragIdx.current, 1);
+    next.splice(i, 0, moved);
+    update(() => ({ navOrder: next }));
+    navDragIdx.current = null; setNavDragOver(null);
+  }
+
+  // Mobile: extra nav items for "More" sheet
+  const moreItems = navItems.filter(n => !["money","goals","portfolio"].includes(n.id));
 
   return (
-    <>
+    <DriveProvider firebaseUser={firebaseUser}>
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" }}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
@@ -224,27 +523,38 @@ export default function App() {
           {!sidebarCollapsed && "Overview"}
         </button>
 
-        {/* Money */}
-        <button onClick={() => setPage("money")} style={{
-          display: "flex", alignItems: "center",
-          gap: sidebarCollapsed ? 0 : 10,
-          justifyContent: sidebarCollapsed ? "center" : "flex-start",
-          padding: sidebarCollapsed ? "0.6rem 0" : "0.6rem 1rem",
-          background: page === "money" ? "var(--color-background-secondary)" : "transparent",
-          border: "none", cursor: "pointer",
-          color: page === "money" ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-          fontWeight: page === "money" ? 500 : 400, fontSize: 14,
-          borderLeft: page === "money" ? "2px solid #1a6b3c" : "2px solid transparent",
-          width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
-        }}>
-          <span style={{ fontSize: 16, flexShrink: 0 }}>⊕</span>
-          {!sidebarCollapsed && "Money"}
-        </button>
+        {/* Draggable nav items */}
+        {navItems.map((item, i) => (
+          <div key={item.id}
+            draggable={navEditMode && !sidebarCollapsed}
+            onDragStart={navEditMode ? e => onNavDragStart(e, i) : undefined}
+            onDragOver={navEditMode ? e => onNavDragOver(e, i) : undefined}
+            onDrop={navEditMode ? e => onNavDrop(e, i) : undefined}
+            onDragEnd={navEditMode ? () => { navDragIdx.current = null; setNavDragOver(null); } : undefined}
+            style={{ display: "flex", alignItems: "center", borderLeft: navDragOver === i ? "2px solid #1a6b3c" : page === item.id ? "2px solid #1a6b3c" : "2px solid transparent", background: navDragOver === i ? "#e8f5ee" : page === item.id ? "var(--color-background-secondary)" : "transparent" }}
+          >
+            {!sidebarCollapsed && navEditMode && (
+              <span style={{ paddingLeft: 6, color: "var(--color-border-primary)", cursor: "grab", fontSize: 13, userSelect: "none" }}>⠿</span>
+            )}
+            <button onClick={() => { if (!navEditMode) setPage(item.id); }} title={sidebarCollapsed ? item.label : undefined} style={{
+              flex: 1, display: "flex", alignItems: "center",
+              gap: sidebarCollapsed ? 0 : 8,
+              justifyContent: sidebarCollapsed ? "center" : "flex-start",
+              padding: sidebarCollapsed ? "0.6rem 0" : "0.6rem 0.6rem 0.6rem 4px",
+              background: "transparent", border: "none", cursor: navEditMode ? "grab" : "pointer",
+              color: page === item.id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+              fontWeight: page === item.id ? 500 : 400, fontSize: 14,
+              width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
+            }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
+              {!sidebarCollapsed && item.label}
+            </button>
+          </div>
+        ))}
 
         {!sidebarCollapsed && (
           <div style={{ marginTop: "auto", padding: "0 0 0.5rem" }}>
-
-            <button onClick={() => setPage("settings")} style={{
+            <button onClick={() => setPage("settings")} title="Settings" style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "0.6rem 1rem",
               background: page === "settings" ? "var(--color-background-secondary)" : "transparent",
@@ -281,7 +591,6 @@ export default function App() {
               width: "100%", padding: "0.5rem 0", display: "flex", justifyContent: "center",
               borderLeft: page === "settings" ? "2px solid #1a6b3c" : "2px solid transparent",
             }}>⚙️</button>
-
             {data.user?.photo
               ? <img src={data.user.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} title={data.user.name} />
               : <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1a6b3c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600 }}>
@@ -294,37 +603,125 @@ export default function App() {
 
       {/* Main */}
       <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%" }}>
-        {page === "overview" && <Overview data={data} netWorth={netWorth} setPage={setPage} update={update} />}
+        {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
         {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
-        {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} />}
+        {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
+        {page === "portfolio" && portfolioOn && <PortfolioHub data={data} update={update} />}
+        {page === "goals" && <GoalsPage data={data} update={update} />}
+        {page === "business" && <BusinessPage data={data} update={update} />}
+        {page === "projects" && <ProjectsPage data={data} update={update} />}
+        {page === "settings" && <SettingsPage data={data} update={update} tab={settingsTab} setTab={setSettingsTab} navItems={navItems} navEditMode={navEditMode} setNavEditMode={setNavEditMode} onNavDragStart={onNavDragStart} onNavDragOver={onNavDragOver} onNavDrop={onNavDrop} navDragOver={navDragOver} navDragIdx={navDragIdx} setNavDragOver={setNavDragOver} />}
       </main>
 
       {/* ── Mobile Bottom Navigation Bar ── */}
       {mobile && (
-        <nav style={{
-          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
-          background: "var(--color-background-primary)",
-          borderTop: "0.5px solid var(--color-border-tertiary)",
-          display: "flex", alignItems: "stretch", height: 64,
-          paddingBottom: "env(safe-area-inset-bottom)",
-        }}>
-          {[["overview","⊞","Overview"],["money","⊕","Money"],["settings","⚙️","Settings"]].map(([id, icon, label]) => (
-            <button key={id} onClick={() => setPage(id)} style={{
+        <>
+          {/* More menu overlay */}
+          {showMoreMenu && (
+            <div onClick={() => setShowMoreMenu(false)} style={{
+              position: "fixed", inset: 0, zIndex: 998, background: "rgba(0,0,0,0.3)"
+            }}>
+              <div onClick={e => e.stopPropagation()} style={{
+                position: "fixed", bottom: 64, left: 0, right: 0, zIndex: 999,
+                background: "var(--color-background-primary)",
+                borderTop: "0.5px solid var(--color-border-tertiary)",
+                borderRadius: "16px 16px 0 0",
+                padding: "1rem",
+                display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8,
+              }}>
+                {moreItems.map(item => (
+                  <button key={item.id} onClick={() => { setPage(item.id); setShowMoreMenu(false); }} style={{
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                    padding: "12px 8px", borderRadius: 12, border: "none",
+                    background: page === item.id ? "var(--color-background-secondary)" : "transparent",
+                    cursor: "pointer", fontSize: 12, color: "var(--color-text-primary)",
+                  }}>
+                    <span style={{ fontSize: 22 }}>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+                {/* Settings */}
+                <button onClick={() => { setPage("settings"); setShowMoreMenu(false); }} style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                  padding: "12px 8px", borderRadius: 12, border: "none",
+                  background: page === "settings" ? "var(--color-background-secondary)" : "transparent",
+                  cursor: "pointer", fontSize: 12, color: "var(--color-text-primary)",
+                }}>
+                  <span style={{ fontSize: 22 }}>⚙️</span>
+                  <span>Settings</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bottom bar */}
+          <nav style={{
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
+            background: "var(--color-background-primary)",
+            borderTop: "0.5px solid var(--color-border-tertiary)",
+            display: "flex", alignItems: "stretch",
+            height: 64,
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}>
+            {/* Overview */}
+            <button onClick={() => { setPage("overview"); setShowMoreMenu(false); }} style={{
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
               justifyContent: "center", gap: 3, border: "none", background: "transparent",
               cursor: "pointer", fontSize: 10, fontWeight: 500,
-              color: page === id ? "#1a6b3c" : "var(--color-text-secondary)",
+              color: page === "overview" ? "#1a6b3c" : "var(--color-text-secondary)",
             }}>
-              <span style={{ fontSize: 22 }}>{icon}</span>
-              <span>{label}</span>
+              <span style={{ fontSize: 22 }}>⊞</span>
+              <span>Overview</span>
             </button>
-          ))}
-        </nav>
+            {/* Money */}
+            <button onClick={() => { setPage("money"); setShowMoreMenu(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: page === "money" ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22 }}>⊕</span>
+              <span>Money</span>
+            </button>
+            {/* Goals */}
+            <button onClick={() => { setPage("goals"); setShowMoreMenu(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: page === "goals" ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22 }}>◎</span>
+              <span>Goals</span>
+            </button>
+            {/* Portfolio */}
+            <button onClick={() => { setPage("portfolio"); setShowMoreMenu(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: page === "portfolio" ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22 }}>📈</span>
+              <span>Portfolio</span>
+            </button>
+            {/* More */}
+            <button onClick={() => setShowMoreMenu(p => !p)} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 3, border: "none", background: "transparent",
+              cursor: "pointer", fontSize: 10, fontWeight: 500,
+              color: showMoreMenu || !["overview","money","goals","portfolio"].includes(page)
+                ? "#1a6b3c" : "var(--color-text-secondary)",
+            }}>
+              <span style={{ fontSize: 22, letterSpacing: 2 }}>•••</span>
+              <span>More</span>
+            </button>
+          </nav>
+        </>
       )}
     </div>
-    </>
+    </DriveProvider>
   );
 }
+
 // ─── Splash / Loading screen ──────────────────────────────────────────────────
 function SplashScreen({ msg }) {
   return (
@@ -410,6 +807,127 @@ function SignInPage() {
   );
 }
 
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+function Onboarding({ step, setStep, data, update, done }) {
+  const [form, setForm]     = useState({ name: "", email: "", ...data.profile });
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const steps = [
+    { title: "Welcome to FinTrack", sub: "Your privacy-first net worth + F&O tracker. No broker connections, no third-party tracking." },
+    { title: "Your Financial Profile", sub: "Optional — helps provide personalised insights." },
+    { title: "Add your assets", sub: "You can always add more later." },
+  ];
+
+  async function handleGoogle() {
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      await signInWithGoogle();
+      // onAuthStateChanged in App() takes over — moves to main app
+      setStep(1);
+    } catch (e) {
+      setAuthError("Sign-in failed — please try again.");
+      setAuthLoading(false);
+    }
+  }
+
+  function handleProfile() {
+    update(() => ({ profile: { age: form.age, income: form.income, expense: form.expense, savings: form.savings } }));
+    setStep(2);
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--color-background-tertiary)", fontFamily: "'DM Sans', sans-serif" }}>
+      <style>{LIGHT_MODE_STYLE}</style>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
+      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, marginBottom: 8 }}>FinTrack</div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 28 }}>
+        {steps.map((_, i) => <div key={i} style={{ width: i === step ? 28 : 8, height: 8, borderRadius: 4, background: i === step ? "#1a6b3c" : i < step ? "#1a6b3c80" : "var(--color-border-tertiary)", transition: "all 0.3s" }} />)}
+      </div>
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 16, border: "0.5px solid var(--color-border-tertiary)", padding: "2rem", width: "min(480px, 90vw)" }}>
+        <h2 style={{ textAlign: "center", marginBottom: 8, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 22 }}>{steps[step].title}</h2>
+        <p style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 24 }}>{steps[step].sub}</p>
+
+        {step === 0 && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
+              {[["◈", "Track assets & liabilities"], ["⊕", "Multi-currency support"], ["✓", "Private & secure"]].map(([icon, label]) => (
+                <div key={label} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, padding: "1rem", textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                  <div style={{ fontSize: 20, color: "#1a6b3c", marginBottom: 6 }}>{icon}</div>{label}
+                </div>
+              ))}
+            </div>
+            <GoogleBtn onClick={handleGoogle} disabled={authLoading} label={authLoading ? "Signing in…" : undefined} />
+            {authError && <p style={{ color: "#d44", fontSize: 13, textAlign: "center", marginTop: 10 }}>{authError}</p>}
+          </div>
+        )}
+
+        {step === 1 && (
+          <div>
+            {[["age", "Age", "e.g. 30", "number"], ["income", "Monthly Income (₹ INR)", "e.g. 1,00,000", "text"], ["expense", "Avg. Monthly Family Expense (₹ INR)", "e.g. 50,000", "text"], ["savings", "Monthly Savings / Investments (₹ INR)", "e.g. 30,000", "text"]].map(([key, label, ph, type]) => (
+              <div key={key} style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 4 }}>{label}</label>
+                <input type={type} placeholder={ph} value={form[key] || ""} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+              <button onClick={() => setStep(0)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)" }}>Back</button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setStep(2)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", padding: "0.4rem 1rem", borderRadius: 8, cursor: "pointer", color: "var(--color-text-secondary)" }}>Skip</button>
+                <GreenBtn onClick={handleProfile} label="Continue →" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div>
+            <div style={{ border: "1.5px dashed var(--color-border-secondary)", borderRadius: 10, padding: "1rem", display: "flex", alignItems: "center", gap: 12, marginBottom: 20, cursor: "pointer" }}>
+              <span style={{ fontSize: 20 }}>⬆</span>
+              <div><div style={{ fontWeight: 500, fontSize: 14 }}>Import from Broker</div><div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Upload CSV/Excel from Zerodha, Groww, or any broker</div></div>
+              <span style={{ marginLeft: "auto" }}>→</span>
+            </div>
+            <div style={{ textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)", margin: "10px 0" }}>or add manually</div>
+            <AddAssetMini update={update} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+              <button onClick={() => setStep(1)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)" }}>Back</button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={done} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", padding: "0.4rem 1rem", borderRadius: 8, cursor: "pointer", color: "var(--color-text-secondary)" }}>Skip</button>
+                <GreenBtn onClick={done} label="Save →" />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AddAssetMini({ update }) {
+  const [type, setType] = useState("Stocks & Equity");
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  return (
+    <div>
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4, display: "block" }}>Asset Type</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {ASSET_TYPES.slice(0, 6).map(t => (
+            <button key={t} onClick={() => setType(t)} style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: type === t ? "#1a6b3c" : "var(--color-border-secondary)", background: type === t ? "#e8f5ee" : "transparent", fontSize: 12, cursor: "pointer", color: type === t ? "#1a6b3c" : "var(--color-text-secondary)" }}>{t}</button>
+          ))}
+        </div>
+      </div>
+      <input placeholder="Name (e.g. HDFC Balanced Advantage Fund)" value={name} onChange={e => setName(e.target.value)} style={{ width: "100%", marginBottom: 8, boxSizing: "border-box" }} />
+      <input placeholder="Current Value (INR)" value={value} onChange={e => setValue(e.target.value)} style={{ width: "100%", marginBottom: 8, boxSizing: "border-box" }} />
+      <button onClick={() => { if (name && value) { update(p => ({ assets: [...p.assets, { id: Date.now(), type, name, value: parseFloat(value.replace(/,/g, "")), date: new Date().toISOString() }] })); setName(""); setValue(""); } }}
+        style={{ background: "#e8f5ee", color: "#1a6b3c", border: "0.5px solid #1a6b3c", borderRadius: 8, padding: "6px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>+ Add Asset</button>
+    </div>
+  );
+}
+
+
+// ─── Profile Page ─────────────────────────────────────────────────────────────
 function ProfilePage({ data, update }) {
   const profile = data.userProfile || {};
   const [name, setName] = useState(profile.name || data.user?.name || "");
@@ -526,7 +1044,8 @@ function ProfilePage({ data, update }) {
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
-function Overview({ data, netWorth, setPage, update }) {
+function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfolioOn }) {
+  const foOn = toggles?.fo !== false;
   const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const [period, setPeriod] = useState(data.overviewDefaultPeriod || "all");
   const [clockTime, setClockTime] = useState(new Date());
@@ -738,10 +1257,11 @@ function Overview({ data, netWorth, setPage, update }) {
               <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
             </div>
           </div>
+          {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
         </div>
       ) : (
         /* ── DESKTOP: original grid layout ── */
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: foOn ? "repeat(auto-fit, minmax(160px, 1fr))" : "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
           <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
           {/* Income card with period toggle */}
@@ -778,11 +1298,102 @@ function Overview({ data, netWorth, setPage, update }) {
             <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
           </div>
 
+          {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
         </div>
       )}
 
-      {/* To-Do */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginBottom: 12 }}>
+      {/* Portfolio + To-Do row */}
+      <div style={{ display: "grid", gridTemplateColumns: portfolioOn && !isMobile ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: 12, marginBottom: 12 }}>
+
+        {/* ── Portfolio Summary ── */}
+        {portfolioOn && (() => {
+          const mfs = data.mutualFunds || [];
+
+          // ── Live USD→INR rate (saved by Portfolio page auto-fetch) ──────────────
+          const usdInr = data.usdInrRate || 84;
+
+          // ── Indian stocks (prices in ₹) ───────────────────────────────────────
+          const indHoldings = data.portfolioHoldings || [];
+          const indPrices   = data["portfolioHoldings_livePrices"] || {};
+          const indInvested = indHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
+          const indCurrent  = indHoldings.reduce((s, h) => {
+            const ticker = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+            const ltp = ticker && indPrices[ticker]?.ok ? indPrices[ticker].price : (h.buyPrice || 0);
+            return s + ltp * (h.qty || 0);
+          }, 0);
+          // Indian day change = sum of (change_per_share_₹ × qty)
+          const indDayChange = indHoldings.reduce((s, h) => {
+            const ticker = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+            const pd = ticker ? indPrices[ticker] : null;
+            if (pd?.ok && pd.change != null) return s + pd.change * (h.qty || 0);
+            return s;
+          }, 0);
+
+          // ── US stocks (Yahoo prices in USD → convert to ₹) ───────────────────
+          const usHoldings = data.usHoldings || [];
+          const usPrices   = data["usHoldings_livePrices"] || {};
+          // buyPrice stored in ₹ (converted on save)
+          const usInvested = usHoldings.reduce((s, h) => s + (h.buyPrice || 0) * (h.qty || 0), 0);
+          const usCurrent  = usHoldings.reduce((s, h) => {
+            const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+            const pd = ticker ? usPrices[ticker] : null;
+            // Yahoo price is USD → multiply by usdInr to get ₹
+            const ltpInr = pd?.ok ? pd.price * usdInr : (h.buyPrice || 0);
+            return s + ltpInr * (h.qty || 0);
+          }, 0);
+          // US day change = sum of (change_per_share_USD × usdInr × qty)
+          const usDayChange = usHoldings.reduce((s, h) => {
+            const ticker = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+            const pd = ticker ? usPrices[ticker] : null;
+            if (pd?.ok && pd.change != null) return s + (pd.change * usdInr) * (h.qty || 0);
+            return s;
+          }, 0);
+
+          // ── Mutual Funds (all in ₹) ───────────────────────────────────────────
+          const mfInvested = mfs.reduce((s, m) => s + (m.investedAmount || 0), 0);
+          const mfCurrent  = mfs.reduce((s, m) => s + (m.units || 0) * (m.nav || 0), 0);
+          // MF has no intraday price feed — day change = 0
+          const mfDayChange = 0;
+
+          // ── Totals (all in ₹) ─────────────────────────────────────────────────
+          const totalInvested  = indInvested + usInvested  + mfInvested;
+          const totalCurrent   = indCurrent  + usCurrent   + mfCurrent;
+          const totalReturn    = totalCurrent - totalInvested;
+          const totalDayChange = indDayChange + usDayChange + mfDayChange;
+
+          return (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                <span style={{ fontWeight: 500, fontSize: 15 }}>📈 Assets</span>
+                <button onClick={() => setPage("portfolio")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View →</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  { label: "Invested",      val: fmtCur(totalInvested), color: "var(--color-text-primary)" },
+                  { label: "Current Value", val: fmtCur(totalCurrent),  color: "#1a6b3c" },
+                  { label: "Total Return",  val: fmtCur(totalReturn),   color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
+                  {
+                    label: "Day Change",
+                    val: (indDayChange !== 0 || usDayChange !== 0)
+                      ? (totalDayChange >= 0 ? "▲ +" : "▼ ") + fmtCur(Math.abs(totalDayChange))
+                      : "—",
+                    color: (indDayChange === 0 && usDayChange === 0)
+                      ? "var(--color-text-secondary)"
+                      : totalDayChange >= 0 ? "#1a6b3c" : "#d44"
+                  },
+                ].map(c => (
+                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: c.color }}>{c.val}</div>
+                  </div>
+                ))}
+              </div>
+              {Object.keys(indPrices).length === 0 && Object.keys(usPrices).length === 0 && (
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 8, textAlign: "center" }}>Open Portfolio and click Refresh to load live prices</div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Quick To-Do (right side) ── */}
         <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
@@ -886,7 +1497,14 @@ function Overview({ data, netWorth, setPage, update }) {
         </div>
       </div>
 
-
+      {/* F&O summary row */}
+      {foOn && (
+        <div style={{ marginBottom: 12 }}>
+          <Card title="F&O Summary" action={<button onClick={() => setPage("fo")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}>
+            <FOSummaryMini trades={data.foTrades} netPnl={foNetPnl} />
+          </Card>
+        </div>
+      )}
 
       {/* Bank balances */}
       {bankBalances.length > 0 && (
@@ -909,6 +1527,41 @@ function Overview({ data, netWorth, setPage, update }) {
     </div>
   );
 }
+
+function FOSummaryMini({ trades, netPnl }) {
+  const winning = trades.filter(t => (Number(t.sellPremium) - Number(t.buyPremium)) > 0).length;
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
+        <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Total Trades</div><div style={{ fontWeight: 500 }}>{trades.length}</div></div>
+        <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Winners</div><div style={{ fontWeight: 500, color: "#1a6b3c" }}>{winning}</div></div>
+        <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Net P&L</div><div style={{ fontWeight: 500, color: netPnl >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(netPnl)}</div></div>
+      </div>
+    </div>
+  );
+}
+
+function AssetPie({ assets }) {
+  if (assets.length === 0) return <p style={{ color: "var(--color-text-secondary)", fontSize: 13, padding: "1rem 0" }}>Add assets to see allocation.</p>;
+  const total = assets.reduce((s, a) => s + Number(a.value), 0);
+  const grouped = {};
+  assets.forEach(a => { grouped[a.type] = (grouped[a.type] || 0) + Number(a.value); });
+  const colors = ["#1a6b3c", "#2d9e5f", "#4cc97a", "#9fe1c0", "#c5efd8", "#e8f5ee", "#0d4a2a", "#68d9a0"];
+  const items = Object.entries(grouped).map(([k, v], i) => ({ label: k, value: v, pct: (v / total * 100).toFixed(1), color: colors[i % colors.length] }));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+      {items.map(item => (
+        <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+          <div style={{ width: 10, height: 10, borderRadius: 2, background: item.color, flexShrink: 0 }} />
+          <span style={{ flex: 1, color: "var(--color-text-secondary)" }}>{item.label}</span>
+          <span style={{ fontWeight: 500 }}>{item.pct}%</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Money ────────────────────────────────────────────────────────────────────
 function MoneyPage({ data, update, tab, setTab }) {
   const accounts = data.banks || [];
   const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
@@ -2480,16 +3133,1580 @@ const DEFAULT_LOT_SIZES = {
   "Gold": 100, "Gold M": 10,
 };
 
-function SettingsPage({ data, update, tab, setTab }) {
-  const cardStyle = { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginBottom: 14 };
-  const sectionTitle = (t) => <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>{t}</div>;
+function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
+  const lotSizes = { ...DEFAULT_LOT_SIZES, ...(data.lotSizes || {}) };
+  const brokerProfiles = data.brokerProfiles || [];
+
+  function getLotSize(instrument, subInstrument) {
+    if (instrument === "Index Options" || instrument === "Commodities")
+      return lotSizes[subInstrument] ?? "";
+    return "";
+  }
+
+  const defaultBroker = brokerProfiles[0] || null;
+  const [form, setForm] = useState({ date: today(), instrument: "Index Options", subInstrument: "Nifty 50", stockName: "", strategy: "Call", strikePrice: "", expiry: "", buyPremium: "", sellPremium: "", lots: 1, lotSize: lotSizes["Nifty 50"] || 65, notes: "", brokerId: defaultBroker?.id ?? "" });
+  const [chargesForm, setChargesForm] = useState({ name: "", brokerage: 20, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 });
+  const [editingBroker, setEditingBroker] = useState(null);
+  const [period, setPeriod] = useState("12M");
+  const [capital, setCapital] = useState(() => data.foCapital || "");
+  const [editTrade, setEditTrade] = useState(null);
+
+  function saveEditTrade() {
+    if (!editTrade) return;
+    update(p => ({ foTrades: p.foTrades.map(t => t.id === editTrade.id ? { ...editTrade, lots: Number(editTrade.lots), lotSize: Number(editTrade.lotSize), buyPremium: Number(editTrade.buyPremium), sellPremium: Number(editTrade.sellPremium) } : t) }));
+    setEditTrade(null);
+  }
+
+  const selectedBrokerCharges = brokerProfiles.find(b => b.id === form.brokerId)?.charges || data.foCharges;
+
+  const filtered = data.foTrades.filter(t => filterByPeriod(t.date, period));
+  const filteredPnl = filtered.reduce((s, t) => {
+    const gross = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
+    return s + gross - calcCharges(t, t.brokerCharges || data.foCharges);
+  }, 0);
+  const winners = filtered.filter(t => (Number(t.sellPremium) - Number(t.buyPremium)) > 0).length;
+  const losers = filtered.length - winners;
+
+  function handleInstrumentChange(instrument) {
+    let subInstrument = "";
+    let lotSize = "";
+    if (instrument === "Index Options") { subInstrument = "Nifty 50"; lotSize = 75; }
+    else if (instrument === "Commodities") { subInstrument = "Crude Oil"; lotSize = 100; }
+    setForm(p => ({ ...p, instrument, subInstrument, stockName: "", lotSize }));
+  }
+
+  function handleSubInstrumentChange(subInstrument) {
+    const lotSize = getLotSize(form.instrument, subInstrument);
+    setForm(p => ({ ...p, subInstrument, lotSize: lotSize !== "" ? lotSize : p.lotSize }));
+  }
+
+  function addTrade() {
+    if (!form.strikePrice || !form.buyPremium) return;
+    const displayName = form.instrument === "Stock Options" ? form.stockName : form.subInstrument;
+    const broker = brokerProfiles.find(b => b.id === form.brokerId);
+    update(p => ({ foTrades: [...p.foTrades, { id: Date.now(), ...form, subInstrument: displayName, brokerName: broker?.name || "—", brokerCharges: broker?.charges || data.foCharges }] }));
+    setForm(p => ({ ...p, date: today(), strikePrice: "", expiry: "", buyPremium: "", sellPremium: "", lots: 1, notes: "" }));
+  }
+
+  function saveBroker() {
+    if (!chargesForm.name.trim()) return;
+    if (editingBroker) {
+      update(p => ({ brokerProfiles: p.brokerProfiles.map(b => b.id === editingBroker ? { ...b, name: chargesForm.name, charges: { brokerage: chargesForm.brokerage, stt: chargesForm.stt, exchangeFee: chargesForm.exchangeFee, sebi: chargesForm.sebi, gst: chargesForm.gst, stampDuty: chargesForm.stampDuty } } : b) }));
+      setEditingBroker(null);
+    } else {
+      update(p => ({ brokerProfiles: [...(p.brokerProfiles || []), { id: Date.now(), name: chargesForm.name, charges: { brokerage: chargesForm.brokerage, stt: chargesForm.stt, exchangeFee: chargesForm.exchangeFee, sebi: chargesForm.sebi, gst: chargesForm.gst, stampDuty: chargesForm.stampDuty } }] }));
+    }
+    setChargesForm({ name: "", brokerage: 20, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 });
+  }
+
+  function editBroker(broker) {
+    setEditingBroker(broker.id);
+    setChargesForm({ name: broker.name, ...broker.charges });
+  }
+
+  function deleteBroker(id) {
+    update(p => ({ brokerProfiles: p.brokerProfiles.filter(b => b.id !== id) }));
+    if (editingBroker === id) { setEditingBroker(null); setChargesForm({ name: "", brokerage: 20, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 }); }
+  }
+
+  const custom = data.customInstruments || { "Index Options": [], "Stock Options": [], "Commodities": [] };
+  const indexSubs = [...["Nifty 50", "Bank Nifty", "Sensex"], ...(custom["Index Options"] || []), "Others"];
+  const commoditySubs = [...["Crude Oil", "Crude Oil M", "Natural Gas", "Natural Gas M", "Gold", "Gold M"], ...(custom["Commodities"] || []), "Others"];
+
+  const subOptions = form.instrument === "Index Options" ? indexSubs
+    : form.instrument === "Commodities" ? commoditySubs : [];
+
+  const lotSizeIsAuto = form.instrument !== "Stock Options" && form.subInstrument !== "Others" && getLotSize(form.instrument, form.subInstrument) !== "";
+
   return (
     <div>
-      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 20 }}>Settings</h1>
-      <TabBar tabs={["profile", "money"]} active={tab} setActive={setTab} labels={["Profile", "Money Settings"]} />
-      <div style={{ marginTop: 16 }}>
-        {tab === "profile" && <ProfilePage data={data} update={update} />}
-        {tab === "money" && <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+      {/* Edit Trade Modal */}
+      {editTrade && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(480px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Trade</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
+                <input type="date" value={editTrade.date} onChange={e => setEditTrade(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Strategy</label>
+                <select value={editTrade.strategy} onChange={e => setEditTrade(p => ({ ...p, strategy: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                  <option>Call</option><option>Put</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Strike Price</label>
+                <input type="number" value={editTrade.strikePrice} onChange={e => setEditTrade(p => ({ ...p, strikePrice: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Expiry</label>
+                <input type="date" value={editTrade.expiry || ""} onChange={e => setEditTrade(p => ({ ...p, expiry: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Buy Premium (₹)</label>
+                <input type="number" value={editTrade.buyPremium} onChange={e => setEditTrade(p => ({ ...p, buyPremium: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Sell Premium (₹)</label>
+                <input type="number" value={editTrade.sellPremium || ""} onChange={e => setEditTrade(p => ({ ...p, sellPremium: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Lots</label>
+                <input type="number" value={editTrade.lots} onChange={e => setEditTrade(p => ({ ...p, lots: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Lot Size</label>
+                <input type="number" value={editTrade.lotSize} onChange={e => setEditTrade(p => ({ ...p, lotSize: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ gridColumn: "span 2" }}>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes</label>
+                <input value={editTrade.notes || ""} onChange={e => setEditTrade(p => ({ ...p, notes: e.target.value }))} placeholder="Optional notes" style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditTrade(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEditTrade} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 8 }}>F&O Tracker</h1>
+      <TabBar tabs={["trades", "pnl", "charges"]} active={tab} setActive={setTab} labels={["Trades", "P&L Report", "Charges"]} />
+
+      {tab === "trades" && (
+        <>
+          <PeriodBar periods={["This Week", "This Month", "Last Month", "6M", "12M"]} active={period} setActive={setPeriod} />
+
+          {/* Capital block */}
+          {(() => {
+            const cap = parseFloat(capital) || 0;
+            const effective = cap + filteredPnl;
+            const roi = cap > 0 ? ((filteredPnl / cap) * 100) : 0;
+            return (
+              <div style={{ margin: "12px 0 0", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "12px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: cap > 0 ? 12 : 0 }}>
+                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>💰 Trading Capital (₹)</span>
+                  <input
+                    type="number"
+                    placeholder="e.g. 2,00,000"
+                    value={capital}
+                    onChange={e => { setCapital(e.target.value); update(() => ({ foCapital: parseFloat(e.target.value) || 0 })); }}
+                    style={{ flex: 1, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 10px", fontSize: 14, fontWeight: 500, background: "var(--color-background-secondary)" }}
+                  />
+                </div>
+                {cap > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "7px 14px", fontSize: 13 }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Capital</div>
+                      <div style={{ fontWeight: 600 }}>{fmtCur(cap)}</div>
+                    </div>
+                    <span style={{ fontSize: 18, color: "var(--color-text-secondary)" }}>{filteredPnl >= 0 ? "+" : "−"}</span>
+                    <div style={{ background: filteredPnl >= 0 ? "#f0fdf4" : "#fff0f0", borderRadius: 8, padding: "7px 14px", fontSize: 13, border: `0.5px solid ${filteredPnl >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{filteredPnl >= 0 ? "Profit" : "Loss"}</div>
+                      <div style={{ fontWeight: 600, color: filteredPnl >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(Math.abs(filteredPnl))}</div>
+                    </div>
+                    <span style={{ fontSize: 18, color: "var(--color-text-secondary)" }}>=</span>
+                    <div style={{ background: effective >= cap ? "#f0fdf4" : "#fff0f0", borderRadius: 8, padding: "7px 14px", fontSize: 13, border: `0.5px solid ${effective >= cap ? "#1a6b3c" : "#d44"}` }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Effective Capital</div>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: effective >= cap ? "#1a6b3c" : "#d44" }}>{fmtCur(effective)}</div>
+                    </div>
+                    {cap > 0 && (
+                      <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>ROI</div>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: roi >= 0 ? "#1a6b3c" : "#d44" }}>{roi >= 0 ? "+" : ""}{roi.toFixed(2)}%</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, margin: "10px 0" }}>
+            <StatCard label="Total Trades" value={filtered.length} />
+            <StatCard label="Winners" value={winners} />
+            <StatCard label="Losers" value={losers} />
+            <StatCard label="Win Rate" value={filtered.length > 0 ? ((winners / filtered.length) * 100).toFixed(1) + "%" : "—"} />
+            <StatCard label="Net P&L (after charges)" value={fmtCur(filteredPnl)} pnl={filteredPnl} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16 }}>
+            <Card title="Log New Trade">
+              {/* Row 1: Date */}
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
+                <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+
+              {/* Instrument — Dropdown */}
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Instrument</label>
+                <select 
+                  value={form.instrument} 
+                  onChange={e => handleInstrumentChange(e.target.value)}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                >
+                  {INSTRUMENTS.map(i => (
+                    <option key={i} value={i}>{i}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Row 2: Sub-instrument (conditional) */}
+              {form.instrument === "Index Options" && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Index</label>
+                  <select 
+                    value={form.subInstrument} 
+                    onChange={e => handleSubInstrumentChange(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  >
+                    {indexSubs.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {form.instrument === "Stock Options" && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Stock Name</label>
+                  <input placeholder="e.g. RELIANCE, TCS" value={form.stockName} onChange={e => setForm(p => ({ ...p, stockName: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                </div>
+              )}
+
+              {form.instrument === "Commodities" && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Commodity</label>
+                  <select 
+                    value={form.subInstrument} 
+                    onChange={e => handleSubInstrumentChange(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  >
+                    {commoditySubs.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Strategy */}
+              <div style={{ marginTop: 8 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Strategy</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {STRATEGIES.map(s => (
+                    <button key={s} onClick={() => setForm(p => ({ ...p, strategy: s }))} style={{ flex: 1, padding: "6px", borderRadius: 6, border: "0.5px solid", borderColor: form.strategy === s ? "#1a6b3c" : "var(--color-border-secondary)", background: form.strategy === s ? "#e8f5ee" : "transparent", fontSize: 13, cursor: "pointer", color: form.strategy === s ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: form.strategy === s ? 600 : 400 }}>{s}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Broker selector */}
+              {brokerProfiles.length > 0 ? (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Broker / Charges Template</label>
+                  <select 
+                    value={form.brokerId} 
+                    onChange={e => setForm(p => ({ ...p, brokerId: e.target.value }))}
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  >
+                    <option value="">Default</option>
+                    {brokerProfiles.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)" }}>
+                  <button onClick={() => setTab("charges")} style={{ background: "none", border: "none", color: "#1a6b3c", cursor: "pointer", fontSize: 11, padding: 0 }}>+ Add broker template</button> in Charges tab
+                </div>
+              )}
+
+              {/* Strike, Expiry, Premiums, Lots, Lot Size */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+
+              {/* Strike, Expiry, Premiums, Lots, Lot Size */}
+                <LabelInput label="Strike Price" placeholder="e.g. 22500" value={form.strikePrice} onChange={v => setForm(p => ({ ...p, strikePrice: v }))} />
+                <LabelInput label="Expiry Date" type="date" value={form.expiry} onChange={v => setForm(p => ({ ...p, expiry: v }))} />
+                <LabelInput label="Buy Premium (₹)" placeholder="e.g. 120" value={form.buyPremium} onChange={v => setForm(p => ({ ...p, buyPremium: v }))} />
+                <LabelInput label="Sell Premium (₹)" placeholder="e.g. 150" value={form.sellPremium} onChange={v => setForm(p => ({ ...p, sellPremium: v }))} />
+                <LabelInput label="Lots" placeholder="1" value={form.lots} onChange={v => setForm(p => ({ ...p, lots: v }))} />
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>
+                    Lot Size {lotSizeIsAuto && <span style={{ color: "#1a6b3c", fontSize: 10 }}>● auto</span>}
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 75"
+                    value={form.lotSize}
+                    readOnly={lotSizeIsAuto}
+                    onChange={e => !lotSizeIsAuto && setForm(p => ({ ...p, lotSize: e.target.value }))}
+                    style={{ width: "100%", boxSizing: "border-box", background: lotSizeIsAuto ? "var(--color-background-secondary)" : undefined, color: lotSizeIsAuto ? "#1a6b3c" : undefined, fontWeight: lotSizeIsAuto ? 600 : 400 }}
+                  />
+                </div>
+              </div>
+              <LabelInput label="Notes" placeholder="optional" value={form.notes} onChange={v => setForm(p => ({ ...p, notes: v }))} />
+              {form.buyPremium && form.sellPremium && (
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 12px", marginTop: 8, fontSize: 12 }}>
+                  {form.brokerId && brokerProfiles.find(b => b.id === form.brokerId) && (
+                    <div style={{ fontSize: 11, color: "#1a6b3c", marginBottom: 6, fontWeight: 500 }}>
+                      Using: {brokerProfiles.find(b => b.id === form.brokerId).name} charges
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                    <span style={{ color: "var(--color-text-secondary)" }}>Gross P&L</span>
+                    <span style={{ fontWeight: 500, color: (Number(form.sellPremium) - Number(form.buyPremium)) >= 0 ? "#1a6b3c" : "#d44" }}>
+                      {fmtCur((Number(form.sellPremium) - Number(form.buyPremium)) * Number(form.lots) * Number(form.lotSize))}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                    <span style={{ color: "var(--color-text-secondary)" }}>Est. Charges</span>
+                    <span>- {fmtCur(calcCharges(form, selectedBrokerCharges))}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 4 }}>
+                    <span style={{ fontWeight: 500 }}>Net P&L</span>
+                    <span style={{ fontWeight: 500, color: ((Number(form.sellPremium) - Number(form.buyPremium)) * Number(form.lots) * Number(form.lotSize) - calcCharges(form, selectedBrokerCharges)) >= 0 ? "#1a6b3c" : "#d44" }}>
+                      {fmtCur((Number(form.sellPremium) - Number(form.buyPremium)) * Number(form.lots) * Number(form.lotSize) - calcCharges(form, selectedBrokerCharges))}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <GreenBtn onClick={addTrade} label="+ Log Trade" />
+            </Card>
+
+            <Card title={`Trade Log (${filtered.length})`}>
+              {filtered.length === 0 ? <EmptyState msg="No trades logged yet. Add your first trade." /> : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", minWidth: 500 }}>
+                    <thead><tr>{["Date", "Instrument", "Type", "Strategy", "Strike", "Buy", "Sell", "Lots", "Broker", "Net P&L", ""].map(h => <th key={h} style={{ textAlign: "left", padding: "4px 6px", color: "var(--color-text-secondary)", fontWeight: 500, borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+                    <tbody>{filtered.slice().reverse().map(t => {
+                      const gross = (Number(t.sellPremium) - Number(t.buyPremium)) * Number(t.lots) * Number(t.lotSize);
+                      const charges = calcCharges(t, t.brokerCharges || data.foCharges);
+                      const net = gross - charges;
+                      return (
+                        <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                          <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{t.date}</td>
+                          <td style={{ padding: "5px 6px", fontWeight: 500 }}>{t.instrument}</td>
+                          <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)" }}>{t.subInstrument || "—"}</td>
+                          <td style={{ padding: "5px 6px" }}>{t.strategy}</td>
+                          <td style={{ padding: "5px 6px" }}>{t.strikePrice}</td>
+                          <td style={{ padding: "5px 6px" }}>₹{t.buyPremium}</td>
+                          <td style={{ padding: "5px 6px" }}>₹{t.sellPremium || "—"}</td>
+                          <td style={{ padding: "5px 6px" }}>{t.lots}×{t.lotSize}</td>
+                          <td style={{ padding: "5px 6px" }}>
+                            {t.brokerName ? <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 500 }}>{t.brokerName}</span> : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                          </td>
+                          <td style={{ padding: "5px 6px", fontWeight: 500, color: net >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(net)}</td>
+                          <td style={{ padding: "2px 4px" }}>
+                            <ThreeDotMenu
+                              onEdit={() => setEditTrade({ ...t })}
+                              onDelete={() => update(p => ({ foTrades: p.foTrades.filter(x => x.id !== t.id) }))}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
+
+      {tab === "pnl" && (
+        <FOCalendarPnl trades={data.foTrades} calcCharges={calcCharges} foCharges={data.foCharges} />
+      )}
+
+      {tab === "charges" && (
+        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16 }}>
+
+          {/* Left: Add / Edit broker form */}
+          <Card title={editingBroker ? "Edit Broker Template" : "Add Broker Template"}>
+            <LabelInput label="Broker Name *" placeholder="e.g. Zerodha, Groww, Angel One" value={chargesForm.name} onChange={v => setChargesForm(p => ({ ...p, name: v }))} />
+            {[
+              ["brokerage", "Brokerage (₹ per order)", "Flat fee per order"],
+              ["stt", "STT (%)", "Securities Transaction Tax"],
+              ["exchangeFee", "Exchange Fee (%)", "NSE/BSE transaction fee"],
+              ["sebi", "SEBI Charges (%)", "SEBI turnover fee"],
+              ["gst", "GST (%)", "On brokerage + exchange fee"],
+              ["stampDuty", "Stamp Duty (%)", "On buy side only"],
+            ].map(([key, label, hint]) => (
+              <div key={key} style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 }}>{label}</label>
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{hint}</div>
+                <input type="number" step="any" value={chargesForm[key] ?? ""} onChange={e => setChargesForm(p => ({ ...p, [key]: parseFloat(e.target.value) }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <GreenBtn onClick={saveBroker} label={editingBroker ? "Update Template" : "+ Save Template"} />
+              {editingBroker && (
+                <button onClick={() => { setEditingBroker(null); setChargesForm({ name: "", brokerage: 20, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 }); }}
+                  style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                  Cancel
+                </button>
+              )}
+            </div>
+          </Card>
+
+          {/* Right: Saved broker templates */}
+          <Card title={`Broker Templates (${(data.brokerProfiles || []).length})`}>
+            {(data.brokerProfiles || []).length === 0 ? (
+              <EmptyState msg="No broker templates saved yet. Add one on the left." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {(data.brokerProfiles || []).map(b => (
+                  <div key={b.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", border: editingBroker === b.id ? "1px solid #1a6b3c" : "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{b.name}</span>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => editBroker(b)} style={{ background: "#e8f5ee", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 }}>Edit</button>
+                        <button onClick={() => deleteBroker(b.id)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14 }}>✕</button>
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      <span>Brokerage: ₹{b.charges.brokerage}</span>
+                      <span>STT: {b.charges.stt}%</span>
+                      <span>Exch: {b.charges.exchangeFee}%</span>
+                      <span>SEBI: {b.charges.sebi}%</span>
+                      <span>GST: {b.charges.gst}%</span>
+                      <span>Stamp: {b.charges.stampDuty}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── F&O Calendar P&L ────────────────────────────────────────────────────────
+function FOCalendarPnl({ trades, calcCharges, foCharges }) {
+  const now = new Date();
+  const [calYear, setCalYear] = useState(now.getFullYear());
+  const [calMonth, setCalMonth] = useState(now.getMonth()); // 0-indexed
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  // Build a map of date -> { net, gross, charges, trades[] }
+  const dayMap = {};
+  trades.forEach(t => {
+    if (!t.date) return;
+    const gross = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
+    const ch = calcCharges(t, t.brokerCharges || foCharges);
+    const net = gross - ch;
+    if (!dayMap[t.date]) dayMap[t.date] = { net: 0, gross: 0, charges: 0, trades: [] };
+    dayMap[t.date].net += net;
+    dayMap[t.date].gross += gross;
+    dayMap[t.date].charges += ch;
+    dayMap[t.date].trades.push(t);
+  });
+
+  const monthName = new Date(calYear, calMonth, 1).toLocaleString("en-IN", { month: "long", year: "numeric" });
+  const firstDay = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+
+  // Month-level stats
+  const monthTrades = trades.filter(t => {
+    if (!t.date) return false;
+    const d = new Date(t.date);
+    return d.getMonth() === calMonth && d.getFullYear() === calYear;
+  });
+  const monthNet = monthTrades.reduce((s, t) => {
+    const gross = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
+    return s + gross - calcCharges(t, t.brokerCharges || foCharges);
+  }, 0);
+  const monthGross = monthTrades.reduce((s, t) =>
+    s + (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50), 0);
+  const monthCharges = monthTrades.reduce((s, t) => s + calcCharges(t, t.brokerCharges || foCharges), 0);
+
+  function prevMonth() {
+    if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
+    else setCalMonth(m => m - 1);
+    setSelectedDay(null);
+  }
+  function nextMonth() {
+    if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
+    else setCalMonth(m => m + 1);
+    setSelectedDay(null);
+  }
+
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const pad = n => String(n).padStart(2, "0");
+  const selectedKey = selectedDay ? `${calYear}-${pad(calMonth + 1)}-${pad(selectedDay)}` : null;
+  const selectedData = selectedKey ? dayMap[selectedKey] : null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/* Month summary stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
+        <StatCard label="Trades This Month" value={monthTrades.length} />
+        <StatCard label="Gross P&L" value={fmtCur(monthGross)} pnl={monthGross} />
+        <StatCard label="Total Charges" value={"- " + fmtCur(monthCharges)} />
+        <StatCard label="Net P&L" value={fmtCur(monthNet)} pnl={monthNet} big />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: selectedDay ? "1fr min(320px,100%)" : "1fr", gap: 16 }}>
+        {/* Calendar */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.2rem", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+            <button onClick={prevMonth} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 16, color: "var(--color-text-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, fontWeight: 400 }}>{monthName}</div>
+              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{monthTrades.length} TRADE{monthTrades.length !== 1 ? "S" : ""}</div>
+            </div>
+            <button onClick={nextMonth} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 16, color: "var(--color-text-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+          </div>
+
+          {/* Day labels */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+            {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+              <div key={i} style={{ textAlign: "center", padding: "8px 0", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>{d}</div>
+            ))}
+          </div>
+
+          {/* Calendar grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+            {cells.map((day, idx) => {
+              if (!day) return <div key={"e" + idx} style={{ minHeight: 80, borderRight: "0.5px solid var(--color-border-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-tertiary)", opacity: 0.4 }} />;
+              const key = `${calYear}-${pad(calMonth + 1)}-${pad(day)}`;
+              const info = dayMap[key];
+              const isSelected = selectedDay === day;
+              const isToday = day === now.getDate() && calMonth === now.getMonth() && calYear === now.getFullYear();
+              return (
+                <div key={day} onClick={() => setSelectedDay(isSelected ? null : day)} style={{
+                  minHeight: 80, borderRight: "0.5px solid var(--color-border-tertiary)",
+                  borderBottom: "0.5px solid var(--color-border-tertiary)",
+                  padding: "6px 8px",
+                  background: isSelected ? "var(--color-background-secondary)" : "var(--color-background-primary)",
+                  cursor: info ? "pointer" : "default",
+                  position: "relative"
+                }}>
+                  <div style={{
+                    fontWeight: isToday ? 600 : 400,
+                    fontSize: 14,
+                    color: isToday ? "#1a6b3c" : "var(--color-text-primary)",
+                    width: isToday ? 24 : "auto",
+                    height: isToday ? 24 : "auto",
+                    background: isToday ? "#e8f5ee" : "transparent",
+                    borderRadius: isToday ? "50%" : 0,
+                    display: "flex", alignItems: "center", justifyContent: isToday ? "center" : "flex-start",
+                    marginBottom: 4
+                  }}>{day}</div>
+                  {info && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {info.trades.length > 0 && (
+                        <div style={{
+                          fontSize: 10, fontWeight: 500, color: "#888",
+                          background: "var(--color-background-secondary)",
+                          borderRadius: 4, padding: "1px 5px", display: "inline-block"
+                        }}>₹{fmt(Math.abs(info.gross))}</div>
+                      )}
+                      <div style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: "#fff",
+                        background: info.net >= 0 ? "#1a6b3c" : "#c0392b",
+                        borderRadius: 5, padding: "2px 6px",
+                        display: "inline-block",
+                        boxShadow: info.net >= 0 ? "0 1px 4px #1a6b3c44" : "0 1px 4px #c0392b44"
+                      }}>₹{fmt(info.net)}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Day detail panel */}
+        {selectedDay && (
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18 }}>
+                  {new Date(calYear, calMonth, selectedDay).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>{selectedData ? selectedData.trades.length + " trade(s)" : "No trades"}</div>
+              </div>
+              <button onClick={() => setSelectedDay(null)} style={{ background: "none", border: "none", color: "var(--color-text-secondary)", cursor: "pointer", fontSize: 18 }}>✕</button>
+            </div>
+
+            {!selectedData ? (
+              <EmptyState msg="No trades on this day." />
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Gross P&L</div>
+                    <div style={{ fontWeight: 600, fontSize: 15, color: selectedData.gross >= 0 ? "#1a6b3c" : "#c0392b" }}>{fmtCur(selectedData.gross)}</div>
+                  </div>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Charges</div>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>- {fmtCur(selectedData.charges)}</div>
+                  </div>
+                </div>
+                <div style={{ background: selectedData.net >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "12px 14px", border: `0.5px solid ${selectedData.net >= 0 ? "#1a6b3c44" : "#c0392b44"}` }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Net P&L</div>
+                  <div style={{ fontWeight: 700, fontSize: 22, color: selectedData.net >= 0 ? "#1a6b3c" : "#c0392b" }}>{fmtCur(selectedData.net)}</div>
+                </div>
+                <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 10 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8, fontWeight: 500 }}>Trades</div>
+                  {selectedData.trades.map((t, i) => {
+                    const g = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
+                    const ch = calcCharges(t, t.brokerCharges || foCharges);
+                    const n = g - ch;
+                    return (
+                      <div key={t.id} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", marginBottom: 6, fontSize: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                          <span style={{ fontWeight: 500 }}>{t.instrument} {t.strikePrice}</span>
+                          <span style={{ fontWeight: 600, color: n >= 0 ? "#1a6b3c" : "#c0392b" }}>{fmtCur(n)}</span>
+                        </div>
+                        <div style={{ color: "var(--color-text-secondary)" }}>{t.strategy} · {t.lots}×{t.lotSize} · Buy ₹{t.buyPremium} → Sell ₹{t.sellPremium || "—"}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Essentials ───────────────────────────────────────────────────────────────
+function EssentialsPage({ data, update, tab, setTab }) {
+  const [profileForm, setProfileForm] = useState({ ...data.profile });
+  const [goalForm, setGoalForm] = useState({ name: "", target: "", currency: "INR", targetDate: "", trackBy: "Net Worth (all assets)" });
+
+  const savingsRate = data.profile.income ? ((Number(data.profile.savings) / Number(data.profile.income)) * 100).toFixed(1) : null;
+  const expenseRatio = data.profile.income ? ((Number(data.profile.expense) / Number(data.profile.income)) * 100).toFixed(1) : null;
+
+  function addGoal() {
+    if (!goalForm.name || !goalForm.target) return;
+    update(p => ({ goals: [...p.goals, { id: Date.now(), ...goalForm, created: today() }] }));
+    setGoalForm({ name: "", target: "", currency: "INR", targetDate: "", trackBy: "Net Worth (all assets)" });
+  }
+
+  const netWorth = data.assets.reduce((s, a) => s + Number(a.value), 0) - data.liabilities.reduce((s, l) => s + Number(l.value), 0);
+
+  return (
+    <div>
+      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 8 }}>Essentials</h1>
+      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 12 }}>Financial health check</p>
+      <TabBar tabs={["essentials", "goals"]} active={tab} setActive={setTab} labels={["Essentials", "Goals"]} />
+
+      {tab === "essentials" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+          <Card title="Financial Profile">
+            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12 }}>Used for health scores and personalised guidance. All fields are optional.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <LabelInput label="Age" placeholder="Your age" value={profileForm.age} onChange={v => setProfileForm(p => ({ ...p, age: v }))} />
+              <LabelInput label="Monthly Income" placeholder="Monthly income" value={profileForm.income} onChange={v => setProfileForm(p => ({ ...p, income: v }))} />
+              <LabelInput label="Monthly Expense" placeholder="Monthly expense" value={profileForm.expense} onChange={v => setProfileForm(p => ({ ...p, expense: v }))} />
+              <LabelInput label="Monthly Savings" placeholder="Monthly savings" value={profileForm.savings} onChange={v => setProfileForm(p => ({ ...p, savings: v }))} />
+            </div>
+            <GreenBtn onClick={() => update(() => ({ profile: profileForm }))} label="Save" />
+          </Card>
+          <Card title="Health Scores">
+            {!data.profile.income ? (
+              <div style={{ background: "#fef9e7", border: "0.5px solid #f0c040", borderRadius: 8, padding: "1rem", textAlign: "center" }}>
+                <div style={{ fontSize: 20, marginBottom: 6 }}>⚠</div>
+                <div style={{ fontWeight: 500, marginBottom: 4, fontSize: 14 }}>Monthly Expense Data Required</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Fill in your financial profile to see health scores.</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <HealthBar label="Savings Rate" value={parseFloat(savingsRate)} target={30} unit="%" hint="Target: >30%" />
+                <HealthBar label="Expense Ratio" value={parseFloat(expenseRatio)} target={50} invert unit="%" hint="Target: <50%" />
+                <HealthBar label="Emergency Fund" value={Math.min((netWorth / (Number(data.profile.expense) * 6)) * 100, 100)} target={100} unit="%" hint="Target: 6 months expenses" />
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {tab === "goals" && (
+        <div style={{ marginTop: 16 }}>
+          {data.goals.length === 0 && (
+            <div style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-secondary)", marginBottom: 20 }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>◎</div>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>No goals yet</div>
+              <div style={{ fontSize: 13 }}>Set financial goals to track your progress toward milestones like retirement, home purchase, or emergency funds.</div>
+            </div>
+          )}
+          {data.goals.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12, marginBottom: 20 }}>
+              {data.goals.map(g => {
+                const progress = Math.min((netWorth / Number(g.target)) * 100, 100);
+                return (
+                  <Card key={g.id} title={g.name}>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Target: {fmtCur(g.target)}</div>
+                    <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 6, marginBottom: 6, overflow: "hidden" }}>
+                      <div style={{ width: progress + "%", height: "100%", background: "#1a6b3c", borderRadius: 4 }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      <span>{progress.toFixed(1)}% achieved</span>
+                      {g.targetDate && <span>By {g.targetDate}</span>}
+                    </div>
+                    <button onClick={() => update(p => ({ goals: p.goals.filter(x => x.id !== g.id) }))} style={{ marginTop: 8, background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 12 }}>Remove</button>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+          <Card title="Create New Goal">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <LabelInput label="Goal Name *" placeholder="Goal name" value={goalForm.name} onChange={v => setGoalForm(p => ({ ...p, name: v }))} />
+              <LabelInput label="Target Amount *" placeholder="Target amount" value={goalForm.target} onChange={v => setGoalForm(p => ({ ...p, target: v }))} />
+              <LabelInput label="Target Date *" type="date" value={goalForm.targetDate} onChange={v => setGoalForm(p => ({ ...p, targetDate: v }))} />
+              <div>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Track Progress By</label>
+                <select value={goalForm.trackBy} onChange={e => setGoalForm(p => ({ ...p, trackBy: e.target.value }))} style={{ width: "100%" }}>
+                  <option>Net Worth (all assets)</option>
+                  <option>Specific assets</option>
+                  <option>Savings only</option>
+                </select>
+              </div>
+            </div>
+            <GreenBtn onClick={addGoal} label="Create Goal" />
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNavEditMode, onNavDragStart, onNavDragOver, onNavDrop, navDragOver, navDragIdx, setNavDragOver }) {
+  const foOn = (data.featureToggles || { fo: true }).fo !== false;
+  const cardStyle = { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginBottom: 16 };
+  const sectionTitle = (icon, label, sub) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>{label}</span>
+      </div>
+      {sub && <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 24 }}>{sub}</p>}
+    </div>
+  );
+
+  // Redirect legacy tab values to new names
+  const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
+
+  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents"];
+  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents"];
+
+  return (
+    <div>
+      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 }}>Settings</h1>
+      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 16 }}>Manage your app preferences, accounts and categories.</p>
+      <TabBar
+        tabs={settingsTabs}
+        active={effectiveTab}
+        setActive={setTab}
+        labels={settingsLabels}
+      />
+
+      {/* ── Profile ── */}
+      {effectiveTab === "profile" && <ProfilePage data={data} update={update} />}
+
+      {/* ── Features ── */}
+      {effectiveTab === "features" && <FeatureToggles data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Money (Account Settings + Trading Settings if FO on) ── */}
+      {effectiveTab === "money" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />
+          {foOn && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+        </div>
+      )}
+
+      {/* ── Categories ── */}
+      {effectiveTab === "categories" && <CategoriesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} navItems={navItems} navEditMode={navEditMode} setNavEditMode={setNavEditMode} onNavDragStart={onNavDragStart} onNavDragOver={onNavDragOver} onNavDrop={onNavDrop} navDragOver={navDragOver} navDragIdx={navDragIdx} setNavDragOver={setNavDragOver} />}
+
+      {/* ── Projects ── */}
+      {effectiveTab === "projects" && <ProjectSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+
+      {/* ── Documents ── */}
+      {effectiveTab === "documents" && <DocumentsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
+    </div>
+  );
+}
+
+function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
+  const toggles = data.featureToggles || { fo: true };
+  const defaultPeriod = data.overviewDefaultPeriod || "all";
+
+  function toggle(key) {
+    update(p => ({ featureToggles: { ...(p.featureToggles || { fo: true }), [key]: !(p.featureToggles || { fo: true })[key] } }));
+  }
+
+  function setDefaultPeriod(val) {
+    update(() => ({ overviewDefaultPeriod: val }));
+  }
+
+  const features = [
+    {
+      key: "fo",
+      icon: "◉",
+      label: "F&O Tracker",
+      sub: "Futures & Options trade journal, P&L calculator, broker charge breakdown and charge profiles.",
+    },
+    {
+      key: "portfolio",
+      icon: "📈",
+      label: "Portfolio",
+      sub: "Track your demat holdings, live LTP prices, P&L, day change and auto-merge duplicate entries.",
+    },
+  ];
+
+  const PERIODS = [
+    { key: "all",   label: "All Time",   icon: "∞" },
+    { key: "year",  label: "This Year",  icon: "📅" },
+    { key: "month", label: "This Month", icon: "🗓" },
+  ];
+
+  const drive = useDrive();
+
+  return (
+    <div style={{ marginTop: 16 }}>
+
+      {/* Google Drive — auto-connected via Gmail login */}
+      <div style={{ ...cardStyle, marginBottom: 16,
+        background: drive?.connected ? "#f0fdf4" : "var(--color-background-primary)",
+        border:     drive?.connected ? "1px solid #bbf7d0" : "0.5px solid var(--color-border-tertiary)" }}>
+        {sectionTitle("☁", "Google Drive", "Connected automatically using your Google sign-in — same session as Gmail.")}
+        <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, flexWrap:"wrap" }}>
+          <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt=""
+            style={{ width:40, height:40, flexShrink:0 }} onError={e=>e.target.style.display="none"} />
+          <div style={{ flex:1, minWidth:0 }}>
+            {drive?.connected ? (
+              <>
+                <div style={{ fontWeight:600, fontSize:14, color:"#166534", marginBottom:3 }}>✅ Connected as {drive.email}</div>
+                <div style={{ fontSize:12, color:"#4a9a6a" }}>Drive is connected as long as you're signed in with Google. Files upload directly to your Drive.</div>
+              </>
+            ) : drive?.loading ? (
+              <>
+                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>⏳ Connecting…</div>
+                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Getting Drive access from your Google session…</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>Not connected</div>
+                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Sign in with Google to connect Drive automatically.</div>
+              </>
+            )}
+          </div>
+          {drive?.connected && (
+            <button onClick={drive?.clearDrive}
+              style={{ background:"none", border:"0.5px solid #ccc", borderRadius:8, padding:"7px 16px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)", flexShrink:0 }}>
+              Disconnect
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Default Period preference */}
+      <div style={{ ...cardStyle, marginBottom: 16 }}>
+        {sectionTitle("📊", "Overview Default Period", "Choose which period Income & Expenses show by default on the Overview page.")}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+          {PERIODS.map(p => (
+            <button key={p.key} onClick={() => setDefaultPeriod(p.key)}
+              style={{
+                flex: 1, minWidth: 100, padding: "14px 10px", borderRadius: 12,
+                border: defaultPeriod === p.key ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)",
+                background: defaultPeriod === p.key ? "#e8f5ee" : "var(--color-background-secondary)",
+                cursor: "pointer", textAlign: "center",
+              }}>
+              <div style={{ fontSize: 22, marginBottom: 4 }}>{p.icon}</div>
+              <div style={{ fontWeight: defaultPeriod === p.key ? 700 : 500, fontSize: 13, color: defaultPeriod === p.key ? "#1a6b3c" : "var(--color-text-primary)" }}>{p.label}</div>
+              {defaultPeriod === p.key && <div style={{ fontSize: 10, color: "#1a6b3c", marginTop: 3, fontWeight: 600 }}>✓ Default</div>}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
+          💡 This sets what Income & Expenses cards show when you first open Overview. You can still switch periods on the fly.
+        </p>
+      </div>
+
+      <div style={cardStyle}>
+        {sectionTitle("🔧", "Feature Toggles", "Turn features on or off. Your data is always preserved — just hidden until you switch back on.")}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {features.map(f => {
+            const isOn = toggles[f.key] !== false;
+            return (
+              <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 20 }}>{f.icon}</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{f.label}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>{f.sub}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggle(f.key)}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
+                    background: isOn ? "#1a6b3c" : "var(--color-border-primary)",
+                    position: "relative", transition: "background 0.2s", flexShrink: 0,
+                  }}
+                  title={isOn ? "Turn off" : "Turn on"}
+                >
+                  <span style={{
+                    position: "absolute", top: 3, left: isOn ? 23 : 3,
+                    width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                    transition: "left 0.2s", display: "block",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.25)"
+                  }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          💡 Toggling a feature off hides it from the sidebar. All data (trades, records, history) is kept safe and will reappear the moment you turn it back on.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ProjectSettings({ data, update, cardStyle, sectionTitle }) {
+  const taskTypes = data.projectTaskTypes && data.projectTaskTypes.length > 0
+    ? data.projectTaskTypes
+    : ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
+  const [newType, setNewType] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function addType() {
+    const val = newType.trim();
+    if (!val || taskTypes.includes(val)) return;
+    update(() => ({ projectTaskTypes: [...taskTypes, val] }));
+    setNewType("");
+    setSaved(true); setTimeout(() => setSaved(false), 1500);
+  }
+
+  function deleteType(t) {
+    if (taskTypes.length <= 1) return;
+    update(() => ({ projectTaskTypes: taskTypes.filter(x => x !== t) }));
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={cardStyle}>
+        {sectionTitle("📋", "Project Task Types", "Customize the task type labels used across all your projects.")}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+          {taskTypes.map(t => (
+            <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, background: "#e8f5ee", border: "0.5px solid #1a6b3c33", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 }}>
+              <span style={{ fontWeight: 500, color: "#1a6b3c" }}>{t}</span>
+              <button onClick={() => deleteType(t)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2, opacity: 0.7 }} title="Remove">✕</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>New Task Type</label>
+            <input
+              placeholder="e.g. QA, Deployment, Client Call…"
+              value={newType}
+              onChange={e => setNewType(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addType()}
+              style={{ width: "100%", boxSizing: "border-box" }}
+            />
+          </div>
+          <button onClick={addType} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+          {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ Saved</span>}
+        </div>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          💡 These types appear in the task type dropdown when adding or editing tasks in any project. Deleting a type won't remove it from existing tasks.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+// ── BillUploadBtn — used in Business monthly table ────────────────────────────
+function BillUploadBtn({ onUploaded }) {
+  const drive = useDrive();
+  const [busy, setBusy] = useState(false);
+  async function handleFile(ev) {
+    const file = ev.target.files[0]; if (!file) return;
+    setBusy(true);
+    if (drive?.connected) {
+      const result = await drive.uploadToDrive(file, null);
+      if (result) { onUploaded(result); setBusy(false); return; }
+    }
+    // fallback local
+    const reader = new FileReader();
+    reader.onload = re => { onUploaded({ url: re.target.result, previewUrl: re.target.result }); setBusy(false); };
+    reader.readAsDataURL(file);
+  }
+  return (
+    <label title={drive?.connected ? "Upload bill to Google Drive" : "Upload bill"} style={{ cursor: busy?"not-allowed":"pointer", display:"flex", alignItems:"center", justifyContent:"center", width:36, height:36, borderRadius:6, border: drive?.connected?"1px dashed #1a6b3c":"1px dashed #ccc", color: drive?.connected?"#1a6b3c":"#aaa", fontSize:16, opacity: busy?0.5:1 }}>
+      {busy ? "⏳" : drive?.connected ? "☁" : "📎"}
+      <input type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={handleFile} disabled={busy} />
+    </label>
+  );
+}
+
+// ── DocumentsSettings — full rewrite with Drive, nested folders, preview ──────
+function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
+  const drive = useDrive();
+  const [folders,      setFoldersState] = useState(data.documentFolders || []);
+  const [newName,      setNewName]      = useState("");
+  const [openId,       setOpenId]       = useState(null);
+  const [preview,      setPreview]      = useState(null);
+  const [uploading,    setUploading]    = useState({});
+  const [newSubName,   setNewSubName]   = useState({});
+  const [renamingId,   setRenamingId]   = useState(null); // { id, parentId, value }
+
+  function setFolders(fn) {
+    setFoldersState(prev => {
+      const next = typeof fn === "function" ? fn(prev) : fn;
+      update(p => ({ documentFolders: next }));
+      return next;
+    });
+  }
+
+  function addFolder(parentId = null) {
+    const name = parentId ? (newSubName[parentId]||"").trim() : newName.trim();
+    if (!name) return;
+    const folder = { id:"f"+Date.now(), name, files:[], subFolders:[], driveFolderId:"" };
+    if (!parentId) {
+      setFolders(p => [...p, folder]);
+      setNewName("");
+    } else {
+      setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:[...(f.subFolders||[]),folder] } : f));
+      setNewSubName(p => ({ ...p, [parentId]:"" }));
+    }
+  }
+  function deleteFolder(id, parentId=null) {
+    if (!parentId) { setFolders(p => p.filter(f => f.id!==id)); if (openId===id) setOpenId(null); }
+    else setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:(f.subFolders||[]).filter(s=>s.id!==id) } : f));
+  }
+  function deleteFile(folderId, fileId, parentId=null) {
+    setFolders(p => p.map(f => {
+      if (!parentId && f.id===folderId) return { ...f, files:(f.files||[]).filter(d=>d.id!==fileId) };
+      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, files:(s.files||[]).filter(d=>d.id!==fileId) } : s) };
+      return f;
+    }));
+  }
+  function renameFolder(id, newFolderName, parentId=null) {
+    const n = newFolderName.trim();
+    if (!n) return;
+    setFolders(p => p.map(f => {
+      if (!parentId && f.id===id) return { ...f, name: n };
+      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===id ? { ...s, name: n } : s) };
+      return f;
+    }));
+  }
+  function setDriveFId(folderId, val, parentId=null) {
+    setFolders(p => p.map(f => {
+      if (!parentId && f.id===folderId) return { ...f, driveFolderId:val };
+      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, driveFolderId:val } : s) };
+      return f;
+    }));
+  }
+  async function uploadFile(folderId, file, driveFId, parentId=null) {
+    setUploading(p => ({ ...p, [folderId]:true }));
+    let rec;
+    if (drive?.connected) {
+      const r = await drive.uploadToDrive(file, driveFId||null);
+      if (r) rec = { id:r.id, name:r.name, type:r.mimeType, size:r.size, previewUrl:r.previewUrl, webViewLink:r.webViewLink, downloadUrl:r.downloadUrl, source:"gdrive", uploadedAt:new Date().toISOString() };
+    }
+    if (!rec) {
+      const dataUrl = await new Promise(res => { const rd=new FileReader(); rd.onload=e=>res(e.target.result); rd.readAsDataURL(file); });
+      rec = { id:"d"+Date.now(), name:file.name, type:file.type, size:file.size, dataUrl, source:"local", uploadedAt:new Date().toISOString() };
+    }
+    setFolders(p => p.map(f => {
+      if (!parentId && f.id===folderId) return { ...f, files:[...(f.files||[]),rec] };
+      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, files:[...(s.files||[]),rec] } : s) };
+      return f;
+    }));
+    setUploading(p => ({ ...p, [folderId]:false }));
+  }
+
+  function fmtSize(b){if(!b)return"";if(b<1024)return b+" B";if(b<1048576)return(b/1024).toFixed(1)+" KB";return(b/1048576).toFixed(1)+" MB";}
+  function fileIcon(t){if(!t)return"📄";if(t.startsWith("image/"))return"🖼";if(t==="application/pdf")return"📕";if(t.includes("word"))return"📝";if(t.includes("sheet")||t.includes("excel")||t.includes("csv"))return"📊";return"📄";}
+
+  function FileRow({ file, folderId, parentId }) {
+    const [expanded, setExpanded] = useState(false);
+    const canPreview = file.dataUrl || file.previewUrl || file.webViewLink;
+    const isImage = file.type?.startsWith("image/") || file.dataUrl?.startsWith("data:image");
+    const isPdf   = file.type === "application/pdf" || file.dataUrl?.startsWith("data:application/pdf");
+
+    return (
+      <div style={{ borderRadius:10, border:"0.5px solid var(--color-border-tertiary)", overflow:"hidden", background:"var(--color-background-secondary)" }}>
+        {/* File row */}
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px" }}>
+          {/* Thumbnail / icon — click to expand inline */}
+          <div onClick={() => canPreview && setExpanded(p => !p)}
+            style={{ width:40, height:40, borderRadius:7, overflow:"hidden", border:"0.5px solid var(--color-border-secondary)", cursor: canPreview ? "pointer" : "default", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"#f9fafb", fontSize:22, position:"relative" }}>
+            {file.source === "gdrive"
+              ? <span style={{ fontSize:20 }}>☁</span>
+              : isImage && file.dataUrl
+                ? <img src={file.dataUrl} alt={file.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                : <span>{fileIcon(file.type)}</span>
+            }
+            {canPreview && (
+              <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0)", display:"flex", alignItems:"center", justifyContent:"center", transition:"background 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.18)"}
+                onMouseLeave={e => e.currentTarget.style.background = "rgba(0,0,0,0)"}
+              >
+                <span style={{ fontSize:13, color:"#fff", opacity:0, transition:"opacity 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                  onMouseLeave={e => e.currentTarget.style.opacity = "0"}
+                >{expanded ? "▲" : "▼"}</span>
+              </div>
+            )}
+          </div>
+          {/* Name + meta */}
+          <div style={{ flex:1, minWidth:0 }}>
+            <div onClick={() => canPreview && setExpanded(p => !p)}
+              style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor: canPreview ? "pointer" : "default" }}
+              title={file.name}>{file.name}</div>
+            <div style={{ fontSize:10, color:"var(--color-text-secondary)", display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+              {fmtSize(file.size)}
+              <span style={{ background:file.source==="gdrive"?"#dbeafe":"#f1f5f9", color:file.source==="gdrive"?"#1d4ed8":"#64748b", borderRadius:3, padding:"0 4px", fontSize:9 }}>
+                {file.source==="gdrive"?"☁ Drive":"💾 Local"}
+              </span>
+              {new Date(file.uploadedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+            </div>
+          </div>
+          {/* Actions */}
+          <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+            {canPreview && (
+              <button onClick={() => setExpanded(p => !p)}
+                style={{ fontSize:11, color: expanded ? "#1a6b3c" : "var(--color-text-secondary)", padding:"3px 9px", border:`0.5px solid ${expanded ? "#1a6b3c" : "var(--color-border-secondary)"}`, borderRadius:6, background: expanded ? "#e8f5ee" : "none", cursor:"pointer", whiteSpace:"nowrap" }}>
+                {expanded ? "▲ Hide" : "▼ Preview"}
+              </button>
+            )}
+            {file.webViewLink
+              ? <>
+                  <a href={file.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", padding:"3px 9px", border:"0.5px solid #1a6b3c", borderRadius:6, whiteSpace:"nowrap" }}>☁ Open</a>
+                  {file.downloadUrl && <a href={file.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1d4ed8", textDecoration:"none", padding:"3px 9px", border:"0.5px solid #1d4ed8", borderRadius:6 }}>⬇ Download</a>}
+                </>
+              : file.dataUrl && <a href={file.dataUrl} download={file.name} style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", padding:"3px 9px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇</a>
+            }
+            <button onClick={() => setPreview(file)} style={{ fontSize:11, color:"var(--color-text-secondary)", padding:"3px 7px", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, background:"none", cursor:"pointer", whiteSpace:"nowrap" }} title="Open fullscreen">⛶</button>
+            <button onClick={() => deleteFile(folderId, file.id, parentId)} style={{ background:"none", border:"0.5px solid #d44", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#d44", flexShrink:0 }}>🗑</button>
+          </div>
+        </div>
+        {/* ── Inline preview panel ── */}
+        {expanded && (
+          <div style={{ borderTop:"0.5px solid var(--color-border-tertiary)", background:"var(--color-background-primary)", padding:12 }}>
+            {isImage && file.dataUrl ? (
+              <img src={file.dataUrl} alt={file.name} style={{ maxWidth:"100%", maxHeight:420, objectFit:"contain", borderRadius:8, display:"block", margin:"0 auto" }} />
+            ) : isPdf && file.dataUrl ? (
+              <object data={file.dataUrl} type="application/pdf" style={{ width:"100%", height:480, border:"none", borderRadius:6 }}>
+                <div style={{ textAlign:"center", padding:32, color:"var(--color-text-secondary)" }}>
+                  <div style={{ fontSize:40, marginBottom:8 }}>📕</div>
+                  <div style={{ marginBottom:10 }}>PDF preview unavailable in this browser.</div>
+                  <a href={file.dataUrl} download={file.name} style={{ color:"#1a6b3c", fontWeight:500 }}>⬇ Download PDF</a>
+                </div>
+              </object>
+            ) : file.previewUrl ? (
+              <iframe src={file.previewUrl} style={{ width:"100%", height:480, border:"none", borderRadius:6 }} title={file.name} allow="autoplay" />
+            ) : file.dataUrl ? (
+              <iframe src={file.dataUrl} style={{ width:"100%", height:480, border:"none", borderRadius:6 }} title={file.name} />
+            ) : file.webViewLink ? (
+              <div style={{ textAlign:"center", padding:24, color:"var(--color-text-secondary)" }}>
+                <div style={{ fontSize:36, marginBottom:8 }}>☁</div>
+                <a href={file.webViewLink} target="_blank" rel="noreferrer" style={{ color:"#1a6b3c", fontWeight:500 }}>Open in Google Drive ↗</a>
+              </div>
+            ) : (
+              <div style={{ textAlign:"center", padding:24, color:"var(--color-text-secondary)", fontSize:13 }}>No preview available</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function FolderBody({ folder, parentId=null }) {
+    const isUp = uploading[folder.id];
+    const files = folder.files || [];
+    const subs  = folder.subFolders || [];
+    const [openSubId, setOpenSubId] = useState(null); // independent from parent openId
+    return (
+      <div style={{ padding:"12px 14px" }}>
+        {/* Drive folder ID */}
+        {drive?.connected && (
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+            <span style={{ fontSize:11, color:"var(--color-text-secondary)", whiteSpace:"nowrap", flexShrink:0 }}>Drive Folder ID:</span>
+            <input 
+              defaultValue={folder.driveFolderId||""}
+              onBlur={e => setDriveFId(folder.id, e.target.value.trim(), parentId)}
+              onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } }}
+              placeholder="Paste folder ID here (press Enter or click away to save)"
+              style={{ flex:1, minWidth:160, border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"4px 9px", fontSize:11, outline:"none", fontFamily:"inherit", color:"var(--color-text-primary)" }} />
+            <a href="https://drive.google.com" target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", whiteSpace:"nowrap" }}>Open Drive ↗</a>
+          </div>
+        )}
+        {/* Toolbar: upload + add sub-folder */}
+        <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
+          <label style={{ display:"inline-flex", alignItems:"center", gap:5, background:drive?.connected?"#f0fdf4":"#f9fafb", border:drive?.connected?"1px dashed #1a6b3c":"1px dashed #ccc", borderRadius:7, padding:"6px 12px", cursor:isUp?"not-allowed":"pointer", fontSize:12, color:drive?.connected?"#1a6b3c":"var(--color-text-secondary)", fontWeight:500, opacity:isUp?0.6:1, whiteSpace:"nowrap" }}>
+            {isUp?"⏳ Uploading…": drive?.connected?"☁ Upload to Drive":"📎 Upload File"}
+            <input type="file" multiple style={{ display:"none" }} disabled={isUp} onChange={e=>Array.from(e.target.files).forEach(f=>uploadFile(folder.id,f,folder.driveFolderId,parentId))} />
+          </label>
+          {/* Add sub-folder (only top-level folders can have sub-folders) */}
+          {!parentId && (
+            <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+              <input value={newSubName[folder.id]||""} onChange={e=>setNewSubName(p=>({...p,[folder.id]:e.target.value}))}
+                onKeyDown={e=>e.key==="Enter"&&addFolder(folder.id)}
+                placeholder="Sub-folder name…"
+                style={{ border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"5px 9px", fontSize:12, outline:"none", fontFamily:"inherit", width:140 }} />
+              <button onClick={()=>addFolder(folder.id)} style={{ background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:11, fontWeight:500, whiteSpace:"nowrap" }}>+ Sub-folder</button>
+            </div>
+          )}
+        </div>
+        {/* Sub-folders — card grid like main folders */}
+        {subs.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Sub-folders</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginBottom: openSubId ? 12 : 0 }}>
+              {subs.map(sub => {
+                const fcount = (sub.files || []).length;
+                const isOpen = openSubId === sub.id;
+                return (
+                  <div key={sub.id}
+                    onClick={() => { if (!renamingId) setOpenSubId(isOpen ? null : sub.id); }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 12, border: isOpen ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "0.9rem 1rem 0.75rem", cursor: renamingId?.id === sub.id ? "default" : "pointer", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", transition: "box-shadow 0.15s" }}>
+                    <button onClick={e => { e.stopPropagation(); deleteFolder(sub.id, folder.id); }}
+                      style={{ position: "absolute", top: 7, right: 30, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#d44", opacity: 0.5, padding: "2px 4px" }}>🗑</button>
+                    <button onClick={e => { e.stopPropagation(); setRenamingId({ id: sub.id, parentId: folder.id, value: sub.name }); }}
+                      style={{ position: "absolute", top: 7, right: 7, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", opacity: 0.6, padding: "2px 4px" }} title="Rename">✏️</button>
+                    <div style={{ fontSize: 26, marginBottom: 5 }}>{isOpen ? "📂" : "📁"}</div>
+                    {renamingId?.id === sub.id ? (
+                      <div onClick={e => e.stopPropagation()} style={{ marginBottom:3 }}>
+                        <input
+                          autoFocus
+                          value={renamingId.value}
+                          onChange={e => setRenamingId(p => ({ ...p, value: e.target.value }))}
+                          onKeyDown={e => { if (e.key==="Enter") { renameFolder(sub.id, renamingId.value, folder.id); setRenamingId(null); } if (e.key==="Escape") setRenamingId(null); }}
+                          onBlur={() => { renameFolder(sub.id, renamingId.value, folder.id); setRenamingId(null); }}
+                          style={{ width:"100%", boxSizing:"border-box", fontSize:13, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:5, padding:"2px 6px", outline:"none", fontFamily:"inherit", background:"var(--color-background-secondary)" }}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 16, wordBreak: "break-word" }}>{sub.name}</div>
+                    )}
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      {fcount} file{fcount !== 1 ? "s" : ""}
+                      {fcount === 0 && <span style={{ marginLeft: 4, fontSize: 10, background: "#f1f5f9", color: "#94a3b8", borderRadius: 4, padding: "1px 5px" }}>Empty</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Expanded sub-folder content inline */}
+            {openSubId && (() => {
+              const sub = subs.find(s => s.id === openSubId);
+              if (!sub) return null;
+              return (
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, border: "0.5px solid var(--color-border-secondary)", overflow: "hidden" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)" }}>
+                    <span style={{ fontSize: 18 }}>📂</span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{sub.name}</span>
+                    <button onClick={() => setOpenSubId(null)} style={{ marginLeft: "auto", background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 10px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✕ Close</button>
+                  </div>
+                  <FolderBody folder={sub} parentId={folder.id} uploading={uploading} drive={drive} setDriveFId={setDriveFId} addFolder={addFolder} deleteFolder={deleteFolder} deleteFile={deleteFile} uploadFile={uploadFile} setPreview={setPreview} newSubName={newSubName} setNewSubName={setNewSubName} />
+                </div>
+              );
+            })()}
+          </div>
+        )}
+        {/* Files */}
+        {files.length===0 && subs.length===0 && <div style={{ fontSize:12, color:"var(--color-text-secondary)", padding:"4px 0" }}>Empty folder.</div>}
+        {files.length>0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {files.map(file => <FileRow key={file.id} file={file} folderId={folder.id} parentId={parentId} />)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {sectionTitle("🗂", "Documents", "Organise files into folders. Connect Google Drive to store all uploads directly in your Drive.")}
+
+      {/* Add root folder */}
+      <div style={cardStyle}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addFolder()}
+            placeholder="New folder name…"
+            style={{ flex:1, border:"0.5px solid var(--color-border-secondary)", borderRadius:8, padding:"8px 12px", fontSize:13, outline:"none", fontFamily:"inherit", background:"var(--color-background-primary)", color:"var(--color-text-primary)" }} />
+          <button onClick={()=>addFolder()} style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:"pointer", fontSize:13, fontWeight:500, whiteSpace:"nowrap" }}>+ New Folder</button>
+        </div>
+      </div>
+
+      {/* ── Folder grid — like Business year folders ── */}
+      {folders.length === 0
+        ? <div style={{ textAlign:"center", color:"var(--color-text-secondary)", fontSize:13, padding:"3rem 1rem" }}>
+            <div style={{ fontSize:40, marginBottom:8 }}>🗂</div>
+            <div>No folders yet. Create one above.</div>
+          </div>
+        : <>
+          {/* Grid of folder cards */}
+          {!openId && (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))", gap:12, marginTop:4 }}>
+              {folders.map(folder => {
+                const fcount = (folder.files||[]).length + (folder.subFolders||[]).reduce((s,sf)=>s+(sf.files||[]).length,0);
+                const sfCount = (folder.subFolders||[]).length;
+                return (
+                  <div key={folder.id}
+                    onClick={() => { if (!renamingId) setOpenId(folder.id); }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
+                    style={{ background:"var(--color-background-primary)", borderRadius:14, border:"0.5px solid var(--color-border-secondary)", borderTop:"3px solid #1a6b3c", padding:"1.1rem 1.1rem 0.9rem", cursor: renamingId?.id === folder.id ? "default" : "pointer", position:"relative", boxShadow:"0 1px 4px rgba(0,0,0,0.05)", transition:"box-shadow 0.15s" }}>
+                    {/* Delete button */}
+                    <button onClick={e=>{e.stopPropagation(); deleteFolder(folder.id);}}
+                      style={{ position:"absolute", top:8, right:32, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"#d44", opacity:0.5, padding:"2px 4px" }}
+                      title="Delete folder">🗑</button>
+                    {/* Rename button */}
+                    <button onClick={e=>{e.stopPropagation(); setRenamingId({ id:folder.id, parentId:null, value:folder.name }); }}
+                      style={{ position:"absolute", top:8, right:8, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"var(--color-text-secondary)", opacity:0.6, padding:"2px 4px" }}
+                      title="Rename folder">✏️</button>
+                    <div style={{ fontSize:32, marginBottom:6 }}>📁</div>
+                    {/* Inline rename vs name display */}
+                    {renamingId?.id === folder.id ? (
+                      <div onClick={e => e.stopPropagation()} style={{ marginBottom:4 }}>
+                        <input
+                          autoFocus
+                          value={renamingId.value}
+                          onChange={e => setRenamingId(p => ({ ...p, value: e.target.value }))}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); }
+                            if (e.key === "Escape") setRenamingId(null);
+                          }}
+                          onBlur={() => { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); }}
+                          style={{ width:"100%", boxSizing:"border-box", fontSize:15, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit", background:"var(--color-background-secondary)" }}
+                        />
+                        <div style={{ fontSize:10, color:"var(--color-text-secondary)", marginTop:2 }}>Enter to save · Esc to cancel</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:20, wordBreak:"break-word" }}>{folder.name}</div>
+                    )}
+                    <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:6 }}>
+                      {fcount} file{fcount!==1?"s":""}
+                      {sfCount>0 && ` · ${sfCount} sub-folder${sfCount!==1?"s":""}`}
+                    </div>
+                    <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                      {folder.driveFolderId && <span style={{ fontSize:10, background:"#dbeafe", color:"#1d4ed8", borderRadius:4, padding:"1px 6px" }}>☁ Drive</span>}
+                      {fcount === 0 && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:4, padding:"1px 6px" }}>Empty</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Expanded folder detail view */}
+          {openId && (() => {
+            const folder = folders.find(f => f.id === openId);
+            if (!folder) { setOpenId(null); return null; }
+            return (
+              <div style={{ marginTop:4 }}>
+                {/* Back + header */}
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+                  <button onClick={()=>setOpenId(null)} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)", display:"flex", alignItems:"center", gap:5 }}>
+                    ← Back
+                  </button>
+                  <span style={{ fontSize:22 }}>📂</span>
+                  {renamingId?.id === folder.id ? (
+                    <input
+                      autoFocus
+                      value={renamingId.value}
+                      onChange={e => setRenamingId(p => ({ ...p, value: e.target.value }))}
+                      onKeyDown={e => { if (e.key==="Enter") { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); } if (e.key==="Escape") setRenamingId(null); }}
+                      onBlur={() => { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); }}
+                      style={{ fontSize:16, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:7, padding:"4px 10px", outline:"none", fontFamily:"inherit", background:"var(--color-background-secondary)", minWidth:160 }}
+                    />
+                  ) : (
+                    <>
+                      <span style={{ fontWeight:700, fontSize:18 }}>{folder.name}</span>
+                      <button onClick={() => setRenamingId({ id:folder.id, parentId:null, value:folder.name })}
+                        style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, color:"var(--color-text-secondary)" }} title="Rename">✏️ Rename</button>
+                    </>
+                  )}
+                  {folder.driveFolderId && <span style={{ fontSize:11, background:"#dbeafe", color:"#1d4ed8", borderRadius:5, padding:"2px 8px" }}>☁ Drive</span>}
+                </div>
+                <FolderBody folder={folder} />
+              </div>
+            );
+          })()}
+        </>
+      }
+
+      {/* Preview modal */}
+      {preview && (
+        <div onClick={()=>setPreview(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.78)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"92vw", maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
+            <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
+              <span style={{ fontWeight:600, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{preview.name}</span>
+              <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
+                {preview.webViewLink && <a href={preview.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
+                {preview.dataUrl && <a href={preview.dataUrl} download={preview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇</a>}
+                <button onClick={()=>setPreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
+              </div>
+            </div>
+            <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
+              {preview.previewUrl
+                ? <iframe src={preview.previewUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" allow="autoplay" />
+                : preview.dataUrl?.startsWith("data:image")
+                  ? <img src={preview.dataUrl} alt={preview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
+                  : (preview.dataUrl?.startsWith("data:application/pdf") || preview.type === "application/pdf") && preview.dataUrl
+                    ? <object data={preview.dataUrl} type="application/pdf" style={{ width:"82vw", height:"78vh", border:"none" }}>
+                        <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}>
+                          <div style={{ fontSize:48, marginBottom:12 }}>📕</div>
+                          <div style={{ marginBottom:12 }}>PDF preview not supported in this browser.</div>
+                          <a href={preview.dataUrl} download={preview.name} style={{ color:"#1a6b3c", fontWeight:500 }}>⬇ Download PDF</a>
+                        </div>
+                      </object>
+                  : preview.dataUrl
+                    ? <iframe src={preview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
+                    : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
+              }
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TradingSettings({ data, update, cardStyle, sectionTitle }) {
+  const lotSizes = { ...DEFAULT_LOT_SIZES, ...(data.lotSizes || {}) };
+  const [form, setForm] = useState({ ...lotSizes });
+  const [saved, setSaved] = useState(false);
+  const [savedMsg, setSavedMsg] = useState("");
+  const custom = data.customInstruments || { "Index Options": [], "Stock Options": [], "Commodities": [] };
+  const [newInstrument, setNewInstrument] = useState({ category: "Index Options", name: "", lotSize: "" });
+  const indexItems = ["Nifty 50", "Bank Nifty", "Sensex"];
+  const commodityItems = ["Crude Oil", "Crude Oil M", "Natural Gas", "Natural Gas M", "Gold", "Gold M"];
+
+  function showSaved(msg) { setSavedMsg(msg); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  function handleSaveLotSizes() {
+    const parsed = {};
+    Object.entries(form).forEach(([k, v]) => { parsed[k] = Number(v) || 0; });
+    update(() => ({ lotSizes: parsed })); showSaved("Lot sizes saved!");
+  }
+  function handleReset() { setForm({ ...DEFAULT_LOT_SIZES }); update(() => ({ lotSizes: { ...DEFAULT_LOT_SIZES } })); showSaved("Reset to defaults!"); }
+  function handleAddInstrument() {
+    const name = newInstrument.name.trim(); if (!name) return;
+    const cat = newInstrument.category;
+    const already = [...(cat === "Index Options" ? indexItems : []), ...(cat === "Commodities" ? commodityItems : []), ...(custom[cat] || [])];
+    if (already.includes(name)) return;
+    const updatedCustom = { ...custom, [cat]: [...(custom[cat] || []), name] };
+    const updatedLotSizes = { ...lotSizes };
+    if (newInstrument.lotSize) updatedLotSizes[name] = Number(newInstrument.lotSize);
+    setForm(p => ({ ...p, [name]: newInstrument.lotSize || "" }));
+    update(() => ({ customInstruments: updatedCustom, lotSizes: updatedLotSizes }));
+    setNewInstrument({ category: cat, name: "", lotSize: "" }); showSaved(`"${name}" added!`);
+  }
+  function handleRemoveInstrument(cat, name) {
+    const updatedCustom = { ...custom, [cat]: (custom[cat] || []).filter(x => x !== name) };
+    const updatedLotSizes = { ...lotSizes }; delete updatedLotSizes[name];
+    setForm(p => { const next = { ...p }; delete next[name]; return next; });
+    update(() => ({ customInstruments: updatedCustom, lotSizes: updatedLotSizes })); showSaved(`"${name}" removed!`);
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={cardStyle}>
+        {sectionTitle("◉", "Index Options — Lot Sizes", "Default lot sizes for index contracts.")}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+          {[...indexItems, ...(custom["Index Options"] || [])].map(name => (
+            <div key={name}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="number" value={form[name] ?? ""} onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontWeight: 600, fontSize: 15 }} />
+                <span style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>/ lot</span>
+              </div>
+              {DEFAULT_LOT_SIZES[name] !== undefined && Number(form[name]) !== DEFAULT_LOT_SIZES[name] && (
+                <div style={{ fontSize: 11, color: "#f0a020", marginTop: 3 }}>Default: {DEFAULT_LOT_SIZES[name]}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={cardStyle}>
+        {sectionTitle("◈", "Commodities — Lot Sizes", "Default lot sizes for commodity contracts on MCX.")}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+          {[...commodityItems, ...(custom["Commodities"] || [])].map(name => (
+            <div key={name}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="number" value={form[name] ?? ""} onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontWeight: 600, fontSize: 15 }} />
+                <span style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>/ lot</span>
+              </div>
+              {DEFAULT_LOT_SIZES[name] !== undefined && Number(form[name]) !== DEFAULT_LOT_SIZES[name] && (
+                <div style={{ fontSize: 11, color: "#f0a020", marginTop: 3 }}>Default: {DEFAULT_LOT_SIZES[name]}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
+        <button onClick={handleSaveLotSizes} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "9px 24px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Save Lot Sizes</button>
+        <button onClick={handleReset} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "9px 20px", cursor: "pointer", fontSize: 14, color: "var(--color-text-secondary)" }}>Reset to Defaults</button>
+        {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ {savedMsg}</span>}
+      </div>
+      <div style={cardStyle}>
+        {sectionTitle("⊕", "Manage Instruments", "Add custom instruments to any category.")}
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.5fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 20 }}>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
+            <select value={newInstrument.category} onChange={e => setNewInstrument(p => ({ ...p, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+              <option>Index Options</option><option>Stock Options</option><option>Commodities</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Instrument Name</label>
+            <input placeholder="e.g. MIDCPNIFTY, SilverM" value={newInstrument.name} onChange={e => setNewInstrument(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Lot Size <span style={{ color: "#aaa" }}>(optional)</span></label>
+            <input type="number" placeholder="e.g. 75" value={newInstrument.lotSize} onChange={e => setNewInstrument(p => ({ ...p, lotSize: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <button onClick={handleAddInstrument} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+        </div>
+        {["Index Options", "Stock Options", "Commodities"].map(cat => {
+          const items = custom[cat] || []; if (items.length === 0) return null;
+          return (
+            <div key={cat} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{cat}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {items.map(name => (
+                  <div key={name} style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 10px", fontSize: 13 }}>
+                    <span style={{ fontWeight: 500 }}>{name}</span>
+                    {lotSizes[name] && <span style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600 }}>· {lotSizes[name]}/lot</span>}
+                    <button onClick={() => handleRemoveInstrument(cat, name)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {["Index Options", "Stock Options", "Commodities"].every(cat => (custom[cat] || []).length === 0) && (
+          <p style={{ fontSize: 13, color: "var(--color-text-secondary)", fontStyle: "italic" }}>No custom instruments added yet.</p>
+        )}
+      </div>
+      <div style={{ background: "#fef9e7", border: "0.5px solid #f0c040", borderRadius: 10, padding: "0.8rem 1rem", fontSize: 13, color: "#7a5a00" }}>
+        ⚠ Lot size changes affect all future P&L calculations. Existing trades will recalculate automatically.
       </div>
     </div>
   );
@@ -2673,6 +4890,158 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
   );
 }
 
+function CategoriesSettings({ data, update, cardStyle, sectionTitle, navItems, navEditMode, setNavEditMode, onNavDragStart, onNavDragOver, onNavDrop, navDragOver, navDragIdx, setNavDragOver }) {
+  const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
+  const [newCat, setNewCat] = useState({ type: "expense", name: "" });
+  const [editCat, setEditCat] = useState(null);
+  const [editCatName, setEditCatName] = useState("");
+
+  function addCategory() {
+    if (!newCat.name.trim()) return;
+    const cats = data.categories || { expense: [], income: [] };
+    const list = cats[newCat.type] || [];
+    if (list.includes(newCat.name.trim())) return;
+    update(() => ({ categories: { ...cats, [newCat.type]: [...list, newCat.name.trim()] } }));
+    setNewCat(p => ({ ...p, name: "" }));
+  }
+
+  function saveEditCat() {
+    if (!editCat || !editCatName.trim()) return;
+    const cats = data.categories || { expense: [], income: [] };
+    const list = (cats[editCat.type] || []).map(c => c === editCat.oldName ? editCatName.trim() : c);
+    update(() => ({ categories: { ...cats, [editCat.type]: list }, transactions: data.transactions.map(t => t.category === editCat.oldName ? { ...t, category: editCatName.trim() } : t) }));
+    setEditCat(null); setEditCatName("");
+  }
+
+  function deleteCategory(type, name) {
+    const cats = data.categories || { expense: [], income: [] };
+    update(() => ({ categories: { ...cats, [type]: (cats[type] || []).filter(c => c !== name) } }));
+  }
+
+  function reorderCategories(type, newList) {
+    const cats = data.categories || { expense: [], income: [] };
+    update(() => ({ categories: { ...cats, [type]: newList } }));
+  }
+
+  return (
+    <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+      {editCat && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(340px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>✏️ Rename Category</div>
+            <input value={editCatName} onChange={e => setEditCatName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEditCat()} style={{ width: "100%", boxSizing: "border-box", marginBottom: 14, fontSize: 14 }} autoFocus />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => { setEditCat(null); setEditCatName(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEditCat} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {["expense", "income"].map(type => (
+        <Card key={type} title={type === "expense" ? "🔴 Expense Categories" : "🟢 Income Categories"}>
+          <div style={{ marginBottom: 12 }}>
+            {(categories[type] || []).length === 0
+              ? <EmptyState msg="No categories yet." />
+              : <DraggableList
+                  items={categories[type] || []}
+                  keyFn={cat => cat}
+                  onReorder={newList => reorderCategories(type, newList)}
+                  renderItem={cat => (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px 7px 0" }}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{cat}</span>
+                      <ThreeDotMenu onEdit={() => { setEditCat({ type, oldName: cat }); setEditCatName(cat); }} onDelete={() => deleteCategory(type, cat)} />
+                    </div>
+                  )}
+                />
+            }
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input placeholder={`New ${type} category`} value={newCat.type === type ? newCat.name : ""} onFocus={() => setNewCat(p => ({ ...p, type }))} onChange={e => setNewCat({ type, name: e.target.value })} onKeyDown={e => e.key === "Enter" && addCategory()} style={{ flex: 1, boxSizing: "border-box" }} />
+            <button onClick={addCategory} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+          </div>
+        </Card>
+      ))}
+      <div style={{ gridColumn: "span 2" }}>
+        <LiabilityTypesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />
+      </div>
+
+      {/* Sidebar Order card — at the bottom */}
+      <div style={{ gridColumn: "span 2", ...cardStyle }}>
+        {sectionTitle("☰", "Sidebar Order", "Drag to reorder the navigation items in the sidebar.")}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <button
+            onClick={() => { setNavEditMode(m => !m); setNavDragOver(null); navDragIdx.current = null; }}
+            style={{ background: navEditMode ? "#1a6b3c" : "none", border: navEditMode ? "none" : "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: navEditMode ? "#fff" : "var(--color-text-secondary)", fontWeight: 500 }}
+          >{navEditMode ? "✓ Done Reordering" : "✏️ Reorder Items"}</button>
+          {navEditMode && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Drag the ⠿ handles to change order</span>}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {(navItems || []).map((item, i) => (
+            <div key={item.id}
+              draggable={navEditMode}
+              onDragStart={navEditMode ? e => onNavDragStart(e, i) : undefined}
+              onDragOver={navEditMode ? e => onNavDragOver(e, i) : undefined}
+              onDrop={navEditMode ? e => onNavDrop(e, i) : undefined}
+              onDragEnd={navEditMode ? () => { navDragIdx.current = null; setNavDragOver(null); } : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: navDragOver === i ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: navDragOver === i ? "#e8f5ee" : "var(--color-background-secondary)", cursor: navEditMode ? "grab" : "default", transition: "background 0.15s" }}
+            >
+              <span style={{ color: navEditMode ? "var(--color-text-secondary)" : "var(--color-border-secondary)", fontSize: 14, userSelect: "none", opacity: navEditMode ? 1 : 0.3 }}>⠿</span>
+              <span style={{ fontSize: 16 }}>{item.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiabilityTypesSettings({ data, update, cardStyle, sectionTitle }) {
+  const DEFAULT_TYPES = ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"];
+  const types = (data.liabilityTypes && data.liabilityTypes.length > 0) ? data.liabilityTypes : DEFAULT_TYPES;
+  const [newType, setNewType] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function addType() {
+    const val = newType.trim();
+    if (!val || types.includes(val)) return;
+    update(() => ({ liabilityTypes: [...types, val] }));
+    setNewType(""); setSaved(true); setTimeout(() => setSaved(false), 1500);
+  }
+
+  function deleteType(t) {
+    if (types.length <= 1) return;
+    update(() => ({ liabilityTypes: types.filter(x => x !== t) }));
+  }
+
+  return (
+    <div style={cardStyle}>
+      {sectionTitle("🏦", "Liability Types", "Customize the liability type options shown when adding or editing liabilities.")}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        {types.map(t => (
+          <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff3e0", border: "0.5px solid #e6520033", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 }}>
+            <span style={{ fontWeight: 500, color: "#b45309" }}>{t}</span>
+            <button onClick={() => deleteType(t)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2, opacity: 0.7 }} title="Remove">✕</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>New Liability Type</label>
+          <input placeholder="e.g. Education Loan, Medical Loan…" value={newType} onChange={e => setNewType(e.target.value)} onKeyDown={e => e.key === "Enter" && addType()} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        <button onClick={addType} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+        {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ Saved</span>}
+      </div>
+      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+        💡 These types appear in the Type dropdown when adding or editing a liability. Deleting a type won't affect existing liabilities.
+      </p>
+    </div>
+  );
+}
+
+// ─── Transfer Tab ───────────────────────────────────────────────────────────── ─────────────────────────────────────────────────────────────
 function TransferTab({ data, update, accounts }) {
   const [form, setForm] = useState({ fromId: "", toId: "", amount: "", note: "", date: today() });
   const [error, setError] = useState("");
@@ -3430,46 +5799,26 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
     const updates = [];
     payments.forEach(pay => {
-      // For custom weekly payments with multiple days, get all due keys
-      if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
-        const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
-        allDueKeys.forEach(key => {
-          if (pay.paid.includes(key)) return; // already paid
-          
-          const parts = key.split("-").map(Number);
-          const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
-          dueDate.setHours(0,0,0,0);
-          
-          // If autoTime set, only trigger after that time today (or if overdue from past days)
-          if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
-            if (nowHHMM < pay.autoTime) return; // not time yet
-          }
-          
-          updates.push({ pay, key });
-        });
+      const key = getNextDueKey(pay);
+      if (!key) return;
+      // Determine due date from key
+      let dueDate;
+      if (pay.freq === "custom" && pay.customUnit === "weeks") {
+        const parts = key.split("-").map(Number);
+        dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
       } else {
-        // Original logic for non-weekly payments
-        const key = getNextDueKey(pay);
-        if (!key) return;
-        // Determine due date from key
-        let dueDate;
-        if (pay.freq === "custom" && pay.customUnit === "weeks") {
-          const parts = key.split("-").map(Number);
-          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
-        } else {
-          const [ky, km] = key.split("-").map(Number);
-          dueDate = new Date(ky, km-1, pay.day);
-        }
-        if (!dueDate) return;
-        dueDate.setHours(0,0,0,0);
-        if (dueDate > nowDate) return; // not due yet
-        if (pay.paid.includes(key)) return; // already paid
-        // If autoTime set, only trigger after that time today (or if overdue from past days)
-        if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
-          if (nowHHMM < pay.autoTime) return; // not time yet
-        }
-        updates.push({ pay, key });
+        const [ky, km] = key.split("-").map(Number);
+        dueDate = new Date(ky, km-1, pay.day);
       }
+      if (!dueDate) return;
+      dueDate.setHours(0,0,0,0);
+      if (dueDate > nowDate) return; // not due yet
+      if (pay.paid.includes(key)) return; // already paid
+      // If autoTime set, only trigger after that time today (or if overdue from past days)
+      if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
+        if (nowHHMM < pay.autoTime) return; // not time yet
+      }
+      updates.push({ pay, key });
     });
 
     if (!updates.length) return;
@@ -3531,40 +5880,22 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       const updates = [];
       payments.forEach(pay => {
         if (!pay.autoTime) return;
-        
-        // For custom weekly payments with multiple days, get all due keys
-        if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
-          const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
-          allDueKeys.forEach(key => {
-            if (pay.paid.includes(key)) return;
-            
-            const parts = key.split("-").map(Number);
-            const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
-            dueDate.setHours(0,0,0,0);
-            
-            if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
-            if (nowHHMM < pay.autoTime) return;
-            updates.push({ pay, key });
-          });
+        const key = getNextDueKey(pay);
+        if (!key) return;
+        let dueDate;
+        if (pay.freq === "custom" && pay.customUnit === "weeks") {
+          const parts = key.split("-").map(Number);
+          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
         } else {
-          // Original logic for non-weekly payments
-          const key = getNextDueKey(pay);
-          if (!key) return;
-          let dueDate;
-          if (pay.freq === "custom" && pay.customUnit === "weeks") {
-            const parts = key.split("-").map(Number);
-            dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
-          } else {
-            const [ky, km] = key.split("-").map(Number);
-            dueDate = new Date(ky, km-1, pay.day);
-          }
-          if (!dueDate) return;
-          dueDate.setHours(0,0,0,0);
-          if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
-          if (pay.paid.includes(key)) return;
-          if (nowHHMM < pay.autoTime) return;
-          updates.push({ pay, key });
+          const [ky, km] = key.split("-").map(Number);
+          dueDate = new Date(ky, km-1, pay.day);
         }
+        if (!dueDate) return;
+        dueDate.setHours(0,0,0,0);
+        if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
+        if (pay.paid.includes(key)) return;
+        if (nowHHMM < pay.autoTime) return;
+        updates.push({ pay, key });
       });
 
       if (!updates.length) return;
@@ -3663,48 +5994,6 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
 
   function pad2(n) { return String(n).padStart(2,"0"); }
   function dateKey(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
-
-  // Get all due keys for custom weekly payments (multiple days in same week)
-  function getAllDueKeysForWeekly(p, nowDate) {
-    if (p.freq !== "custom" || p.customUnit !== "weeks" || !p.customWeekDays || p.customWeekDays.length === 0) {
-      return [];
-    }
-    
-    const startStr = p.startDate || (p.startMonth + "-01");
-    const [sy, sm, sd] = startStr.split("-").map(Number);
-    let d = new Date(sy, sm-1, sd);
-    d.setHours(0,0,0,0);
-    
-    const everyN = parseInt(p.customEveryN || 1);
-    const dueKeys = [];
-    let ct = 0;
-    
-    // Calculate which week we're in relative to start date
-    const weekStartDate = new Date(sy, sm-1, sd);
-    weekStartDate.setHours(0,0,0,0);
-    
-    while (ct < 500 && d <= nowDate) {
-      const currentWeekDay = d.getDay() === 0 ? 7 : d.getDay();
-      
-      // Check if this day is in the selected weekdays
-      if (p.customWeekDays.includes(currentWeekDay)) {
-        const daysSinceStart = Math.floor((d - weekStartDate) / (1000 * 60 * 60 * 24));
-        const weeksSinceStart = Math.floor(daysSinceStart / 7);
-        
-        // Only include dates that fall on the correct week interval
-        if (weeksSinceStart % everyN === 0) {
-          const k = dateKey(d);
-          if (!p.paid.includes(k) && d <= nowDate) {
-            dueKeys.push(k);
-          }
-        }
-      }
-      d.setDate(d.getDate() + 1);
-      ct++;
-    }
-    
-    return dueKeys;
-  }
 
   function getNextDueKey(p) {
     const now = new Date(); now.setHours(0,0,0,0);
@@ -5090,6 +7379,3946 @@ function LiabilitiesTab({ data, update }) {
 }
 
 // ─── AddSavingsInline — stable component so input focus is never lost ────────
+function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
+  const [addAmt, setAddAmt] = useState("");
+  const [showAddSave, setShowAddSave] = useState(false);
+  const [saveTxType, setSaveTxType] = useState("income");
+  const [saveBankId, setSaveBankId] = useState("");
+
+  function handleAddSavings() {
+    if (!addAmt || parseFloat(addAmt) <= 0) return;
+    addSavings(item.id, addAmt, saveTxType, saveBankId, item.name);
+    setAddAmt(""); setShowAddSave(false); setSaveBankId("");
+  }
+
+  if (!showAddSave) {
+    return (
+      <button onClick={() => setShowAddSave(true)} style={{ fontSize: 12, color: cardAccent, background: cardAccent + "14", border: `0.5px solid ${cardAccent}44`, borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 }}>
+        + Add Savings
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
+      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>Log this saving as:</div>
+      <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", marginBottom: 8 }}>
+        {[["income","📥 Income","#1a6b3c","#e8f5ee"],["expense","📤 Expense","#d44","#fdf0f0"],["savings","💰 Savings","#7c3aed","#f3e8ff"]].map(([v, lbl, color, bg]) => (
+          <button key={v} onClick={() => setSaveTxType(v)}
+            style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", fontSize: 11, fontWeight: saveTxType === v ? 600 : 400, background: saveTxType === v ? bg : "transparent", color: saveTxType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="Amount (₹)"
+          value={addAmt}
+          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setAddAmt(v); }}
+          style={{ flex: 1, fontSize: 12, padding: "5px 8px", boxSizing: "border-box" }}
+          autoFocus
+        />
+      </div>
+      {accounts.length > 0 && (
+        <select value={saveBankId} onChange={e => setSaveBankId(e.target.value)} style={{ width: "100%", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }}>
+          <option value="">— No account —</option>
+          {accounts.filter(a => a.type === "Bank").length > 0 && (
+            <optgroup label="🏦 Bank Accounts">
+              {accounts.filter(a => a.type === "Bank").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+          )}
+          {accounts.filter(a => a.type === "Credit Card").length > 0 && (
+            <optgroup label="💳 Credit Cards">
+              {accounts.filter(a => a.type === "Credit Card").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+          )}
+          {accounts.filter(a => a.type === "Cash").length > 0 && (
+            <optgroup label="💵 Cash">
+              {accounts.filter(a => a.type === "Cash").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+          )}
+        </select>
+      )}
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={handleAddSavings} style={{ flex: 1, background: cardAccent, color: "#fff", border: "none", borderRadius: 7, padding: "5px 0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Log Savings</button>
+        <button onClick={() => { setShowAddSave(false); setAddAmt(""); setSaveBankId(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Goals Page ───────────────────────────────────────────────────────────────
+function GoalsPage({ data, update }) {
+  const items = data.needsWants || [];
+  const [activeTab, setActiveTab] = useState("needs");
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
+  const [editItem, setEditItem] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const PRIORITIES = [["high","🔴 High"],["medium","🟡 Medium"],["low","🟢 Low"]];
+
+  const needs = items.filter(i => i.kind === "need");
+  const wants = items.filter(i => i.kind === "want");
+  const displayed = activeTab === "needs" ? needs : wants;
+
+  function addItem() {
+    if (!form.name.trim()) return;
+    if (form.goalType === "money" && !form.targetAmount) return;
+    update(p => ({
+      needsWants: [...(p.needsWants || []), {
+        id: Date.now(),
+        kind: activeTab === "needs" ? "need" : "want",
+        goalType: form.goalType || "money",
+        name: form.name.trim(),
+        targetAmount: parseFloat(form.targetAmount) || 0,
+        savedAmount: parseFloat(form.savedAmount) || 0,
+        notes: form.notes,
+        priority: form.priority,
+        dueDate: form.dueDate || "",
+        urls: (form.urls || []).filter(u => u.trim()),
+        createdAt: today(),
+        completed: false,
+      }]
+    }));
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""] });
+    setShowAdd(false);
+  }
+
+  function saveEdit() {
+    if (!editItem) return;
+    update(p => ({
+      needsWants: (p.needsWants || []).map(x => x.id === editItem.id ? {
+        ...x,
+        name: editItem.name,
+        targetAmount: parseFloat(editItem.targetAmount),
+        savedAmount: parseFloat(editItem.savedAmount) || 0,
+        notes: editItem.notes,
+        priority: editItem.priority,
+        urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
+      } : x)
+    }));
+    setEditItem(null);
+  }
+
+  function deleteItem(id) {
+    update(p => ({ needsWants: (p.needsWants || []).filter(x => x.id !== id) }));
+  }
+
+  function toggleComplete(id) {
+    update(p => ({ needsWants: (p.needsWants || []).map(x => x.id === id ? { ...x, completed: !x.completed } : x) }));
+  }
+
+  function addSavings(id, amount, txType, bankId, goalName) {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) return;
+    const actualType = txType === "savings" ? "income" : txType;
+    update(p => {
+      const updatedNeeds = (p.needsWants || []).map(x =>
+        x.id === id ? { ...x, savedAmount: Math.min(x.savedAmount + amt, x.targetAmount) } : x
+      );
+      const newTx = {
+        id: Date.now() + Math.random(),
+        type: actualType,
+        amount: amt,
+        category: "Savings",
+        note: `Goal: ${goalName}`,
+        date: today(),
+        bankId: bankId || "",
+      };
+      return { needsWants: updatedNeeds, transactions: [...(p.transactions || []), newTx] };
+    });
+  }
+
+  const totalNeedsTarget = needs.reduce((s, i) => s + i.targetAmount, 0);
+  const totalNeedsSaved  = needs.reduce((s, i) => s + i.savedAmount, 0);
+  const totalWantsTarget = wants.reduce((s, i) => s + i.targetAmount, 0);
+  const totalWantsSaved  = wants.reduce((s, i) => s + i.savedAmount, 0);
+
+  const accentColor = activeTab === "needs" ? "#4da6ff" : "#9b59b6";
+
+  function renderFormFields(values, onChange) {
+    return (
+      <div>
+        {/* Goal type toggle: Money vs Task */}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Goal Type</label>
+          <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
+            {[["money","💰 Money","#1a6b3c","#e8f5ee"],["task","✅ Task","#4da6ff","#e8f0ff"]].map(([v, lbl, color, bg]) => (
+              <button key={v} onClick={() => onChange({ ...values, goalType: v })}
+                style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", fontSize: 12, fontWeight: values.goalType === v ? 600 : 400, background: values.goalType === v ? bg : "transparent", color: values.goalType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name *</label>
+          <input placeholder={values.goalType === "task" ? "e.g. Complete certification, Learn piano" : "e.g. Emergency Fund, New Laptop"} value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        {values.goalType === "money" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
+              <input type="text" inputMode="decimal" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
+              <input type="text" inputMode="decimal" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Due Date (optional)</label>
+            <input type="date" value={values.dueDate || ""} onChange={e => onChange({ ...values, dueDate: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+        )}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Priority</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            {PRIORITIES.map(([v, lbl]) => (
+              <button key={v} onClick={() => onChange({ ...values, priority: v })}
+                style={{ flex: 1, padding: "5px 0", borderRadius: 7, border: "0.5px solid", borderColor: values.priority === v ? "#1a6b3c" : "var(--color-border-secondary)", background: values.priority === v ? "#e8f5ee" : "transparent", color: values.priority === v ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: values.priority === v ? 600 : 400 }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
+          <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>🔗 Links (optional)</label>
+          {(values.urls || [""]).map((url, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+              <input
+                type="url"
+                placeholder={`https://… (link ${i + 1})`}
+                value={url}
+                onChange={e => {
+                  const updated = [...(values.urls || [""])];
+                  updated[i] = e.target.value;
+                  onChange({ ...values, urls: updated });
+                }}
+                style={{ flex: 1, boxSizing: "border-box", fontSize: 12 }}
+              />
+              {(values.urls || [""]).length > 1 && (
+                <button type="button" onClick={() => {
+                  const updated = (values.urls || [""]).filter((_, j) => j !== i);
+                  onChange({ ...values, urls: updated });
+                }} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#d44", fontSize: 12, flexShrink: 0 }}>✕</button>
+              )}
+            </div>
+          ))}
+          <button type="button" onClick={() => onChange({ ...values, urls: [...(values.urls || [""]), ""] })}
+            style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", border: "0.5px solid #1a6b3c44", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 }}>
+            + Add another link
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderItemCard(item) {
+    const pct = item.targetAmount > 0 ? Math.min((item.savedAmount / item.targetAmount) * 100, 100) : 0;
+    const remaining = item.targetAmount - item.savedAmount;
+    const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
+    const accounts = data.banks || [];
+    const isTask = item.goalType === "task";
+
+    // For task goals: show due date and completion status
+    const dueDateEl = isTask && item.dueDate ? (() => {
+      const diff = Math.round((new Date(item.dueDate) - new Date()) / 86400000);
+      const color = diff < 0 ? "#d44" : diff <= 3 ? "#f0a020" : "#1a6b3c";
+      return <span style={{ fontSize: 11, color, fontWeight: 500 }}>📅 {new Date(item.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})} {diff < 0 ? "(overdue)" : diff === 0 ? "(today)" : `(${diff}d left)`}</span>;
+    })() : null;
+
+    return (
+      <div style={{
+        background: item.completed ? "var(--color-background-tertiary)" : "var(--color-background-primary)",
+        borderRadius: 14, border: `0.5px solid ${item.completed ? "var(--color-border-tertiary)" : "var(--color-border-secondary)"}`,
+        padding: "1rem 1.1rem", opacity: item.completed ? 0.7 : 1,
+        borderTop: item.completed ? undefined : `3px solid ${cardAccent}`,
+        display: "flex", flexDirection: "column", height: "100%",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>
+                {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
+                {item.name}
+              </span>
+              {isTask && <span style={{ fontSize: 10, background: "#e8f0ff", color: "#4da6ff", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>✅ Task</span>}
+              <span style={{ fontSize: 10, background: item.priority === "high" ? "#fdf0f0" : item.priority === "medium" ? "#fffbe0" : "#e8f5ee", color: item.priority === "high" ? "#d44" : item.priority === "medium" ? "#b8860b" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500 }}>
+                {item.priority === "high" ? "🔴" : item.priority === "medium" ? "🟡" : "🟢"} {item.priority}
+              </span>
+            </div>
+            {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
+            {(item.urls && item.urls.length > 0 ? item.urls : item.url ? [item.url] : []).map((u, i) => u ? (
+              <a key={i} href={u} target="_blank" rel="noreferrer"
+                style={{ fontSize: 11, color: "#4da6ff", marginTop: 2, display: "flex", alignItems: "center", gap: 3, overflow: "hidden", maxWidth: "100%" }}
+                title={u}>
+                <span style={{ flexShrink: 0 }}>🔗</span>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u}</span>
+              </a>
+            ) : null)}
+            {dueDateEl && <div style={{ marginTop: 4 }}>{dueDateEl}</div>}
+          </div>
+          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {item.completed ? "↩" : "✓"}
+            </button>
+            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money", urls: item.urls || (item.url ? [item.url] : [""]) })} onDelete={() => deleteItem(item.id)} />
+          </div>
+        </div>
+
+        {/* Money goal progress */}
+        {!isTask && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
+              <span style={{ color: "var(--color-text-secondary)" }}>Saved: <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{fmtCur(item.savedAmount)}</span></span>
+              <span style={{ color: "var(--color-text-secondary)" }}>Target: <span style={{ fontWeight: 600, color: cardAccent }}>{fmtCur(item.targetAmount)}</span></span>
+            </div>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 7, overflow: "hidden" }}>
+              <div style={{ width: pct + "%", height: "100%", background: pct >= 100 ? "#1a6b3c" : cardAccent, borderRadius: 6, transition: "width 0.5s ease" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, color: "var(--color-text-secondary)" }}>
+              <span>{pct.toFixed(1)}% complete</span>
+              {remaining > 0 ? <span>{fmtCur(remaining)} remaining</span> : <span style={{ color: "#1a6b3c", fontWeight: 500 }}>🎉 Goal reached!</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Task goal completion indicator */}
+        {isTask && !item.completed && (
+          <div style={{ marginTop: "auto", paddingTop: 8 }}>
+            <button onClick={() => toggleComplete(item.id)} style={{ width: "100%", background: "#e8f5ee", border: "1px solid #1a6b3c", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 }}>
+              ✓ Mark as Done
+            </button>
+          </div>
+        )}
+
+        {/* Add savings — only for money goals */}
+        <div style={{ marginTop: "auto", paddingTop: 8 }}>
+          {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Edit modal */}
+      {editItem && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(460px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Goal</div>
+            { renderFormFields(editItem, setEditItem) }
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+              <button onClick={() => setEditItem(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEdit} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
+        <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+          {showAdd ? "✕ Cancel" : "+ Add Goal"}
+        </button>
+      </div>
+
+      {/* Summary strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
+          { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
+          { label: "Wants Goals", val: wants.length, sub: `${wants.filter(i => i.completed).length} completed`, color: "#9b59b6" },
+          { label: "Wants Progress", val: fmtCur(totalWantsSaved), sub: `of ${fmtCur(totalWantsTarget)}`, color: "#f5a623" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" : "1fr", gap: 16, alignItems: "start" }}>
+        {/* Add form */}
+        {showAdd && (
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+            <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Goal</div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
+              <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
+                {[["needs","🏠 Need","#4da6ff","#e8f0ff"],["wants","✨ Want","#9b59b6","#f3e8ff"]].map(([v, lbl, color, bg]) => (
+                  <button key={v} onClick={() => setActiveTab(v)}
+                    style={{ flex: 1, padding: "7px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: activeTab === v ? 600 : 400, background: activeTab === v ? bg : "transparent", color: activeTab === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            { renderFormFields(form, setForm) }
+            <button onClick={addItem} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, width: "100%" }}>+ Add Goal</button>
+          </div>
+        )}
+
+        {/* Goals list */}
+        <div>
+          <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+            {[["needs","🏠 Needs"],["wants","✨ Wants"]].map(([v, lbl]) => (
+              <button key={v} onClick={() => setActiveTab(v)} style={{ padding: "8px 20px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: activeTab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: activeTab === v ? 500 : 400, borderBottom: activeTab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
+                {lbl} <span style={{ fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: 4, color: "var(--color-text-secondary)" }}>{v === "needs" ? needs.length : wants.length}</span>
+              </button>
+            ))}
+          </div>
+
+          {displayed.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No {activeTab} goals yet. Click "+ Add Goal" to create one.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
+              {displayed.sort((a, b) => {
+                const pOrder = { high: 0, medium: 1, low: 2 };
+                if (a.completed !== b.completed) return a.completed ? 1 : -1;
+                return pOrder[a.priority] - pOrder[b.priority];
+              }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Business Page ────────────────────────────────────────────────────────────
+// ─── Percentage Calculator ────────────────────────────────────────────────────
+function PercentageCalculator() {
+  const [mode, setMode] = useState("pct_of");
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+
+  const numA = parseFloat(a) || 0;
+  const numB = parseFloat(b) || 0;
+
+  function getConfig() {
+    return { labelA: "Amount (₹)", labelB: "Percentage (%)", phA: "e.g. 50000", phB: "e.g. 18" };
+  }
+
+  function compute() {
+    if (!a && !b) return null;
+    const result = (numB / 100) * numA;
+    return {
+      primary: `₹${result.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
+      label: `${numB}% of ₹${numA.toLocaleString("en-IN")}`,
+      breakdown: [
+        { k: "Result",    v: `₹${result.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
+        { k: "Remaining", v: `₹${(numA - result).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` },
+      ]
+    };
+  }
+
+  const result = compute();
+  const cfg    = getConfig();
+
+  return (
+    <div style={{ marginTop: 28, background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.3rem 1.4rem" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 22 }}>🧮</span>
+        <span style={{ fontWeight: 600, fontSize: 16 }}>Percentage Calculator</span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 14, alignItems: "start" }}>
+        {/* Input A */}
+        <div>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>{cfg.labelA}</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            placeholder={cfg.phA}
+            value={a}
+            onChange={e => setA(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", fontSize: 15, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", outline: "none", color: "var(--color-text-primary)" }}
+          />
+        </div>
+
+        {/* Input B */}
+        <div>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>{cfg.labelB}</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            placeholder={cfg.phB}
+            value={b}
+            onChange={e => setB(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", fontSize: 15, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", outline: "none", color: "var(--color-text-primary)" }}
+          />
+        </div>
+
+        {/* Result */}
+        <div style={{ background: result ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", minHeight: 60, display: "flex", flexDirection: "column", justifyContent: "center", border: result ? "0.5px solid #bbf7d0" : "0.5px solid var(--color-border-tertiary)", transition: "all 0.2s" }}>
+          {result ? (
+            <>
+              <div style={{ fontSize: 11, color: "#1a6b3c", marginBottom: 3, fontWeight: 500 }}>Result</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: result.positive === false ? "#d44" : "#1a6b3c", letterSpacing: "-0.5px" }}>{result.primary}</div>
+              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 3 }}>{result.label}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center" }}>Enter values to calculate</div>
+          )}
+        </div>
+      </div>
+
+      {/* Breakdown */}
+      {result?.breakdown && (
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {result.breakdown.map(({ k, v }) => (
+            <div key={k} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "6px 14px", fontSize: 12 }}>
+              <span style={{ color: "var(--color-text-secondary)" }}>{k}: </span>
+              <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+
+    </div>
+  );
+}
+
+function PriceEditor({ monthEntry, onSave }) {
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(String(monthEntry.price || ""));
+
+  function handleSave() {
+    const p = parseFloat(val);
+    if (!isNaN(p) && p > 0) { onSave(p); setEditing(false); }
+  }
+
+  return (
+    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1.1rem", marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 22 }}>💰</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Price per unit — {monthEntry.month}</div>
+        {editing ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input autoFocus type="text" inputMode="decimal" value={val}
+              onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setVal(v); }}
+              onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+              style={{ width: 120, boxSizing: "border-box", fontSize: 14, fontWeight: 600 }}
+              placeholder="e.g. 32" />
+            <button onClick={handleSave} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Save</button>
+            <button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20, fontWeight: 700, color: "#1a6b3c" }}>
+              {monthEntry.price ? fmtCur(monthEntry.price) : <span style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>Not set</span>}
+            </span>
+            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>per unit</span>
+            <button onClick={() => { setVal(String(monthEntry.price || "")); setEditing(true); }}
+              style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️ Edit Price</button>
+          </div>
+        )}
+      </div>
+      {monthEntry.price && (
+        <div style={{ background: "#e8f5ee", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#1a6b3c" }}>
+          Gross = Qty × ₹{fmt(monthEntry.price)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BusinessPage({ data, update }) {
+  // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
+  // Migrate legacy flat businessData into first business if needed
+  const businesses = data.businesses || [];
+  const legacyData = data.businessData || [];
+
+  // State: which business is open, which year is open
+  const [selectedBiz,  setSelectedBiz]  = useState(null); // business id
+  const [selectedYear, setSelectedYear] = useState(null);
+  const [showAddBiz,   setShowAddBiz]   = useState(false);
+  const [newBizName,   setNewBizName]   = useState("");
+  const [showAddYear,  setShowAddYear]  = useState(false);
+  const [newYear,      setNewYear]      = useState("");
+  const [showAddMonth, setShowAddMonth] = useState(false);
+  const [monthForm,    setMonthForm]    = useState({ month: "", rows: [{ qty: "", price: "" }] });
+  const [editEntry,    setEditEntry]    = useState(null);
+  const [billModal,    setBillModal]    = useState(null);
+  const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
+  const [renamingYear, setRenamingYear] = useState(null); // { year, value }
+  const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id (day-wise)
+  const [selectedNonDayMonth, setSelectedNonDayMonth] = useState(null); // monthEntry id (non-day-wise detail)
+  const [renamingDayMonth, setRenamingDayMonth] = useState(false); // day-wise month rename
+  const [renamingDayMonthVal, setRenamingDayMonthVal] = useState("");
+  const [showAddDay,   setShowAddDay]   = useState(false);
+  const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
+  const [showLiabilitiesSection, setShowLiabilitiesSection] = useState(false);
+  const [bizLiabForm, setBizLiabForm] = useState({ name: "", amount: "" });
+
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  const activeBiz = businesses.find(b => b.id === selectedBiz) || null;
+  // Use active business data or legacy flat data for backward compat
+  const bizData = activeBiz ? (activeBiz.data || []) : (selectedBiz === "__legacy__" ? legacyData : []);
+  const years = [...new Set(bizData.map(e => e.year))].sort((a, b) => b - a);
+  const yearEntries = selectedYear
+    ? bizData.filter(e => e.year === selectedYear).sort((a, b) => a.monthIndex - b.monthIndex)
+    : [];
+  const yearSummary = years.map(yr => {
+    const entries = bizData.filter(e => e.year === yr);
+    return { year: yr, totalGross: entries.reduce((s, e) => s + (e.grossIncome || 0), 0), totalNet: entries.reduce((s, e) => s + (e.netIncome || 0), 0), months: entries.length };
+  });
+
+  // ── Day-wise helpers ─────────────────────────────────────────────────────
+  const isDayWise = activeBiz?.dayWise === true;
+  const activeMonthEntry = selectedMonth ? bizData.find(e => e.id === selectedMonth) : null;
+  const dayEntries = activeMonthEntry ? (activeMonthEntry.days || []).sort((a, b) => a.date.localeCompare(b.date)) : [];
+
+  function toggleDayWise() {
+    if (!activeBiz) return;
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, dayWise: !b.dayWise } : b) }));
+  }
+
+  function addDayEntry() {
+    if (!dayForm.date || !dayForm.quantity) return;
+    const qty   = parseFloat(dayForm.quantity);
+    const price = activeMonthEntry?.price || 0;
+    const gross = qty * price;
+    const net   = dayForm.netIncome !== "" ? parseFloat(dayForm.netIncome) : gross;
+    const dayId = "day_" + Date.now();
+    updateBizData(d => d.map(e => {
+      if (e.id !== selectedMonth) return e;
+      const days = [...(e.days || []), { id: dayId, date: dayForm.date, quantity: qty, grossIncome: gross, netIncome: net, note: dayForm.note }];
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+    }));
+    setDayForm({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
+    setShowAddDay(false);
+  }
+
+  function deleteDayEntry(dayId) {
+    updateBizData(d => d.map(e => {
+      if (e.id !== selectedMonth) return e;
+      const days = (e.days || []).filter(d => d.id !== dayId);
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+    }));
+  }
+
+  function updateDayQty(dayId, qtyStr, field = "qty1") {
+    const qty = qtyStr === "" || qtyStr == null ? null : parseFloat(qtyStr);
+    updateBizData(d => d.map(e => {
+      if (e.id !== selectedMonth) return e;
+      const price = e.price || 0;
+      const days = (e.days || []).map(d => {
+        if (d.id !== dayId) return d;
+        const updated = { ...d, [field]: qty };
+        const q1 = field === "qty1" ? qty : (updated.qty1 != null ? updated.qty1 : (updated.quantity != null && updated.qty2 == null ? updated.quantity : null));
+        const q2 = field === "qty2" ? qty : (updated.qty2 ?? null);
+        const totalQty = (q1 != null || q2 != null) ? ((q1 || 0) + (q2 || 0)) : null;
+        const gross = totalQty != null ? totalQty * price : 0;
+        return { ...updated, quantity: totalQty, grossIncome: gross, netIncome: gross };
+      });
+      return { ...e, days, grossIncome: days.reduce((s,d)=>s+d.grossIncome,0), netIncome: days.reduce((s,d)=>s+d.netIncome,0) };
+    }));
+  }
+
+  function updateBizData(fn) {
+    if (!activeBiz) return;
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fn(b.data || []) } : b) }));
+  }
+  function updateEntry(id, changes) {
+    updateBizData(d => d.map(e => e.id === id ? { ...e, ...changes } : e));
+  }
+  function deleteEntry(id) {
+    updateBizData(d => d.filter(e => e.id !== id));
+  }
+
+  // ── Auto-repair: silently fix any day-wise month whose date strings don't match its monthIndex ──
+  // Runs whenever a business is opened. No-ops if all dates are already correct.
+  useEffect(() => {
+    if (!activeBiz) return;
+    const MONTHS_ALL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const entries = activeBiz.data || [];
+    let needsFix = false;
+    const fixed = entries.map(e => {
+      if (!e.days || e.days.length === 0) return e;
+      const mIdx = e.monthIndex != null ? e.monthIndex : MONTHS_ALL.indexOf(e.month);
+      if (mIdx < 0 || mIdx > 11) return e;
+      const yr = e.year;
+      const expectedM = String(mIdx + 1).padStart(2, "0");
+      const daysInMonth = new Date(yr, mIdx + 1, 0).getDate();
+      const hasBad = e.days.some(d => {
+        const p = (d.date || "").split("-");
+        return p.length !== 3 || p[1] !== expectedM || parseInt(p[2], 10) > daysInMonth;
+      });
+      if (!hasBad) return e;
+      needsFix = true;
+      const byDayNum = {};
+      e.days.forEach(od => { const n = parseInt((od.date || "").split("-")[2], 10); if (n >= 1 && n <= 31) byDayNum[n] = od; });
+      const newDays = Array.from({ length: daysInMonth }, (_, i) => {
+        const n = i + 1;
+        const ds = `${yr}-${expectedM}-${String(n).padStart(2, "0")}`;
+        const old = byDayNum[n];
+        return old ? { ...old, date: ds } : { id: `day_${ds}`, date: ds, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+      });
+      const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
+      const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
+      return { ...e, days: newDays, grossIncome: newGross, netIncome: newNet };
+    });
+    if (needsFix) {
+      update(p => ({ businesses: (p.businesses || []).map(b => b.id === selectedBiz ? { ...b, data: fixed } : b) }));
+    }
+  }, [selectedBiz]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function deleteYear(yr) {
+    if (!confirm(`Delete all data for ${yr}?`)) return;
+    updateBizData(d => d.filter(e => e.year !== yr));
+    if (selectedYear === yr) { setSelectedYear(null); setSelectedMonth(null); }
+  }
+
+  function addBusiness() {
+    if (!newBizName.trim()) return;
+    const biz = { id: "biz_" + Date.now(), name: newBizName.trim(), data: [], createdAt: new Date().toISOString() };
+    update(p => ({ businesses: [...(p.businesses || []), biz] }));
+    setNewBizName(""); setShowAddBiz(false);
+    setSelectedBiz(biz.id);
+  }
+  function deleteBusiness(id) {
+    if (!confirm("Delete this business and all its data?")) return;
+    update(p => ({ businesses: (p.businesses || []).filter(b => b.id !== id) }));
+    if (selectedBiz === id) { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); }
+  }
+
+  // ── Business Liabilities helpers ─────────────────────────────────────────
+  function addBizLiability(bizId) {
+    const name = bizLiabForm.name.trim();
+    const amount = parseFloat(bizLiabForm.amount);
+    if (!name || isNaN(amount) || amount <= 0) return;
+    const newLiab = { id: "liab_" + Date.now(), name, amount, paid: false };
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: [...(b.liabilities || []), newLiab] } : b) }));
+    setBizLiabForm({ name: "", amount: "" });
+  }
+  function deleteBizLiability(bizId, liabId) {
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: (b.liabilities || []).filter(l => l.id !== liabId) } : b) }));
+  }
+  function toggleBizLiabilityPaid(bizId, liabId) {
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === bizId ? { ...b, liabilities: (b.liabilities || []).map(l => l.id === liabId ? { ...l, paid: !l.paid } : l) } : b) }));
+  }
+
+  function renameBusiness(id, newName) {
+    const n = newName.trim(); if (!n) return;
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, name: n } : b) }));
+  }
+
+  function addYear() {
+    const y = parseInt(newYear);
+    if (!y || years.includes(y)) return;
+    setSelectedYear(y); setShowAddYear(false); setNewYear(""); setSelectedMonth(null); setSelectedNonDayMonth(null);
+  }
+
+  function addMonthEntry() {
+    const monthIdx = MONTHS.indexOf(monthForm.month);
+    if (monthIdx === -1) return;
+    // Never overwrite an existing month — dropdown already blocks it, but guard here too
+    const alreadyExists = bizData.some(e => e.year === selectedYear && e.month === monthForm.month);
+    if (alreadyExists) return;
+    if (isDayWise) {
+      const price = parseFloat(monthForm.rows[0]?.price) || 0;
+      const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
+      const days = Array.from({ length: daysInMonth }, (_, i) => {
+        const dayNum = i + 1;
+        const dateStr = `${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+        return { id: `day_${dateStr}`, date: dateStr, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+      });
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, grossIncome: 0, netIncome: 0, price, days }]);
+    } else {
+      const filledRows = monthForm.rows.filter(r => r.qty !== "" && r.price !== "");
+      if (filledRows.length === 0) return;
+      const gross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
+      const qty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0) || null;
+      const price = parseFloat(filledRows[0].price) || 0;
+      const qtyBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
+      updateBizData(d => [...d, { id: Date.now(), year: selectedYear, month: monthForm.month, monthIndex: monthIdx, qty, price, qtyBreakdown, grossIncome: gross, netIncome: gross }]);
+    }
+    setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); setShowAddMonth(false);
+  }
+
+  function saveEdit() {
+    if (!editEntry) return;
+    updateBizData(d => d.map(e => e.id === editEntry.id ? { ...e, grossIncome: parseFloat(editEntry.grossIncome), netIncome: parseFloat(editEntry.netIncome) } : e));
+    setEditEntry(null);
+  }
+
+  // Minimal SVG line chart (replaces bar chart)
+  function LineChart({ entries, height = 120 }) {
+    const [hoveredIdx, setHoveredIdx] = useState(null);
+    const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+    if (!entries.length) return null;
+    const sorted = [...entries].sort((a, b) => (a.monthIndex ?? 0) - (b.monthIndex ?? 0));
+    const maxVal = Math.max(...sorted.map(e => Math.max(e.grossIncome, e.netIncome)), 1);
+    const W = 520, pad = { l: 10, r: 10, t: 8, b: 28 };
+    const chartW = W - pad.l - pad.r;
+    const chartH = height;
+    const n = sorted.length;
+    const xOf = i => pad.l + (n > 1 ? (i / (n - 1)) * chartW : chartW / 2);
+    const yOf = v => pad.t + chartH - Math.round((v / maxVal) * chartH);
+    const pts = key => sorted.map((e, i) => `${xOf(i)},${yOf(e[key])}`).join(" ");
+    const area = key => {
+      const line = sorted.map((e, i) => `${xOf(i)},${yOf(e[key])}`).join(" L ");
+      return `M ${xOf(0)},${pad.t + chartH} L ${line} L ${xOf(n - 1)},${pad.t + chartH} Z`;
+    };
+    const hovered = hoveredIdx !== null ? sorted[hoveredIdx] : null;
+    return (
+      <div style={{ position: "relative" }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${height + pad.t + pad.b}`} style={{ display: "block" }}
+          onMouseLeave={() => setHoveredIdx(null)}>
+          <defs>
+            <linearGradient id="lgGross" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1a6b3c" stopOpacity="0.13" />
+              <stop offset="100%" stopColor="#1a6b3c" stopOpacity="0.01" />
+            </linearGradient>
+            <linearGradient id="lgNet" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4da6ff" stopOpacity="0.13" />
+              <stop offset="100%" stopColor="#4da6ff" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+          {/* Subtle grid */}
+          {[0, 0.5, 1].map(f => (
+            <line key={f} x1={pad.l} x2={W - pad.r} y1={yOf(maxVal * f)} y2={yOf(maxVal * f)}
+              stroke="#e5e7eb" strokeWidth={0.5} />
+          ))}
+          {/* Area fills */}
+          <path d={area("grossIncome")} fill="url(#lgGross)" />
+          <path d={area("netIncome")} fill="url(#lgNet)" />
+          {/* Lines */}
+          <polyline points={pts("grossIncome")} fill="none" stroke="#1a6b3c" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={pts("netIncome")} fill="none" stroke="#4da6ff" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+          {/* Hover vertical line */}
+          {hoveredIdx !== null && (
+            <line x1={xOf(hoveredIdx)} x2={xOf(hoveredIdx)} y1={pad.t} y2={pad.t + chartH}
+              stroke="#6b7280" strokeWidth={1} strokeDasharray="3,3" />
+          )}
+          {/* Dots + hover targets + month labels */}
+          {sorted.map((e, i) => (
+            <g key={e.id}>
+              <rect x={xOf(i) - (n > 1 ? chartW / (n - 1) / 2 : 20)} y={pad.t}
+                width={n > 1 ? chartW / (n - 1) : 40} height={chartH}
+                fill="transparent" style={{ cursor: "crosshair" }}
+                onMouseEnter={ev => { setHoveredIdx(i); setTooltipPos({ x: ev.nativeEvent.offsetX, y: ev.nativeEvent.offsetY }); }}
+                onMouseMove={ev => setTooltipPos({ x: ev.nativeEvent.offsetX, y: ev.nativeEvent.offsetY })}
+              />
+              <circle cx={xOf(i)} cy={yOf(e.grossIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#1a6b3c" style={{ transition: "r 0.1s" }} />
+              <circle cx={xOf(i)} cy={yOf(e.netIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#4da6ff" style={{ transition: "r 0.1s" }} />
+              <text x={xOf(i)} y={pad.t + chartH + 14} textAnchor="middle" fontSize={8.5}
+                fill={hoveredIdx === i ? "#111" : "#6b7280"} fontWeight={hoveredIdx === i ? "600" : "400"}>
+                {e.month.slice(0, 3)}
+              </text>
+            </g>
+          ))}
+          {/* Legend */}
+          <circle cx={pad.l} cy={pad.t + chartH + 24} r={3.5} fill="#1a6b3c" />
+          <text x={pad.l + 8} y={pad.t + chartH + 28} fontSize={8} fill="#6b7280">Gross</text>
+          <circle cx={pad.l + 46} cy={pad.t + chartH + 24} r={3.5} fill="#4da6ff" />
+          <text x={pad.l + 54} y={pad.t + chartH + 28} fontSize={8} fill="#6b7280">Net</text>
+        </svg>
+        {hovered && (
+          <div style={{
+            position: "absolute", top: Math.max(0, tooltipPos.y - 65), left: tooltipPos.x + 10,
+            background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: 8, padding: "7px 12px", boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
+            zIndex: 50, pointerEvents: "none", minWidth: 140,
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 5 }}>{hovered.month}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Gross:</span>
+              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(hovered.grossIncome)}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4da6ff", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Net:</span>
+              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(hovered.netIncome)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Year-on-year line chart (compact, replaces bar chart)
+  function YoYChart({ summaries, height = 90 }) {
+    const [hoveredIdx, setHoveredIdx] = useState(null);
+    const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+    if (!summaries.length) return null;
+    const displayed = [...summaries].sort((a, b) => a.year - b.year);
+    const maxVal = Math.max(...displayed.map(s => Math.max(s.totalGross, s.totalNet)), 1);
+    const W = 480, pad = 40, chartH = height;
+    const n = displayed.length;
+    const xStep = n > 1 ? (W - pad * 2) / (n - 1) : 0;
+    const yOf = v => chartH - Math.round((v / maxVal) * (chartH - 10)) + 4;
+    const pts = (key) => displayed.map((s, i) => `${pad + i * xStep},${yOf(s[key])}`).join(" ");
+    const area = (key) => {
+      const line = displayed.map((s, i) => `${pad + i * xStep},${yOf(s[key])}`).join(" L ");
+      return `M ${pad},${chartH + 4} L ${line} L ${pad + (n - 1) * xStep},${chartH + 4} Z`;
+    };
+    const hovered = hoveredIdx !== null ? displayed[hoveredIdx] : null;
+    return (
+      <div style={{ position: "relative" }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${chartH + 36}`} style={{ display: "block" }}
+          onMouseLeave={() => setHoveredIdx(null)}
+        >
+          <defs>
+            <linearGradient id="grossGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1a6b3c" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#1a6b3c" stopOpacity="0.01" />
+            </linearGradient>
+            <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4da6ff" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#4da6ff" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+          {/* Grid lines */}
+          {[0, 0.5, 1].map(frac => (
+            <line key={frac} x1={pad} x2={W - pad} y1={yOf(maxVal * frac)} y2={yOf(maxVal * frac)} stroke="#e5e7eb" strokeWidth={0.5} />
+          ))}
+          {/* Area fills */}
+          <path d={area("totalGross")} fill="url(#grossGrad)" />
+          <path d={area("totalNet")} fill="url(#netGrad)" />
+          {/* Lines */}
+          <polyline points={pts("totalGross")} fill="none" stroke="#1a6b3c" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={pts("totalNet")} fill="none" stroke="#4da6ff" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {/* Vertical hover line */}
+          {hoveredIdx !== null && (
+            <line
+              x1={pad + hoveredIdx * xStep} x2={pad + hoveredIdx * xStep}
+              y1={4} y2={chartH + 4}
+              stroke="#6b7280" strokeWidth={1} strokeDasharray="3,3"
+            />
+          )}
+          {/* Dots + hover targets + year labels */}
+          {displayed.map((s, i) => (
+            <g key={s.year}>
+              <rect
+                x={pad + i * xStep - (xStep > 0 ? xStep / 2 : 20)} y={0}
+                width={xStep > 0 ? xStep : 40} height={chartH + 4}
+                fill="transparent" style={{ cursor: "crosshair" }}
+                onMouseEnter={(e) => {
+                  setHoveredIdx(i);
+                  setTooltipPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
+                }}
+                onMouseMove={(e) => setTooltipPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
+              />
+              <circle cx={pad + i * xStep} cy={yOf(s.totalGross)} r={hoveredIdx === i ? 5 : 3.5} fill="#1a6b3c" style={{ transition: "r 0.1s" }} />
+              <circle cx={pad + i * xStep} cy={yOf(s.totalNet)} r={hoveredIdx === i ? 5 : 3.5} fill="#4da6ff" style={{ transition: "r 0.1s" }} />
+              <text x={pad + i * xStep} y={chartH + 18} textAnchor="middle" fontSize={9} fill={hoveredIdx === i ? "#111" : "#6b7280"} fontWeight={hoveredIdx === i ? "600" : "400"}>{s.year}</text>
+            </g>
+          ))}
+          {/* Legend */}
+          <circle cx={pad} cy={chartH + 28} r={4} fill="#1a6b3c" />
+          <text x={pad + 8} y={chartH + 32} fontSize={8} fill="#6b7280">Gross Income</text>
+          <circle cx={pad + 90} cy={chartH + 28} r={4} fill="#4da6ff" />
+          <text x={pad + 98} y={chartH + 32} fontSize={8} fill="#6b7280">Net Income</text>
+        </svg>
+        {/* Floating tooltip */}
+        {hovered && (
+          <div style={{
+            position: "absolute",
+            top: Math.max(0, tooltipPos.y - 70),
+            left: tooltipPos.x + 12,
+            background: "var(--color-background-primary)",
+            border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: 8,
+            padding: "7px 12px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            zIndex: 50,
+            pointerEvents: "none",
+            minWidth: 140,
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 5, color: "var(--color-text-primary)" }}>{hovered.year}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Gross:</span>
+              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(hovered.totalGross)}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4da6ff", display: "inline-block" }} />
+              <span style={{ color: "var(--color-text-secondary)" }}>Net:</span>
+              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(hovered.totalNet)}</span>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 4, marginTop: 2 }}>
+              Margin: {hovered.totalGross > 0 ? ((hovered.totalNet / hovered.totalGross) * 100).toFixed(1) : 0}% · {hovered.months} month{hovered.months !== 1 ? "s" : ""}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Edit modal */}
+      {editEntry && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit {editEntry.month} {editEntry.year}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹)</label>
+                <input type="text" inputMode="decimal" value={editEntry.grossIncome}
+                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditEntry(p => ({ ...p, grossIncome: v })); }}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹)</label>
+                <input type="text" inputMode="decimal" value={editEntry.netIncome}
+                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditEntry(p => ({ ...p, netIncome: v })); }}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditEntry(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEdit} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── HEADER / BREADCRUMB ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {selectedBiz && !selectedYear && (
+            <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
+          )}
+          {selectedYear && !selectedMonth && (
+            <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
+          )}
+          {selectedMonth && isDayWise && (
+            <button onClick={() => { setSelectedMonth(null); setShowAddDay(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Months</button>
+          )}
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
+            {!selectedBiz ? "Business"
+              : !selectedYear
+                ? (renamingBiz?.id === selectedBiz
+                    ? <input autoFocus value={renamingBiz.value}
+                        onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") { renameBusiness(selectedBiz, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
+                        onBlur={() => { renameBusiness(selectedBiz, renamingBiz.value); setRenamingBiz(null); }}
+                        style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 }} />
+                    : <><span>{activeBiz?.name}</span><button onClick={() => setRenamingBiz({ id: selectedBiz, value: activeBiz?.name || "" })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Rename">✏️</button></>
+                  )
+                : !selectedMonth
+                  ? `${activeBiz?.name} · ${selectedYear}`
+                  : <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {activeBiz?.name} · {selectedYear} ·{" "}
+                      {renamingDayMonth ? (
+                        <>
+                          <select autoFocus value={renamingDayMonthVal}
+                            onChange={e => setRenamingDayMonthVal(e.target.value)}
+                            style={{ fontSize: 16, fontFamily: "'DM Serif Display', serif", border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "2px 8px", outline: "none", background: "var(--color-background-secondary)" }}>
+                            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => {
+                              const usedByOther = yearEntries.some(e => e.month === m && e.id !== selectedMonth);
+                              return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
+                            })}
+                          </select>
+                          <button onClick={() => {
+                            const MONTHS_ALL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                            const newMIdx = MONTHS_ALL.indexOf(renamingDayMonthVal);
+                            updateBizData(d => d.map(e => {
+                              if (e.id !== selectedMonth) return e;
+                              const yr = e.year;
+                              const mIdx = newMIdx !== -1 ? newMIdx : e.monthIndex;
+                              const expectedM = String(mIdx + 1).padStart(2, "0");
+                              const daysInMonth = new Date(yr, mIdx + 1, 0).getDate();
+                              const byDayNum = {};
+                              (e.days || []).forEach(od => { const n = parseInt((od.date || "").split("-")[2], 10); if (n >= 1) byDayNum[n] = od; });
+                              const newDays = Array.from({ length: daysInMonth }, (_, i) => {
+                                const n = i + 1;
+                                const ds = `${yr}-${expectedM}-${String(n).padStart(2, "0")}`;
+                                const old = byDayNum[n];
+                                return old ? { ...old, date: ds } : { id: `day_${ds}`, date: ds, quantity: null, qty1: null, qty2: null, grossIncome: 0, netIncome: 0, note: "" };
+                              });
+                              const newGross = newDays.reduce((s, d) => s + (d.grossIncome || 0), 0);
+                              const newNet   = newDays.reduce((s, d) => s + (d.netIncome   || 0), 0);
+                              return { ...e, month: renamingDayMonthVal, monthIndex: mIdx, days: newDays, grossIncome: newGross, netIncome: newNet };
+                            }));
+                            setRenamingDayMonth(false);
+                          }} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "3px 12px", cursor: "pointer", fontSize: 13, color: "#fff", fontWeight: 600 }}>✓</button>
+                          <button onClick={() => setRenamingDayMonth(false)}
+                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>✕</button>
+                        </>
+                      ) : (
+                        <>
+                          {activeMonthEntry?.month}
+                          <button onClick={() => { setRenamingDayMonthVal(activeMonthEntry?.month || ""); setRenamingDayMonth(true); }}
+                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Change month">✏️ Month</button>
+                        </>
+                      )}
+                    </span>}
+          </h1>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {selectedBiz && !selectedMonth && (
+            <button onClick={toggleDayWise} title={isDayWise ? "Day-wise ON — click to disable" : "Enable day-wise tracking"}
+              style={{ background: isDayWise ? "#e8f5ee" : "var(--color-background-secondary)", color: isDayWise ? "#1a6b3c" : "var(--color-text-secondary)", border: isDayWise ? "0.5px solid #bbf7d0" : "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: isDayWise ? 600 : 400, display: "flex", alignItems: "center", gap: 5 }}>
+              📅 {isDayWise ? "Day-wise ON" : "Day-wise"}
+            </button>
+          )}
+          {selectedBiz && !selectedYear && (
+            <button onClick={() => setShowLiabilitiesSection(p => !p)}
+              style={{ background: showLiabilitiesSection ? "#fff5f5" : "var(--color-background-secondary)", color: showLiabilitiesSection ? "#c0392b" : "var(--color-text-secondary)", border: showLiabilitiesSection ? "0.5px solid #f5c0c0" : "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: showLiabilitiesSection ? 600 : 400, display: "flex", alignItems: "center", gap: 5 }}>
+              ⚖️ Liabilities
+            </button>
+          )}
+          {!selectedBiz && (
+            <button onClick={() => setShowAddBiz(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {showAddBiz ? "✕ Cancel" : "+ New Business"}
+            </button>
+          )}
+          {selectedBiz && !selectedYear && (
+            <button onClick={() => setShowAddYear(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {showAddYear ? "✕ Cancel" : "+ Add Year"}
+            </button>
+          )}
+          {selectedYear && !selectedMonth && (
+            <button onClick={() => { setShowAddMonth(p => !p); setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); }} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {showAddMonth ? "✕ Cancel" : "+ Add Month"}
+            </button>
+          )}
+          {selectedMonth && isDayWise && (
+            <span style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 8, padding: "6px 13px", fontWeight: 500 }}>
+              📝 Type qty in each row
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── LEVEL 1: Businesses grid ── */}
+      {!selectedBiz && (
+        <>
+          {showAddBiz && (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Business Name</label>
+                <input placeholder="e.g. Coconut, Freelance, Agency" value={newBizName} onChange={e => setNewBizName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addBusiness()}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <button onClick={addBusiness} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create</button>
+            </div>
+          )}
+          {businesses.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No businesses yet. Click "+ New Business" to create your first one.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+              {businesses.map(biz => {
+                const bizYears = [...new Set((biz.data || []).map(e => e.year))];
+                const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
+                const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
+                const bizLiabilities = biz.liabilities || [];
+                const paidLiab   = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                const unpaidLiab = bizLiabilities.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                const finalNet   = totalNet - paidLiab - unpaidLiab;
+                const hasLiab    = bizLiabilities.length > 0;
+                return (
+                  <div key={biz.id} onClick={() => { if (!renamingBiz) { setSelectedBiz(biz.id); setShowLiabilitiesSection(false); } }}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                    <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
+                      style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                    <button onClick={ev => { ev.stopPropagation(); setRenamingBiz({ id: biz.id, value: biz.name }); }}
+                      style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, opacity: 0.6, padding: 2 }} title="Rename">✏️</button>
+                    <div style={{ fontSize: 32, marginBottom: 6 }}>🏢</div>
+                    {renamingBiz?.id === biz.id ? (
+                      <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
+                        <input autoFocus value={renamingBiz.value}
+                          onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
+                          onKeyDown={e => { if (e.key === "Enter") { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
+                          onBlur={() => { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); }}
+                          style={{ width: "100%", boxSizing: "border-box", fontSize: 18, fontWeight: 700, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "'DM Serif Display', serif", background: "var(--color-background-secondary)" }} />
+                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
+                    )}
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
+
+                    {/* Gross row — always shown */}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                      <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(totalGross)}</span>
+                    </div>
+
+                    {/* Net row */}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: hasLiab ? 4 : 0 }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                      <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(totalNet)}</span>
+                    </div>
+
+                    {/* Liabilities breakdown — shown only if any liabilities exist */}
+                    {hasLiab && (
+                      <>
+                        <div style={{ borderTop: "0.5px dashed var(--color-border-tertiary)", margin: "6px 0" }} />
+                        {paidLiab > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ color: "#c0392b" }}>Liabilities (paid)</span>
+                            <span style={{ color: "#c0392b", fontWeight: 600 }}>-{fmtCur(paidLiab)}</span>
+                          </div>
+                        )}
+                        {unpaidLiab > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ color: "#f59e0b" }}>Liabilities (pending)</span>
+                            <span style={{ color: "#f59e0b", fontWeight: 500 }}>{fmtCur(unpaidLiab)}</span>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 5, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 2 }}>
+                          <span style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>Final Net</span>
+                          <span style={{ fontWeight: 700, color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", fontSize: 14 }}>{fmtCur(finalNet)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── PERCENTAGE CALCULATOR (always visible on main Business page) ── */}
+      {!selectedBiz && <PercentageCalculator />}
+
+      {/* ── LEVEL 2: Year folders inside a business ── */}
+      {selectedBiz && !selectedYear && (
+        <>
+          {showAddYear && (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Year</label>
+                <input type="text" inputMode="numeric" placeholder="e.g. 2025" value={newYear}
+                  onChange={e => setNewYear(e.target.value)} onKeyDown={e => e.key === "Enter" && addYear()}
+                  style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <button onClick={addYear} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create Year</button>
+            </div>
+          )}
+
+          {/* ── Liabilities Section (inline panel) ── */}
+          {showLiabilitiesSection && activeBiz && (() => {
+            const bizLiabs = activeBiz.liabilities || [];
+            const totalNet = bizData.reduce((s, e) => s + (e.netIncome || 0), 0);
+            const paidTotal = bizLiabs.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+            const unpaidTotal = bizLiabs.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+            const finalNet = totalNet - paidTotal;
+            return (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid #f5c0c0", padding: "1.25rem 1.4rem", marginBottom: 16, borderTop: "3px solid #c0392b" }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>⚖️ Liabilities — {activeBiz.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "3px 9px" }}>
+                    💡 Mark as Paid → deducted from Net Income
+                  </div>
+                </div>
+
+                {/* Summary tiles */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
+                  {[
+                    { label: "Net Income", val: fmtCur(totalNet), color: "#4da6ff", bg: "#f0f7ff" },
+                    { label: "Paid Liabilities", val: paidTotal > 0 ? "-" + fmtCur(paidTotal) : fmtCur(0), color: "#c0392b", bg: "#fff5f5" },
+                    { label: "Final Net Income", val: fmtCur(finalNet), color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", bg: finalNet >= 0 ? "#f0faf4" : "#fff5f5" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: c.bg, borderRadius: 10, padding: "0.75rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Liabilities list */}
+                {bizLiabs.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, padding: "1.5rem 0", borderTop: "0.5px dashed var(--color-border-tertiary)", borderBottom: "0.5px dashed var(--color-border-tertiary)", marginBottom: 16 }}>
+                    No liabilities added yet. Use the form below to add one.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {/* Column headers */}
+                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div/>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Name</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Amount</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" }}>Status</div>
+                      <div/>
+                    </div>
+                    {bizLiabs.map(l => (
+                      <div key={l.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", background: l.paid ? "#f0faf4" : "#fff5f5", borderRadius: 9, padding: "9px 12px", border: "0.5px solid " + (l.paid ? "#bbf7d0" : "#f5c0c0"), transition: "all 0.15s" }}>
+                        {/* Paid checkbox */}
+                        <button onClick={() => toggleBizLiabilityPaid(activeBiz.id, l.id)}
+                          title={l.paid ? "Mark as Unpaid" : "Mark as Paid"}
+                          style={{ width: 26, height: 26, borderRadius: 6, border: "2px solid " + (l.paid ? "#1a6b3c" : "#c0392b"), background: l.paid ? "#1a6b3c" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#fff", flexShrink: 0, padding: 0, transition: "all 0.15s" }}>
+                          {l.paid ? "✓" : ""}
+                        </button>
+                        {/* Name */}
+                        <span style={{ fontSize: 13, fontWeight: 500, color: l.paid ? "#1a6b3c" : "#c0392b", textDecoration: l.paid ? "none" : "none" }}>{l.name}</span>
+                        {/* Amount */}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: l.paid ? "#1a6b3c" : "#c0392b", whiteSpace: "nowrap" }}>{l.paid ? "-" : ""}{fmtCur(l.amount)}</span>
+                        {/* Status badge */}
+                        <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 6, padding: "2px 8px", background: l.paid ? "#1a6b3c" : "#fff0f0", color: l.paid ? "#fff" : "#c0392b", border: "0.5px solid " + (l.paid ? "#1a6b3c" : "#f5c0c0"), whiteSpace: "nowrap" }}>
+                          {l.paid ? "✅ Paid" : "⏳ Pending"}
+                        </span>
+                        {/* Delete */}
+                        <button onClick={() => deleteBizLiability(activeBiz.id, l.id)}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 0 }}>🗑</button>
+                      </div>
+                    ))}
+                    {/* Totals row */}
+                    {bizLiabs.length > 0 && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, fontSize: 12, paddingTop: 8, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                        {unpaidTotal > 0 && <span style={{ color: "#c0392b" }}>Pending: {fmtCur(unpaidTotal)}</span>}
+                        {paidTotal > 0 && <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Deducted: -{fmtCur(paidTotal)}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Add form */}
+                <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--color-text-secondary)" }}>+ Add New Liability</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input placeholder="e.g. Rent, Worker Salary, Loan EMI" value={bizLiabForm.name}
+                      onChange={e => setBizLiabForm(p => ({ ...p, name: e.target.value }))}
+                      style={{ flex: 2, boxSizing: "border-box" }} />
+                    <input type="number" placeholder="Amount (₹)" value={bizLiabForm.amount}
+                      onChange={e => setBizLiabForm(p => ({ ...p, amount: e.target.value }))}
+                      onKeyDown={e => e.key === "Enter" && addBizLiability(activeBiz.id)}
+                      style={{ flex: 1, boxSizing: "border-box" }} />
+                    <button onClick={() => addBizLiability(activeBiz.id)}
+                      style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          {yearSummary.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No years yet. Click "+ Add Year" to create your first year folder.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+                {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
+                  <div key={s.year} onClick={() => { if (!renamingYear) setSelectedYear(s.year); }}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingYear?.year === s.year ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                    <button onClick={ev => { ev.stopPropagation(); deleteYear(s.year); }}
+                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                    <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
+                    <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
+                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(s.totalNet)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+                {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
+                  <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{s.year} — Gross</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 2 }}>Net</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#4da6ff" }}>{fmtCur(s.totalNet)}</div>
+                  </div>
+                ))}
+              </div>
+              {yearSummary.length > 1 && (
+                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+                  <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Year-on-Year Performance</div>
+                  <YoYChart summaries={yearSummary} />
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── YEAR DRILL-DOWN ── */}
+      {selectedYear && !selectedMonth && (
+        <>
+          {/* Add Month form */}
+          {showAddMonth && (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                📁 {isDayWise ? "Create Month Folder" : "Add Month"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12, marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>💡 Qty × Price = Gross</span>
+                {isDayWise ? "Set price — Gross is auto-calculated from daily quantities" : "Enter total quantity and price for the month"}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isDayWise ? "1fr 1fr" : "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
+                  <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                    <option value="">Select month</option>
+                    {MONTHS.map(m => {
+                      const used = yearEntries.some(e => e.month === m);
+                      return <option key={m} value={m} disabled={used}>{m}{used ? " ✓ already added" : ""}</option>;
+                    })}
+                  </select>
+                </div>
+                {isDayWise && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Price per unit (₹) *</label>
+                    <input type="text" inputMode="decimal" placeholder="e.g. 32"
+                      value={monthForm.rows[0]?.price || ""}
+                      onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[0] = { ...rows[0], price: v }; return { ...p, rows }; }); }}
+                      style={{ width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                )}
+              </div>
+              {!isDayWise && (
+                <div style={{ marginTop: 12 }}>
+                  {/* Header row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 4, alignItems: "center" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Qty (units)</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Price per unit (₹)</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, textAlign: "right" }}>Subtotal</div>
+                    <div />
+                  </div>
+                  {/* Rows */}
+                  {monthForm.rows.map((row, idx) => {
+                    const subtotal = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
+                    return (
+                      <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                        <input type="text" inputMode="decimal" placeholder="e.g. 120"
+                          value={row.qty}
+                          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], qty: v }; return { ...p, rows }; }); }}
+                          style={{ width: "100%", boxSizing: "border-box" }} />
+                        <input type="text" inputMode="decimal" placeholder="e.g. 32"
+                          value={row.price}
+                          onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], price: v }; return { ...p, rows }; }); }}
+                          style={{ width: "100%", boxSizing: "border-box" }} />
+                        <div style={{ fontSize: 12, fontWeight: 600, color: subtotal > 0 ? "#1a6b3c" : "var(--color-text-secondary)", whiteSpace: "nowrap", minWidth: 70, textAlign: "right" }}>
+                          {subtotal > 0 ? `₹${fmt(subtotal)}` : "—"}
+                        </div>
+                        {monthForm.rows.length > 1 ? (
+                          <button onClick={() => setMonthForm(p => ({ ...p, rows: p.rows.filter((_, i) => i !== idx) }))}
+                            style={{ flexShrink: 0, background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                            ×
+                          </button>
+                        ) : <div />}
+                      </div>
+                    );
+                  })}
+                  {/* Add row + gross total */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                    <button
+                      onClick={() => setMonthForm(p => ({ ...p, rows: [...p.rows, { qty: "", price: "" }] }))}
+                      style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                      + Add Row
+                    </button>
+                    {monthForm.rows.some(r => r.qty && r.price) && (
+                      <div style={{ padding: "6px 14px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 700 }}>
+                        Gross = ₹{fmt(monthForm.rows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+                {isDayWise ? "📁 Create Month Folder" : "✓ Add Month"}
+              </button>
+            </div>
+          )}
+
+          {yearEntries.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No months added yet for {selectedYear}. Click "+ Add Month" to start.
+            </div>
+          ) : (
+            <>
+              {/* Summary stats for year */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+                {[
+                  { label: "Total Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0)), color: "#1a6b3c" },
+                  { label: "Total Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0)), color: "#4da6ff" },
+                  { label: "Avg Monthly Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0) / yearEntries.length), color: "#f0a020" },
+                  { label: "Avg Monthly Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0) / yearEntries.length), color: "#9b59b6" },
+                ].map(c => (
+                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Non-day-wise detail panel — inline, replaces grid when open ── */}
+              {selectedNonDayMonth && !isDayWise && (() => {
+                const entry = bizData.find(e => e.id === selectedNonDayMonth);
+                if (!entry) return null;
+                const gross = entry.grossIncome || 0;
+                const net   = entry.netIncome   || 0;
+                const breakdown = entry.qtyBreakdown || (entry.qty != null ? [{ qty: entry.qty, price: entry.price || 0 }] : []);
+                function InlineDetailPanel() {
+                  const [editing, setEditing]           = React.useState(false);
+                  const [editRows, setEditRows]         = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
+                  const [renamingMonth, setRenamingMonth] = React.useState(false);
+                  const [editMonth, setEditMonth]       = React.useState(entry.month);
+                  const ML = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                  function saveMonthRename() {
+                    if (!editMonth || editMonth === entry.month) { setRenamingMonth(false); return; }
+                    const idx = ML.indexOf(editMonth);
+                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, month: editMonth, monthIndex: idx !== -1 ? idx : en.monthIndex }));
+                    setRenamingMonth(false);
+                  }
+                  function saveEdits() {
+                    const rows = editRows.filter(r => r.qty !== "" && r.price !== "");
+                    if (!rows.length) return;
+                    const newGross = rows.reduce((s, r) => s + (parseFloat(r.qty)||0)*(parseFloat(r.price)||0), 0);
+                    updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, qty: rows.reduce((s,r)=>s+(parseFloat(r.qty)||0),0), price: parseFloat(rows[0].price)||0, qtyBreakdown: rows.map(r=>({qty:parseFloat(r.qty)||0,price:parseFloat(r.price)||0})), grossIncome: newGross, netIncome: newGross-(en.spending||0) }));
+                    setEditing(false);
+                  }
+                  return (
+                    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <button onClick={() => setSelectedNonDayMonth(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0 }}>←</button>
+                          {renamingMonth ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <select value={editMonth} onChange={e => setEditMonth(e.target.value)} style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
+                                {ML.map(m => { const used = yearEntries.some(e => e.month === m && e.id !== entry.id); return <option key={m} value={m} disabled={used}>{m}{used?" ✓ already added":""}</option>; })}
+                              </select>
+                              <button onClick={saveMonthRename} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
+                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {!editing
+                            ? <button onClick={() => { setEditRows(breakdown.map(r=>({qty:String(r.qty),price:String(r.price)}))); setEditing(true); }} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>✏️ Edit</button>
+                            : <><button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                               <button onClick={saveEdits} style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓ Save</button></>}
+                          <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+                        {editing ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 }}>
+                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Qty (units)</div>
+                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Price (₹)</div>
+                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 }}>Subtotal</div>
+                              <div />
+                            </div>
+                            {editRows.map((row, idx) => {
+                              const sub = (parseFloat(row.qty)||0)*(parseFloat(row.price)||0);
+                              return (
+                                <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 120" value={row.qty} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],qty:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#1a6b3c",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #1a6b3c";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 30" value={row.price} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],price:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#9b59b6",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #9b59b6";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                  <div style={{ fontSize:13,fontWeight:700,color:sub>0?"#1a6b3c":"var(--color-text-secondary)",minWidth:80,textAlign:"right" }}>{sub>0?`₹${fmt(sub)}`:"—"}</div>
+                                  {editRows.length>1 ? <button onClick={()=>setEditRows(p=>p.filter((_,i)=>i!==idx))} style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:5,padding:"4px 9px",cursor:"pointer",fontSize:13,fontWeight:700 }}>×</button> : <div style={{width:28}}/>}
+                                </div>
+                              );
+                            })}
+                            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4 }}>
+                              <button onClick={()=>setEditRows(p=>[...p,{qty:"",price:""}])} style={{ fontSize:12,background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontWeight:600 }}>+ Add Row</button>
+                              {editRows.some(r=>r.qty&&r.price)&&<div style={{fontSize:13,fontWeight:700,color:"#1a6b3c"}}>Gross = ₹{fmt(editRows.reduce((s,r)=>s+(parseFloat(r.qty)||0)*(parseFloat(r.price)||0),0))}</div>}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ borderRadius:8,overflow:"hidden",border:"0.5px solid var(--color-border-tertiary)" }}>
+                            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0 }}>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)" }}>Qty (units)</div>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"center" }}>Price (₹)</div>
+                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"right" }}>Subtotal</div>
+                              {breakdown.map((row,idx)=>(
+                                <React.Fragment key={idx}>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#1a6b3c",borderTop:"0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)"}}>units</span></div>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#9b59b6",textAlign:"center",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
+                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:700,color:"#1a6b3c",textAlign:"right",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty*row.price)}</div>
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display:"flex",flexDirection:"column",gap:8,fontSize:13 }}>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#e8f5ee",borderRadius:8 }}>
+                          <span style={{color:"#1a6b3c",fontWeight:600}}>Gross Income</span>
+                          <span style={{color:"#1a6b3c",fontWeight:700,fontSize:16}}>{fmtCur(gross)}</span>
+                        </div>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 12px" }}>
+                          <span style={{color:"var(--color-text-secondary)"}}>Spend (₹)</span>
+                          <input type="text" inputMode="decimal" key={`spend-${entry.id}-${entry.spending}`} defaultValue={entry.spending!=null?String(entry.spending):""} placeholder="0"
+                            onBlur={ev => { const sp=ev.target.value.trim()===""?0:parseFloat(ev.target.value.trim()); updateBizData(d=>d.map(en=>en.id!==entry.id?en:{...en,spending:sp,netIncome:(entry.grossIncome||0)-sp})); }}
+                            style={{width:110,padding:"5px 10px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:7,background:"var(--color-background-secondary)",color:"#e55",outline:"none",textAlign:"right"}}
+                            onFocus={ev=>{ev.target.style.border="1.5px solid #e55";ev.target.style.background="#fff";}}
+                            onBlurCapture={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                        </div>
+                        {/* Bill Attachment Section */}
+                        <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
+                          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                            <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
+                          </div>
+                          {(() => {
+                            const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
+                            return (
+                              <>
+                                {bills.length > 0 && (
+                                  <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
+                                    {bills.map((bill,idx) => (
+                                      <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
+                                        <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
+                                          <span>📄</span>
+                                          <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
+                                        </div>
+                                        <div style={{ display:"flex",gap:4,flexShrink:0 }}>
+                                          <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                            style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
+                                            View
+                                          </button>
+                                          <button onClick={() => {
+                                            setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                          }}
+                                            style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
+                                            ×
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <input
+                                  type="file"
+                                  id={`bill-upload-${entry.id}`}
+                                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                  style={{ display:"none" }}
+                                  onChange={async (ev) => {
+                                    const file = ev.target.files?.[0];
+                                    if (!file) return;
+                                    
+                                    const driveContext = React.useContext(DriveContext);
+                                    if (!driveContext?.uploadFileToDrive) {
+                                      alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                                      return;
+                                    }
+
+                                    try {
+                                      const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                                      if (result?.id && result?.webViewLink) {
+                                        const newBill = {
+                                          monthId: entry.id,
+                                          fileName: file.name,
+                                          fileUrl: result.webViewLink,
+                                          fileId: result.id,
+                                          uploadDate: new Date().toISOString()
+                                        };
+                                        setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                        alert("Bill uploaded successfully!");
+                                      }
+                                    } catch (err) {
+                                      console.error("Upload failed:", err);
+                                      alert("Failed to upload bill. Please try again.");
+                                    }
+                                    ev.target.value = "";
+                                  }}
+                                />
+                                <label htmlFor={`bill-upload-${entry.id}`}
+                                  style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
+                                  <span>📎</span>
+                                  <span>Attach Bill</span>
+                                </label>
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 }}>
+                          <span style={{color:"#4da6ff",fontWeight:600}}>Net Income</span>
+                          <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return <InlineDetailPanel key={entry.id} />;
+              })()}
+
+              {/* ── Month folder cards grid (hidden while detail is open) ── */}
+              {!selectedNonDayMonth && <><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, marginBottom: 16 }}>
+                {yearEntries.map(e => {
+                  const dayCount = (e.days || []).length;
+                  const gross = e.grossIncome || 0;
+                  return (
+                    <div key={e.id}
+                      onClick={() => { if (isDayWise) { setSelectedMonth(e.id); setShowAddDay(false); } else { setSelectedNonDayMonth(e.id); } }}
+                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: "pointer", borderTop: "3px solid #4da6ff", position: "relative" }}
+                      onMouseEnter={ev => { ev.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; }}
+                      onMouseLeave={ev => ev.currentTarget.style.boxShadow = "none"}>
+                      {/* Delete btn */}
+                      <button onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
+                        style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                      {/* Folder icon + name */}
+                      <div style={{ fontSize: 28, marginBottom: 4 }}>{isDayWise ? "📁" : "📋"}</div>
+                      <div style={{ fontWeight: 700, fontSize: 18, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{e.month}</div>
+
+                      {isDayWise ? (
+                        <>
+                          {/* Day-wise: show price pill + gross summary */}
+                          <div style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", display: "inline-block", marginBottom: 8, fontWeight: 500 }}>
+                            ₹{e.price ? fmt(e.price) : "—"} / unit
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(gross)}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Spend</span>
+                              <span style={{ color: "#e55", fontWeight: 600 }}>{fmtCur(e.spending || 0)}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome || 0)}</span>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
+                            <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
+                              📅 {dayCount} day{dayCount !== 1 ? "s" : ""} recorded
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Non-day-wise: show only Gross & Net — click card to open detail */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, marginTop: 4 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                              <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                              <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(e.netIncome || 0)}</span>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, textAlign: "center" }}>
+                            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>📂 Click to view details</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Chart — below month cards */}
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginTop: 4 }}>
+                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
+                <LineChart entries={yearEntries} />
+              </div>
+              </>}
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── Non-day-wise Month Detail Panel — moved inline above, disabled here ── */}
+      {false && (() => {
+        const entry = bizData.find(e => e.id === selectedNonDayMonth);
+        if (!entry) return null;
+        const gross = entry.grossIncome || 0;
+        const net   = entry.netIncome || 0;
+        const breakdown = entry.qtyBreakdown || (entry.qty != null ? [{ qty: entry.qty, price: entry.price || 0 }] : []);
+
+        // Local edit state via a wrapper component so we can use useState
+        function DetailPanel() {
+          const [editing, setEditing] = React.useState(false);
+          const [editRows, setEditRows] = React.useState(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) })));
+          const [renamingMonth, setRenamingMonth] = React.useState(false);
+          const [editMonth, setEditMonth] = React.useState(entry.month);
+
+          const MONTHS_LIST = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+          function saveMonthRename() {
+            if (!editMonth || editMonth === entry.month) { setRenamingMonth(false); return; }
+            const newMonthIdx = MONTHS_LIST.indexOf(editMonth);
+            updateBizData(d => d.map(en => en.id !== entry.id ? en : {
+              ...en,
+              month: editMonth,
+              monthIndex: newMonthIdx !== -1 ? newMonthIdx : en.monthIndex,
+            }));
+            setRenamingMonth(false);
+          }
+
+          function saveEdits() {
+            const filledRows = editRows.filter(r => r.qty !== "" && r.price !== "");
+            if (filledRows.length === 0) return;
+            const newGross = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
+            const newQty   = filledRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
+            const newBreakdown = filledRows.map(r => ({ qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 }));
+            updateBizData(d => d.map(en => en.id !== entry.id ? en : {
+              ...en,
+              qty: newQty,
+              price: parseFloat(filledRows[0].price) || 0,
+              qtyBreakdown: newBreakdown,
+              grossIncome: newGross,
+              netIncome: newGross - (en.spending || 0),
+            }));
+            setEditing(false);
+          }
+
+          return (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginTop: 4 }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={() => setSelectedNonDayMonth(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
+                  {renamingMonth ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <select value={editMonth} onChange={e => setEditMonth(e.target.value)}
+                        style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
+                        {MONTHS_LIST.map(m => {
+                          const usedByOther = yearEntries.some(e => e.month === m && e.id !== entry.id);
+                          return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
+                        })}
+                      </select>
+                      <button onClick={saveMonthRename}
+                        style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
+                      <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }}
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                      <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }}
+                        title="Change month"
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {!editing ? (
+                    <button onClick={() => { setEditRows(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) }))); setEditing(true); }}
+                      style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                      ✏️ Edit
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditing(false)}
+                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        Cancel
+                      </button>
+                      <button onClick={saveEdits}
+                        style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>
+                        ✓ Save
+                      </button>
+                    </>
+                  )}
+                  <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
+                </div>
+              </div>
+
+              {/* Breakdown */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+
+                {editing ? (
+                  /* ── Edit mode ── */
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {/* Column headers */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Qty (units)</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Price (₹)</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 }}>Subtotal</div>
+                      <div />
+                    </div>
+                    {editRows.map((row, idx) => {
+                      const sub = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
+                      return (
+                        <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
+                          <input type="text" inputMode="decimal" placeholder="e.g. 120"
+                            value={row.qty}
+                            onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], qty: v }; return r; }); }}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
+                            onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }}
+                            onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                          />
+                          <input type="text" inputMode="decimal" placeholder="e.g. 30"
+                            value={row.price}
+                            onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], price: v }; return r; }); }}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }}
+                            onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }}
+                            onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                          />
+                          <div style={{ fontSize: 13, fontWeight: 700, color: sub > 0 ? "#1a6b3c" : "var(--color-text-secondary)", minWidth: 80, textAlign: "right" }}>
+                            {sub > 0 ? `₹${fmt(sub)}` : "—"}
+                          </div>
+                          {editRows.length > 1 ? (
+                            <button onClick={() => setEditRows(p => p.filter((_, i) => i !== idx))}
+                              style={{ background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "4px 9px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>×</button>
+                          ) : <div style={{ width: 28 }} />}
+                        </div>
+                      );
+                    })}
+                    {/* Add row + live gross */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                      <button onClick={() => setEditRows(p => [...p, { qty: "", price: "" }])}
+                        style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                        + Add Row
+                      </button>
+                      {editRows.some(r => r.qty && r.price) && (
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1a6b3c" }}>
+                          Gross = ₹{fmt(editRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* ── View mode ── */
+                  <div style={{ borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 }}>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>Qty (units)</div>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" }}>Price (₹)</div>
+                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" }}>Subtotal</div>
+                      {breakdown.map((row, idx) => (
+                        <React.Fragment key={idx}>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" }}>units</span></div>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
+                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty * row.price)}</div>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Gross / Spend / Net */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 }}>
+                  <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Gross Income</span>
+                  <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" }}>
+                  <span style={{ color: "var(--color-text-secondary)" }}>Spend (₹)</span>
+                  <input
+                    type="text" inputMode="decimal"
+                    key={`detail-spend-${entry.id}-${entry.spending}`}
+                    defaultValue={entry.spending != null ? String(entry.spending) : ""}
+                    placeholder="0"
+                    onBlur={ev => {
+                      const spending = ev.target.value.trim() === "" ? 0 : parseFloat(ev.target.value.trim());
+                      const netIncome = (entry.grossIncome || 0) - spending;
+                      updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, spending, netIncome }));
+                    }}
+                    style={{ width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
+                    onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
+                    onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                  />
+                </div>
+                {/* Bill Attachment Section */}
+                <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
+                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                    <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
+                  </div>
+                  {(() => {
+                    const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
+                    return (
+                      <>
+                        {bills.length > 0 && (
+                          <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
+                            {bills.map((bill,idx) => (
+                              <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
+                                <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
+                                  <span>📄</span>
+                                  <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
+                                </div>
+                                <div style={{ display:"flex",gap:4,flexShrink:0 }}>
+                                  <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                    style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
+                                    View
+                                  </button>
+                                  <button onClick={() => {
+                                    setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                  }}
+                                    style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
+                                    ×
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          id={`bill-upload-detail-${entry.id}`}
+                          accept=".pdf,.jpg,.jpeg,.png,.webp"
+                          style={{ display:"none" }}
+                          onChange={async (ev) => {
+                            const file = ev.target.files?.[0];
+                            if (!file) return;
+                            
+                            const driveContext = React.useContext(DriveContext);
+                            if (!driveContext?.uploadFileToDrive) {
+                              alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                              return;
+                            }
+
+                            try {
+                              const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${entry.month}`);
+                              if (result?.id && result?.webViewLink) {
+                                const newBill = {
+                                  monthId: entry.id,
+                                  fileName: file.name,
+                                  fileUrl: result.webViewLink,
+                                  fileId: result.id,
+                                  uploadDate: new Date().toISOString()
+                                };
+                                setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                                alert("Bill uploaded successfully!");
+                              }
+                            } catch (err) {
+                              console.error("Upload failed:", err);
+                              alert("Failed to upload bill. Please try again.");
+                            }
+                            ev.target.value = "";
+                          }}
+                        />
+                        <label htmlFor={`bill-upload-detail-${entry.id}`}
+                          style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
+                          <span>📎</span>
+                          <span>Attach Bill</span>
+                        </label>
+                      </>
+                    );
+                  })()}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
+                  <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
+                  <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return <DetailPanel key={entry.id} />;
+      })()}
+
+      {/* ── LEVEL 3: Day entries inside a month (Day-wise mode only) ── */}
+      {selectedMonth && activeMonthEntry && isDayWise && (() => {
+        // Dynamic quantity columns — stored as activeMonthEntry.qtyCols = [{id, label}]
+        // Each day stores qtyVals: { colId: number }
+        // Legacy qty1/qty2/quantity fields are migrated transparently on read
+        const qtyCols = activeMonthEntry.qtyCols && activeMonthEntry.qtyCols.length > 0
+          ? activeMonthEntry.qtyCols
+          : [{ id: "qty1", label: "Qty 1" }, { id: "qty2", label: "Qty 2" }];
+
+        function getColVal(day, colId) {
+          if (day.qtyVals && day.qtyVals[colId] != null) return day.qtyVals[colId];
+          // Legacy fallback
+          if (colId === "qty1") return day.qty1 != null ? day.qty1 : (day.qty2 == null && day.quantity != null ? day.quantity : null);
+          if (colId === "qty2") return day.qty2 ?? null;
+          return null;
+        }
+
+        function getTotalQty(day) {
+          if (qtyCols.length === 0) return null;
+          const vals = qtyCols.map(c => getColVal(day, c.id));
+          if (vals.every(v => v == null)) return null;
+          return vals.reduce((s, v) => s + (v || 0), 0);
+        }
+
+        function updateColVal(dayId, colId, valStr) {
+          const val = valStr === "" || valStr == null ? null : parseFloat(valStr);
+          updateBizData(d => d.map(e => {
+            if (e.id !== selectedMonth) return e;
+            const price = e.price || 0;
+            const cols = e.qtyCols && e.qtyCols.length > 0 ? e.qtyCols : [{ id: "qty1", label: "Qty 1" }, { id: "qty2", label: "Qty 2" }];
+            const days = (e.days || []).map(day => {
+              if (day.id !== dayId) return day;
+              const newVals = { ...(day.qtyVals || {}), [colId]: val };
+              // Also migrate legacy fields into qtyVals on first edit
+              if (!day.qtyVals) {
+                if (day.qty1 != null && !newVals["qty1"]) newVals["qty1"] = day.qty1;
+                if (day.qty2 != null && !newVals["qty2"]) newVals["qty2"] = day.qty2;
+              }
+              const totalQty = cols.map(c => newVals[c.id]).every(v => v == null) ? null : cols.reduce((s, c) => s + (newVals[c.id] || 0), 0);
+              const gross = totalQty != null ? totalQty * price : 0;
+              return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
+            });
+            const cG = days.reduce((s,d)=>s+d.grossIncome,0);
+            return { ...e, days, grossIncome: cG, netIncome: cG - (e.spending || 0) };
+          }));
+        }
+
+        function addQtyCol() {
+          const newId = "qty_" + Date.now();
+          const newLabel = "Qty " + (qtyCols.length + 1);
+          const newCols = [...qtyCols, { id: newId, label: newLabel }];
+          updateBizData(d => d.map(e => e.id !== selectedMonth ? e : { ...e, qtyCols: newCols }));
+        }
+
+        function removeQtyCol(colId) {
+          if (qtyCols.length <= 1) return;
+          const newCols = qtyCols.filter(c => c.id !== colId);
+          updateBizData(d => d.map(e => {
+            if (e.id !== selectedMonth) return e;
+            const price = e.price || 0;
+            const days = (e.days || []).map(day => {
+              const newVals = { ...(day.qtyVals || {}) };
+              delete newVals[colId];
+              const totalQty = newCols.map(c => newVals[c.id]).every(v => v == null) ? null : newCols.reduce((s,c)=>s+(newVals[c.id]||0),0);
+              const gross = totalQty != null ? totalQty * price : 0;
+              return { ...day, qtyVals: newVals, quantity: totalQty, grossIncome: gross, netIncome: gross };
+            });
+            const rG = days.reduce((s,d)=>s+d.grossIncome,0);
+            return { ...e, qtyCols: newCols, days, grossIncome: rG, netIncome: rG - (e.spending || 0) };
+          }));
+        }
+
+        function renameQtyCol(colId, newLabel) {
+          if (!newLabel.trim()) return;
+          updateBizData(d => d.map(e => e.id !== selectedMonth ? e : {
+            ...e, qtyCols: (e.qtyCols || qtyCols).map(c => c.id === colId ? { ...c, label: newLabel.trim() } : c)
+          }));
+        }
+
+        const filledDays = dayEntries.filter(d => getTotalQty(d) != null);
+        const totalQtyAll = filledDays.reduce((s,d) => s + (getTotalQty(d) || 0), 0);
+        const totalGross  = filledDays.reduce((s,d) => s + d.grossIncome, 0);
+        const qtyInputStyle = (has) => ({ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: has ? 600 : 400, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: has ? "#f0faf5" : "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" });
+
+        return (
+          <>
+            {/* Price editor card */}
+            <PriceEditor monthEntry={activeMonthEntry} onSave={newPrice => {
+              updateBizData(d => d.map(e => {
+                if (e.id !== selectedMonth) return e;
+                const days = (e.days || []).map(d => { const tq = d.quantity != null ? d.quantity : 0; const gross = tq * newPrice; return { ...d, grossIncome: gross, netIncome: gross }; });
+                const newGross = days.reduce((s,d)=>s+d.grossIncome,0);
+                const spending = e.spending || 0;
+                return { ...e, price: newPrice, days, grossIncome: newGross, netIncome: newGross - spending };
+              }));
+            }} />
+
+            {/* Summary stat cards */}
+            {filledDays.length > 0 && (() => {
+              const spending = activeMonthEntry.spending || 0;
+              const netIncome = totalGross - spending;
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
+                  {[
+                    { label: "Days Filled",   val: `${filledDays.length} / ${dayEntries.length}`, color: "#f0a020" },
+                    { label: "Total Quantity", val: fmt(totalQtyAll) + " units",                   color: "#9b59b6" },
+                    { label: "Gross Income",   val: fmtCur(totalGross),                            color: "#1a6b3c" },
+                    { label: "Spending",       val: fmtCur(spending),                              color: "#e55",   editable: true },
+                    { label: "Net Income",     val: fmtCur(netIncome),                             color: "#4da6ff" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: c.label === "Spending" ? "0.5px solid #fca5a5" : "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      {c.editable ? (
+                        <input
+                          type="text" inputMode="decimal"
+                          key={`spending-card-${activeMonthEntry.id}-${activeMonthEntry.spending}`}
+                          defaultValue={spending > 0 ? String(spending) : ""}
+                          placeholder="0"
+                          onBlur={e => {
+                            const s = e.target.value.trim() === "" ? 0 : parseFloat(e.target.value.trim());
+                            const net = totalGross - s;
+                            updateBizData(d => d.map(en => en.id !== selectedMonth ? en : { ...en, spending: s, netIncome: net }));
+                          }}
+                          style={{ fontSize: 18, fontWeight: 600, color: "#e55", border: "none", background: "transparent", outline: "none", width: "100%", padding: 0 }}
+                          onFocus={e => { e.target.style.borderBottom = "1.5px solid #e55"; }}
+                          onBlurCapture={e => { e.target.style.borderBottom = "none"; }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Bill Attachment Section for Day-wise Mode */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+                <span style={{fontWeight:500,fontSize:14}}>📎 Bill Attachments</span>
+              </div>
+              {(() => {
+                const bills = (data.billAttachments || []).filter(b => b.monthId === activeMonthEntry.id);
+                return (
+                  <>
+                    {bills.length > 0 && (
+                      <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:10 }}>
+                        {bills.map((bill,idx) => (
+                          <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"8px 12px",borderRadius:8,fontSize:12 }}>
+                            <div style={{ display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0 }}>
+                              <span style={{fontSize:16}}>📄</span>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</div>
+                                <div style={{ fontSize:10,color:"var(--color-text-secondary)",marginTop:2 }}>
+                                  {new Date(bill.uploadDate).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display:"flex",gap:6,flexShrink:0 }}>
+                              <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:500 }}>
+                                View
+                              </button>
+                              <button onClick={() => {
+                                setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                              }}
+                                style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600 }}>
+                                ×
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      id={`bill-upload-daywise-${activeMonthEntry.id}`}
+                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      style={{ display:"none" }}
+                      onChange={async (ev) => {
+                        const file = ev.target.files?.[0];
+                        if (!file) return;
+                        
+                        const driveContext = React.useContext(DriveContext);
+                        if (!driveContext?.uploadFileToDrive) {
+                          alert("Google Drive not connected. Please connect Google Drive to upload bills.");
+                          return;
+                        }
+
+                        try {
+                          const result = await driveContext.uploadFileToDrive(file, `FinTrack_Bills/${selectedBusiness.name}/${selectedYear}/${activeMonthEntry.month}`);
+                          if (result?.id && result?.webViewLink) {
+                            const newBill = {
+                              monthId: activeMonthEntry.id,
+                              fileName: file.name,
+                              fileUrl: result.webViewLink,
+                              fileId: result.id,
+                              uploadDate: new Date().toISOString()
+                            };
+                            setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
+                            alert("Bill uploaded successfully!");
+                          }
+                        } catch (err) {
+                          console.error("Upload failed:", err);
+                          alert("Failed to upload bill. Please try again.");
+                        }
+                        ev.target.value = "";
+                      }}
+                    />
+                    <label htmlFor={`bill-upload-daywise-${activeMonthEntry.id}`}
+                      style={{ display:"inline-flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500 }}>
+                      <span>📎</span>
+                      <span>Attach Bill</span>
+                    </label>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Inline editable daily table */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+              {/* Table header bar */}
+              <div style={{ padding: "0.75rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 500, fontSize: 15 }}>Daily Quantities — {activeMonthEntry.month} {selectedYear}</span>
+                {activeMonthEntry.price
+                  ? <span style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>💰 ₹{fmt(activeMonthEntry.price)}/unit</span>
+                  : <span style={{ fontSize: 11, color: "#e55", background: "#fff0f0", borderRadius: 6, padding: "2px 8px" }}>⚠ Set a price above first</span>}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={addQtyCol}
+                    style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #1a6b3c", background: "#e8f5ee", color: "#1a6b3c", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                    + Add Column
+                  </button>
+                  {qtyCols.length > 1 && (
+                    <button onClick={() => removeQtyCol(qtyCols[qtyCols.length - 1].id)}
+                      style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #e55", background: "#fff0f0", color: "#e55", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                      − Remove Last
+                    </button>
+                  )}
+                </div>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "var(--color-background-secondary)" }}>
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Date</th>
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Day</th>
+                    {qtyCols.map((col, ci) => (
+                      <th key={col.id} style={{ padding: "4px 8px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, minWidth: 90 }}>
+                        <input
+                          defaultValue={col.label}
+                          onBlur={e => renameQtyCol(col.id, e.target.value)}
+                          style={{ border: "none", background: "transparent", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", width: "100%", outline: "none", cursor: "text", padding: "2px 4px", borderRadius: 4 }}
+                          onFocus={e => { e.target.style.background = "var(--color-background-primary)"; e.target.style.border = "1px solid var(--color-border-secondary)"; }}
+                          onBlurCapture={e => { e.target.style.background = "transparent"; e.target.style.border = "none"; }}
+                          title="Click to rename"
+                        />
+                      </th>
+                    ))}
+                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Total Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dayEntries.map((d) => {
+                    const dateObj = new Date(d.date + "T00:00:00");
+                    const dayName = dateObj.toLocaleDateString("en-IN", { weekday: "short" });
+                    const dateStr = dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+                    const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                    const totalQtyVal = getTotalQty(d);
+                    const hasSomeQty = totalQtyVal != null;
+                    return (
+                      <tr key={d.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: isWeekend ? "var(--color-background-secondary)" : "transparent" }}>
+                        <td style={{ padding: "7px 14px", fontWeight: 600, color: isWeekend ? "#9b59b6" : "var(--color-text-primary)", whiteSpace: "nowrap" }}>{dateStr}</td>
+                        <td style={{ padding: "7px 14px", color: isWeekend ? "#9b59b6" : "var(--color-text-secondary)", fontSize: 11, width: 40 }}>{dayName}</td>
+                        {qtyCols.map((col, ci) => {
+                          const val = getColVal(d, col.id);
+                          return (
+                            <td key={col.id} style={{ padding: "4px 8px", width: 100 }}>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="—"
+                                key={`${d.id}-${col.id}-${val}`}
+                                defaultValue={val != null ? String(val) : ""}
+                                onBlur={e => updateColVal(d.id, col.id, e.target.value.trim())}
+                                onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); e.target.closest("td")?.nextElementSibling?.querySelector("input")?.focus(); } }}
+                                style={qtyInputStyle(val != null)}
+                                onFocus={e => { e.target.style.border = "1.5px solid #1a6b3c"; e.target.style.background = "#fff"; }}
+                                onBlurCapture={e => { e.target.style.border = "0.5px solid var(--color-border-secondary)"; e.target.style.background = val != null ? "#f0faf5" : "var(--color-background-secondary)"; }}
+                              />
+                            </td>
+                          );
+                        })}
+                        <td style={{ padding: "7px 14px", fontWeight: hasSomeQty ? 700 : 400, color: hasSomeQty ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 13, whiteSpace: "nowrap" }}>
+                          {hasSomeQty ? fmt(totalQtyVal) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {filledDays.length > 0 && (
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
+                      <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
+                      {qtyCols.map(col => (
+                        <td key={col.id} style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                          {fmt(dayEntries.reduce((s,d) => s + (getColVal(d, col.id) || 0), 0))}
+                        </td>
+                      ))}
+                      <td style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                        {fmt(dayEntries.reduce((s,d) => s + (getTotalQty(d) || 0), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </>
+        );
+      })()}
+    </div>
+  );
+}
+// ─── Projects Page ───────────────────────────────────────────────────────────
+const DEFAULT_TASK_TYPES = ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"];
+
+function ProjectsPage({ data, update }) {
+  const projects = data.projectsData || [];
+  const TASK_TYPES = (data.projectTaskTypes && data.projectTaskTypes.length > 0) ? data.projectTaskTypes : DEFAULT_TASK_TYPES;
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [showAddProject, setShowAddProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [renamingProject, setRenamingProject] = useState(null); // { id, value }
+
+  // Left panel tab: "tasks" | "files" | "notes"
+  const [leftTab, setLeftTab] = useState("tasks");
+
+  // Active note for OneNote-style view
+  const [activeNoteId, setActiveNoteId] = useState(null);
+
+  // File preview for project files tab — must be at component level (Rules of Hooks)
+  const [filePreview, setFilePreview] = useState(null);
+
+  // Notes state
+  const [noteContent, setNoteContent] = useState("");
+  const [notesSaved, setNotesSaved] = useState(false);
+
+  // Task form state — taskTypes is now an array
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [taskForm, setTaskForm] = useState({ name: "", types: [], eta: "" });
+
+  // Edit task state
+  const [editTaskId, setEditTaskId] = useState(null);
+  const [editTaskForm, setEditTaskForm] = useState({ name: "", types: [], eta: "" });
+
+  // Day tracking state
+  const [newDayEntry, setNewDayEntry] = useState("");
+  const [dayTrackDate, setDayTrackDate] = useState(new Date().toISOString().split("T")[0]);
+  const [expandedDay, setExpandedDay] = useState(null);
+
+  // Get the full selected project object (always fresh from data)
+  const project = selectedProject ? projects.find(p => p.id === selectedProject) : null;
+  const todos = project ? (project.todos || []) : [];
+  const files = project ? (project.files || []) : [];
+  const dayLog = project ? (project.dayLog || []) : [];
+  const notes = project ? (project.notes || []) : [];
+
+  // Sync noteContent to selected project's notes
+  const prevProjectRef = useRef(null);
+  useEffect(() => {
+    if (selectedProject !== prevProjectRef.current) {
+      prevProjectRef.current = selectedProject;
+      // Don't reset noteContent here – Notes tab manages its own blocks
+    }
+  }, [selectedProject]);
+
+  function addProject() {
+    if (!newProjectName.trim()) return;
+    const id = Date.now();
+    update(p => ({ projectsData: [...(p.projectsData || []), { id, name: newProjectName.trim(), todos: [], files: [], createdAt: new Date().toISOString() }] }));
+    setNewProjectName("");
+    setShowAddProject(false);
+    setSelectedProject(id);
+  }
+
+  function deleteProject(id) {
+    if (!confirm("Delete this project and all its data?")) return;
+    update(p => ({ projectsData: (p.projectsData || []).filter(pr => pr.id !== id) }));
+    if (selectedProject === id) setSelectedProject(null);
+  }
+  function renameProject(id, newName) {
+    const n = newName.trim(); if (!n) return;
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === id ? { ...pr, name: n } : pr) }));
+  }
+
+  function addTask() {
+    if (!taskForm.name.trim() || !project) return;
+    const todo = {
+      id: Date.now(),
+      text: taskForm.name.trim(),
+      taskTypes: taskForm.types.length > 0 ? taskForm.types : [],
+      taskType: taskForm.types.length === 1 ? taskForm.types[0] : (taskForm.types.length > 1 ? taskForm.types.join(", ") : ""),
+      completedTypes: [], // tracks which subtypes are done
+      eta: taskForm.eta,
+      done: false,
+      createdAt: new Date().toISOString(),
+    };
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id ? { ...pr, todos: [...(pr.todos || []), todo] } : pr) }));
+    setTaskForm({ name: "", types: [], eta: "" });
+    setShowAddTask(false);
+  }
+
+  function toggleTodo(todoId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).map(t => t.id === todoId ? { ...t, done: !t.done } : t) }
+      : pr
+    )}));
+  }
+
+  function deleteTodo(todoId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).filter(t => t.id !== todoId) }
+      : pr
+    )}));
+  }
+
+  function startEditTask(t) {
+    setEditTaskId(t.id);
+    // Support both old taskType (string) and new taskTypes (array)
+    const types = t.taskTypes && t.taskTypes.length > 0
+      ? t.taskTypes
+      : (t.taskType ? [t.taskType] : []);
+    setEditTaskForm({ name: t.text, types, eta: t.eta || "" });
+  }
+
+  function saveEditTask() {
+    if (!editTaskForm.name.trim()) return;
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).map(t => t.id === editTaskId ? {
+          ...t,
+          text: editTaskForm.name.trim(),
+          taskTypes: editTaskForm.types,
+          taskType: editTaskForm.types.length === 1 ? editTaskForm.types[0] : (editTaskForm.types.join(", ")),
+          completedTypes: (t.completedTypes || []).filter(ct => editTaskForm.types.includes(ct)), // remove any no longer valid
+          eta: editTaskForm.eta
+        } : t) }
+      : pr
+    )}));
+    setEditTaskId(null);
+  }
+
+  function toggleTaskType(todoId, typeName) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, todos: (pr.todos || []).map(t => {
+          if (t.id !== todoId) return t;
+          const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+          const completed = t.completedTypes || [];
+          const newCompleted = completed.includes(typeName)
+            ? completed.filter(x => x !== typeName)
+            : [...completed, typeName];
+          // Auto-mark task as done when all types are completed
+          const allDone = types.length > 0 && types.every(tp => newCompleted.includes(tp));
+          return { ...t, completedTypes: newCompleted, done: allDone };
+        }) }
+      : pr
+    )}));
+  }
+
+  const drive = useDrive();
+  async function handleFileUpload(e) {
+    const fileList = Array.from(e.target.files);
+    if (!fileList.length || !project) return;
+    for (const file of fileList) {
+      let fileEntry;
+      if (drive?.connected) {
+        const result = await drive.uploadToDrive(file, null);
+        fileEntry = result
+          ? { id: result.id, name: result.name, type: result.mimeType, size: result.size, previewUrl: result.previewUrl, webViewLink: result.webViewLink, downloadUrl: result.downloadUrl, source: "gdrive", uploadedAt: new Date().toISOString() }
+          : null;
+      }
+      if (!fileEntry) {
+        // fallback local
+        const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+        fileEntry = { id: Date.now() + Math.random(), name: file.name, type: file.type, size: file.size, dataUrl, source: "local", uploadedAt: new Date().toISOString() };
+      }
+      update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+        ? { ...pr, files: [...(pr.files || []), fileEntry] }
+        : pr
+      )}));
+    }
+    e.target.value = "";
+  }
+
+  function deleteFile(fileId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, files: (pr.files || []).filter(f => f.id !== fileId) }
+      : pr
+    )}));
+  }
+
+  function addDayEntry() {
+    if (!newDayEntry.trim() || !project) return;
+    const entry = { id: Date.now(), text: newDayEntry.trim(), date: dayTrackDate, done: false, createdAt: new Date().toISOString() };
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, dayLog: [...(pr.dayLog || []), entry] }
+      : pr
+    )}));
+    setNewDayEntry("");
+  }
+
+  function toggleDayEntry(entryId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, dayLog: (pr.dayLog || []).map(e => e.id === entryId ? { ...e, done: !e.done } : e) }
+      : pr
+    )}));
+  }
+
+  function deleteDayEntry(entryId) {
+    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+      ? { ...pr, dayLog: (pr.dayLog || []).filter(e => e.id !== entryId) }
+      : pr
+    )}));
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function fileIcon(type) {
+    if (type.startsWith("image/")) return "🖼️";
+    if (type === "application/pdf") return "📄";
+    if (type.includes("word") || type.includes("document")) return "📝";
+    if (type.includes("sheet") || type.includes("excel") || type.includes("csv")) return "📊";
+    if (type.includes("zip") || type.includes("rar")) return "🗜️";
+    return "📎";
+  }
+
+  function etaColor(etaStr) {
+    if (!etaStr) return "var(--color-text-secondary)";
+    const eta = new Date(etaStr);
+    const now = new Date();
+    const diff = (eta - now) / (1000 * 60 * 60 * 24);
+    if (diff < 0) return "#d44";
+    if (diff <= 2) return "#f0a020";
+    return "#1a6b3c";
+  }
+
+  function formatEta(etaStr) {
+    if (!etaStr) return null;
+    const d = new Date(etaStr);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  const doneTodos = todos.filter(t => t.done).length;
+  const pendingTodos = todos.filter(t => !t.done);
+  const completedTodos = todos.filter(t => t.done);
+
+  // Subtask-level progress: count completed types across all tasks
+  const totalSubtasks = todos.reduce((s, t) => {
+    const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+    return s + (types.length > 0 ? types.length : 1);
+  }, 0);
+  const doneSubtasks = todos.reduce((s, t) => {
+    const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+    if (types.length === 0) return s + (t.done ? 1 : 0);
+    const completed = t.completedTypes || [];
+    return s + completed.filter(ct => types.includes(ct)).length;
+  }, 0);
+  const subtaskPctOverall = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
+
+  // Tab styles helper
+  const tabStyle = (active) => ({
+    padding: "7px 16px", background: "none", border: "none", cursor: "pointer",
+    fontSize: 13, fontWeight: active ? 500 : 400,
+    color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+    borderBottom: active ? "2px solid #1a6b3c" : "2px solid transparent",
+    marginBottom: -1, whiteSpace: "nowrap",
+  });
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {project && (
+            <button onClick={() => { setSelectedProject(null); setShowAddTask(false); setEditTaskId(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+              ← Back
+            </button>
+          )}
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
+            {project
+              ? (renamingProject?.id === project.id
+                  ? <input autoFocus value={renamingProject.value}
+                      onChange={e => setRenamingProject(p => ({ ...p, value: e.target.value }))}
+                      onKeyDown={e => { if (e.key === "Enter") { renameProject(project.id, renamingProject.value); setRenamingProject(null); } if (e.key === "Escape") setRenamingProject(null); }}
+                      onBlur={() => { renameProject(project.id, renamingProject.value); setRenamingProject(null); }}
+                      style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 }} />
+                  : <><span>{project.name}</span><button onClick={() => setRenamingProject({ id: project.id, value: project.name })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }}>✏️</button></>
+                )
+              : "Projects"}
+          </h1>
+        </div>
+        {!project && (
+          <button onClick={() => setShowAddProject(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            {showAddProject ? "✕ Cancel" : "+ New Project"}
+          </button>
+        )}
+      </div>
+
+      {/* Add project form */}
+      {showAddProject && !project && (
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Project Name</label>
+            <input
+              placeholder="e.g. Website Redesign, Q3 Campaign…"
+              value={newProjectName}
+              onChange={e => setNewProjectName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addProject()}
+              style={{ width: "100%", boxSizing: "border-box" }}
+              autoFocus
+            />
+          </div>
+          <button onClick={addProject} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>Create Project</button>
+        </div>
+      )}
+
+      {/* ── PROJECT LIST (overview) ── */}
+      {!project && (
+        <>
+          {projects.length === 0 ? (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+              No projects yet. Click "+ New Project" to create your first one.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+              {projects.map(pr => {
+                const done = (pr.todos || []).filter(t => t.done).length;
+                const total = (pr.todos || []).length;
+                // Subtask-level progress
+                const prTotalSub = (pr.todos || []).reduce((s, t) => {
+                  const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+                  return s + (types.length > 0 ? types.length : 1);
+                }, 0);
+                const prDoneSub = (pr.todos || []).reduce((s, t) => {
+                  const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+                  if (types.length === 0) return s + (t.done ? 1 : 0);
+                  const completed = t.completedTypes || [];
+                  return s + completed.filter(ct => types.includes(ct)).length;
+                }, 0);
+                const pct = prTotalSub > 0 ? Math.round((prDoneSub / prTotalSub) * 100) : 0;
+                return (
+                  <div key={pr.id}
+                    onClick={() => { if (!renamingProject) setSelectedProject(pr.id); }}
+                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "1.2rem", cursor: renamingProject?.id === pr.id ? "default" : "pointer", position: "relative", transition: "box-shadow 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+                  >
+                    <button onClick={ev => { ev.stopPropagation(); deleteProject(pr.id); }}
+                      style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>🗑</button>
+                    <button onClick={ev => { ev.stopPropagation(); setRenamingProject({ id: pr.id, value: pr.name }); }}
+                      style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.55, padding: 2 }} title="Rename">✏️</button>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+                    {renamingProject?.id === pr.id ? (
+                      <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
+                        <input autoFocus value={renamingProject.value}
+                          onChange={e => setRenamingProject(p => ({ ...p, value: e.target.value }))}
+                          onKeyDown={e => { if (e.key === "Enter") { renameProject(pr.id, renamingProject.value); setRenamingProject(null); } if (e.key === "Escape") setRenamingProject(null); }}
+                          onBlur={() => { renameProject(pr.id, renamingProject.value); setRenamingProject(null); }}
+                          style={{ width: "100%", boxSizing: "border-box", fontSize: 15, fontWeight: 600, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)" }} />
+                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 }}>{pr.name}</div>
+                    )}
+                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
+                      {total} task{total !== 1 ? "s" : ""} · {(pr.files || []).length} file{(pr.files || []).length !== 1 ? "s" : ""}
+                    </div>
+                    {total > 0 && (
+                      <>
+                        <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 4 }}>
+                          <div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 4, transition: "width 0.4s" }} />
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{done}/{total} done · {pct}%</div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── PROJECT DETAIL ── */}
+      {project && (
+        <div style={{ display: "grid", gridTemplateColumns: leftTab === "notes" ? "1fr" : "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start", ...(leftTab === "notes" ? { height: "calc(100vh - 140px)" } : {}) }}>
+
+          {/* LEFT PANEL — Tabbed: Tasks | Files | Notes */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}), minWidth: 0 }}>
+
+            {/* Tab bar */}
+            <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px", flexShrink: 0 }}>
+              <button style={tabStyle(leftTab === "tasks")} onClick={() => setLeftTab("tasks")}>
+                ✅ Tasks {pendingTodos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({pendingTodos.length})</span>}
+              </button>
+              <button style={tabStyle(leftTab === "completed")} onClick={() => setLeftTab("completed")}>
+                ☑️ Completed {completedTodos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({completedTodos.length})</span>}
+              </button>
+              <button style={tabStyle(leftTab === "files")} onClick={() => setLeftTab("files")}>
+                📎 Files {files.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({files.length})</span>}
+              </button>
+              <button style={tabStyle(leftTab === "notes")} onClick={() => setLeftTab("notes")}>
+                📝 Notes {notes.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({notes.length})</span>}
+              </button>
+            </div>
+
+            {/* ── TASKS TAB ── */}
+            {leftTab === "tasks" && (
+              <div>
+                {/* Add Task button */}
+                <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  {!showAddTask ? (
+                    <button onClick={() => setShowAddTask(true)} style={{ width: "100%", background: "none", border: "1px dashed var(--color-border-secondary)", borderRadius: 8, padding: "7px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "left" }}>
+                      + Add task…
+                    </button>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Task Name *</label>
+                        <input
+                          placeholder="e.g. Design homepage mockup"
+                          value={taskForm.name}
+                          onChange={e => setTaskForm(f => ({ ...f, name: e.target.value }))}
+                          style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }}
+                          autoFocus
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 5 }}>
+                          Task Types <span style={{ color: "var(--color-text-secondary)", fontWeight: 400 }}>(select one or more)</span>
+                          {taskForm.types.length > 0 && <span style={{ marginLeft: 6, color: "#1a6b3c", fontWeight: 600 }}>· {taskForm.types.length} selected · {Math.round(100/taskForm.types.length)}% each</span>}
+                        </label>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {TASK_TYPES.map(t => {
+                            const sel = taskForm.types.includes(t);
+                            return (
+                              <button key={t} type="button"
+                                onClick={() => setTaskForm(f => ({ ...f, types: sel ? f.types.filter(x => x !== t) : [...f.types, t] }))}
+                                style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, border: sel ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: sel ? "#e8f5ee" : "transparent", color: sel ? "#1a6b3c" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: sel ? 600 : 400, transition: "all 0.12s" }}
+                              >{t}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>ETA (Due Date)</label>
+                        <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button onClick={() => { setShowAddTask(false); setTaskForm({ name: "", types: [], eta: "" }); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                        <button onClick={addTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Add Task</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Deadlines */}
+                {todos.length === 0 ? (
+                  <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                    No tasks yet. Click "+ Add task…" to get started.
+                  </div>
+                ) : (
+                  <div>
+                    {pendingTodos.length > 0 && (
+                      <>
+                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>DEADLINES ({pendingTodos.length})</div>
+                    {pendingTodos
+                      .slice()
+                      .sort((a, b) => {
+                        if (!a.eta && !b.eta) return 0;
+                        if (!a.eta) return 1;
+                        if (!b.eta) return -1;
+                        return new Date(a.eta) - new Date(b.eta);
+                      })
+                      .map(t => (
+                        <div key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                          {editTaskId === t.id ? (
+                            <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7, background: "var(--color-background-secondary)" }}>
+                              <input value={editTaskForm.name} onChange={e => setEditTaskForm(f => ({ ...f, name: e.target.value }))} placeholder="Task name" style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }} autoFocus />
+                              <div>
+                                <label style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>
+                                  Task Types
+                                  {editTaskForm.types.length > 0 && <span style={{ marginLeft: 5, color: "#1a6b3c", fontWeight: 600 }}>· {editTaskForm.types.length} · {Math.round(100/editTaskForm.types.length)}% each</span>}
+                                </label>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                  {TASK_TYPES.map(tt => {
+                                    const sel = editTaskForm.types.includes(tt);
+                                    return (
+                                      <button key={tt} type="button"
+                                        onClick={() => setEditTaskForm(f => ({ ...f, types: sel ? f.types.filter(x => x !== tt) : [...f.types, tt] }))}
+                                        style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, border: sel ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: sel ? "#e8f5ee" : "#fff", color: sel ? "#1a6b3c" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: sel ? 600 : 400 }}
+                                      >{tt}</button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                <button onClick={() => setEditTaskId(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+                                <button onClick={saveEditTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Save</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px" }}>
+                              <button
+                                onClick={() => toggleTodo(t.id)}
+                                style={{ width: 18, height: 18, borderRadius: 4, border: t.done ? "1.5px solid #1a6b3c" : "1.5px solid var(--color-border-secondary)", background: t.done ? "#e8f5ee" : "transparent", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}
+                              >{t.done ? "✓" : ""}</button>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, wordBreak: "break-word" }}>{t.text}</div>
+                                {/* Task types — clickable to mark each as done */}
+                                {(() => {
+                                  const types = t.taskTypes && t.taskTypes.length > 0
+                                    ? t.taskTypes
+                                    : (t.taskType ? [t.taskType] : []);
+                                  if (types.length === 0) return null;
+                                  const completedTypes = t.completedTypes || [];
+                                  const doneCnt = completedTypes.filter(ct => types.includes(ct)).length;
+                                  const subtaskPct = types.length > 0 ? Math.round((doneCnt / types.length) * 100) : 0;
+                                  return (
+                                    <div style={{ marginBottom: 6 }}>
+                                      {/* Segmented bar showing completion per type */}
+                                      <div style={{ display: "flex", borderRadius: 4, overflow: "hidden", height: 5, marginBottom: 5 }}>
+                                        {types.map((tp, i) => {
+                                          const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                          const isDone = completedTypes.includes(tp);
+                                          return <div key={tp} style={{ flex: 1, background: isDone ? colors[i % colors.length] : colors[i % colors.length] + "33" }} />;
+                                        })}
+                                      </div>
+                                      {/* Clickable type chips */}
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                        {types.map((tp, i) => {
+                                          const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                          const isDone = completedTypes.includes(tp);
+                                          const pctEach = Math.round(100 / types.length);
+                                          return (
+                                            <button key={tp} onClick={() => toggleTaskType(t.id, tp)}
+                                              title={isDone ? "Click to unmark" : "Click to mark done"}
+                                              style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10,
+                                                background: isDone ? colors[i % colors.length] : colors[i % colors.length] + "18",
+                                                border: `0.5px solid ${colors[i % colors.length]}${isDone ? "" : "44"}`,
+                                                color: isDone ? "#fff" : colors[i % colors.length],
+                                                fontWeight: 600, cursor: "pointer",
+                                                display: "inline-flex", alignItems: "center", gap: 3,
+                                                textDecoration: isDone ? "line-through" : "none", opacity: isDone ? 0.85 : 1 }}>
+                                              {isDone ? "✓ " : ""}{tp} · {pctEach}%
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                      {/* Subtask progress bar */}
+                                      <div style={{ marginTop: 5 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
+                                          <span>Subtask Progress</span>
+                                          <span style={{ fontWeight: 600, color: subtaskPct === 100 ? "#1a6b3c" : "var(--color-text-secondary)" }}>{doneCnt}/{types.length} · {subtaskPct}%</span>
+                                        </div>
+                                        <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+                                          <div style={{ width: subtaskPct + "%", height: "100%", background: subtaskPct === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 3, transition: "width 0.4s" }} />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: t.eta ? 6 : 0 }}>
+                                  {t.eta
+                                    ? <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>
+                                    : <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>
+                                  }
+                                </div>
+                                {/* Time timeline progress bar — only shown when ETA is set */}
+                                {t.eta && (() => {
+                                  const created = new Date(t.createdAt || t.id);
+                                  const due = new Date(t.eta);
+                                  const now = new Date();
+                                  const total = due - created;
+                                  const elapsed = now - created;
+                                  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((elapsed / total) * 100))) : 0;
+                                  const barColor = pct >= 90 ? "#d44" : pct >= 70 ? "#f0a020" : "#4da6ff";
+                                  return (
+                                    <div>
+                                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
+                                        <span>Time Elapsed</span>
+                                        <span style={{ color: barColor, fontWeight: 600 }}>{pct}%</span>
+                                      </div>
+                                      <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+                                        <div style={{ width: pct + "%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.4s" }} />
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                                <button onClick={() => startEditTask(t)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "2px 4px" }} title="Edit">✏️</button>
+                                <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    }
+                      </>
+                    )}
+
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── COMPLETED TAB ── */}
+            {leftTab === "completed" && (
+              <div>
+                {completedTodos.length === 0 ? (
+                  <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>No completed tasks yet.</div>
+                ) : (
+                  <>
+                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span>✅ COMPLETED ({completedTodos.length})</span>
+                      <span style={{ fontSize: 10, color: "#1a6b3c" }}>↩ to reopen</span>
+                    </div>
+                    {completedTodos.map(t => {
+                      const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
+                      return (
+                        <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+                          <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word", marginBottom: 3 }}>{t.text}</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 2 }}>
+                              {types.map((tp, i) => {
+                                const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
+                                return (
+                                  <span key={tp} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, background: colors[i%colors.length]+"14", color: colors[i%colors.length], fontWeight: 600, opacity: 0.7 }}>{tp} · {Math.round(100/types.length)}%</span>
+                                );
+                              })}
+                              {t.eta && <span style={{ fontSize: 9, color: "var(--color-text-secondary)", opacity: 0.7 }}>📅 {formatEta(t.eta)}</span>}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                            <button onClick={() => toggleTodo(t.id)} style={{ background: "none", border: "0.5px solid #1a6b3c44", borderRadius: 5, cursor: "pointer", fontSize: 10, color: "#1a6b3c", padding: "2px 7px", fontWeight: 500 }} title="Reopen task">↩ Reopen</button>
+                            <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── FILES TAB ── */}
+            {leftTab === "files" && (() => {
+              function fileIcon2(t) { if (!t) return "📄"; if (t.startsWith("image/")) return "🖼"; if (t === "application/pdf") return "📕"; if (t.includes("word")) return "📝"; if (t.includes("sheet") || t.includes("excel") || t.includes("csv")) return "📊"; return "📄"; }
+              function fmtSz(b) { if (!b) return ""; if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; return (b / 1048576).toFixed(1) + " MB"; }
+
+              function ProjectFileRow({ f }) {
+                const [expanded, setExpanded] = React.useState(false);
+                const canPreview = f.dataUrl || f.previewUrl || f.webViewLink;
+                const isImg = f.type?.startsWith("image/") || f.dataUrl?.startsWith("data:image");
+                const isPdf = f.type === "application/pdf" || f.dataUrl?.startsWith("data:application/pdf");
+                return (
+                  <div style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px" }}>
+                      {/* Thumbnail */}
+                      <div onClick={() => canPreview && setExpanded(p => !p)}
+                        style={{ width: 40, height: 40, borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: canPreview ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 22 }}>
+                        {isImg && f.dataUrl
+                          ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : <span>{fileIcon2(f.type)}</span>}
+                      </div>
+                      {/* Name + size */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div onClick={() => canPreview && setExpanded(p => !p)} style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: canPreview ? "pointer" : "default" }}>{f.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "flex", gap: 6, alignItems: "center" }}>
+                          {fmtSz(f.size)}
+                          {f.source === "gdrive" && <span style={{ background: "#dbeafe", color: "#1d4ed8", borderRadius: 3, padding: "0 4px", fontSize: 9 }}>☁ Drive</span>}
+                        </div>
+                      </div>
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                        {canPreview && (
+                          <button onClick={() => setExpanded(p => !p)}
+                            style={{ fontSize: 11, color: expanded ? "#1a6b3c" : "var(--color-text-secondary)", padding: "3px 9px", border: `0.5px solid ${expanded ? "#1a6b3c" : "var(--color-border-secondary)"}`, borderRadius: 6, background: expanded ? "#e8f5ee" : "none", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            {expanded ? "▲ Hide" : "▼ Preview"}
+                          </button>
+                        )}
+                        {f.webViewLink
+                          ? <>
+                              <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6, whiteSpace: "nowrap" }}>☁ Open</a>
+                              {f.downloadUrl && <a href={f.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#1d4ed8", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1d4ed8", borderRadius: 6 }}>⬇ Download</a>}
+                            </>
+                          : f.dataUrl && <a href={f.dataUrl} download={f.name} style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6 }}>⬇</a>}
+                        <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
+                      </div>
+                    </div>
+                    {/* Inline preview panel */}
+                    {expanded && (
+                      <div style={{ background: "var(--color-background-secondary)", padding: 12, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                        {isImg && f.dataUrl
+                          ? <img src={f.dataUrl} alt={f.name} style={{ maxWidth: "100%", maxHeight: 400, objectFit: "contain", borderRadius: 8, display: "block", margin: "0 auto" }} />
+                          : isPdf && f.dataUrl
+                            ? <object data={f.dataUrl} type="application/pdf" style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }}>
+                                <div style={{ textAlign: "center", padding: 28, color: "var(--color-text-secondary)" }}>
+                                  <div style={{ fontSize: 36, marginBottom: 8 }}>📕</div>
+                                  <a href={f.dataUrl} download={f.name} style={{ color: "#1a6b3c", fontWeight: 500 }}>⬇ Download PDF</a>
+                                </div>
+                              </object>
+                            : f.previewUrl
+                              ? <iframe src={f.previewUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} allow="autoplay" />
+                              : f.dataUrl
+                                ? <iframe src={f.dataUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} />
+                                : f.webViewLink
+                                  ? <div style={{ textAlign: "center", padding: 24 }}>
+                                      <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ color: "#1a6b3c", fontWeight: 500 }}>Open in Google Drive ↗</a>
+                                    </div>
+                                  : <div style={{ textAlign: "center", padding: 24, color: "var(--color-text-secondary)", fontSize: 13 }}>No preview available</div>}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div>
+                  <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "flex-end" }}>
+                    <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
+                      + Upload
+                      <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+                    </label>
+                  </div>
+                  {files.length === 0 ? (
+                    <label style={{ display: "block", cursor: "pointer" }}>
+                      <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
+                      <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                        <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
+                        Drop files here or click to upload
+                      </div>
+                    </label>
+                  ) : (
+                    <div>
+                      {files.map(f => <ProjectFileRow key={f.id} f={f} />)}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            {/* ── NOTES TAB — Merged Note + MindMap + Undo/Redo ── */}
+            {leftTab === "notes" && (() => {
+              function makeDefaultMindmap() {
+                return { nodes: [{ id: "root", label: "Central Idea", x: 300, y: 200, isRoot: true, color: "#ede9fe" }], edges: [] };
+              }
+              function addNote() {
+                const note = {
+                  id: Date.now(),
+                  title: "Untitled Note",
+                  content: "",
+                  noteView: "text", // "text" | "map"
+                  mindmap: makeDefaultMindmap(),
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  color: "#ffffff",
+                };
+                update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+                  ? { ...pr, notes: [...(pr.notes || []), note] } : pr
+                )}));
+                setTimeout(() => setActiveNoteId(note.id), 0);
+              }
+              function updateNote(noteId, changes) {
+                update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+                  ? { ...pr, notes: (pr.notes || []).map(n => n.id === noteId ? { ...n, ...changes, updatedAt: new Date().toISOString() } : n) } : pr
+                )}));
+              }
+              function deleteNote(noteId) {
+                update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
+                  ? { ...pr, notes: (pr.notes || []).filter(n => n.id !== noteId) } : pr
+                )}));
+                if (activeNoteId === noteId) setActiveNoteId(null);
+              }
+              const activeNote = notes.find(n => n.id === activeNoteId) || null;
+              const NOTE_COLORS = ["#ffffff", "#fef9c3", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe", "#fee2e2", "#ffedd5"];
+              return (
+                <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                  {/* LEFT sidebar */}
+                  <div style={{ width: 200, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}>
+                    <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>{notes.length} note{notes.length !== 1 ? "s" : ""}</span>
+                      <button onClick={addNote} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>+ New</button>
+                    </div>
+                    <div style={{ flex: 1, overflowY: "auto" }}>
+                      {notes.length === 0 ? (
+                        <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12 }}>
+                          <div style={{ fontSize: 28, marginBottom: 6 }}>📝</div>No notes yet
+                        </div>
+                      ) : notes.map(note => {
+                        const isActive = activeNote && activeNote.id === note.id;
+                        return (
+                          <div key={note.id} onClick={() => setActiveNoteId(note.id)}
+                            style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", background: isActive ? "#e8f5ee" : "transparent", borderLeft: isActive ? "3px solid #1a6b3c" : "3px solid transparent" }}>
+                            <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {note.title || "Untitled"}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* RIGHT — unified editor */}
+                  {activeNote ? (
+                    <MergedNoteEditor
+                      key={activeNote.id}
+                      note={activeNote}
+                      updateNote={updateNote}
+                      deleteNote={deleteNote}
+                      onEsc={() => setActiveNoteId(null)}
+                      NOTE_COLORS={NOTE_COLORS}
+                      makeDefaultMindmap={makeDefaultMindmap}
+                    />
+                  ) : (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", flexDirection: "column", gap: 10 }}>
+                      <div style={{ fontSize: 36 }}>📝</div>
+                      <div style={{ fontSize: 13 }}>Select a note or create one</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* RIGHT — Project summary / stats (hidden when viewing Notes) */}
+          {leftTab !== "notes" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Summary card */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.1rem 1.2rem" }}>
+              <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 12 }}>Project Overview</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 600, color: "#4da6ff" }}>{todos.length}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Total Tasks</div>
+                </div>
+                <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 600, color: "#1a6b3c" }}>{doneTodos}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Completed</div>
+                </div>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 600, color: "var(--color-text-secondary)" }}>{files.length}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Files</div>
+                </div>
+              </div>
+              {todos.length > 0 && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+                    <span>Subtask Progress</span>
+                    <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{doneSubtasks}/{totalSubtasks} · {subtaskPctOverall}%</span>
+                  </div>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 6 }}>
+                    <div style={{ width: subtaskPctOverall + "%", height: "100%", background: subtaskPctOverall === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 6, transition: "width 0.4s" }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+                    <span>Tasks Done</span>
+                    <span>{doneTodos}/{todos.length} ({Math.round(doneTodos / todos.length * 100)}%)</span>
+                  </div>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 4, overflow: "hidden" }}>
+                    <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#b6ddc2", borderRadius: 4, transition: "width 0.4s" }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── WORK LOG card ── */}
+            {(() => {
+              const todayStr = new Date().toISOString().split("T")[0];
+              const grouped = {};
+              dayLog.forEach(e => {
+                const d = e.date || todayStr;
+                if (!grouped[d]) grouped[d] = [];
+                grouped[d].push(e);
+              });
+              const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+              const pastDates = sortedDates.filter(d => d !== todayStr);
+              const todayEntries = grouped[todayStr] || [];
+              const doneTodayCount = todayEntries.filter(e => e.done).length;
+
+              return (
+                <>
+                  {/* ── Card 1: Work Log (today) ── */}
+                  <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                    <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontWeight: 500, fontSize: 14 }}>📋 Work Log</span>
+                      {todayEntries.length > 0 && (
+                        <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{doneTodayCount}/{todayEntries.length} done today</span>
+                      )}
+                    </div>
+                    <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 }}>
+                      <input
+                        placeholder="What did you work on today?"
+                        value={newDayEntry}
+                        onChange={e => setNewDayEntry(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && addDayEntry()}
+                        style={{ flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" }}
+                      />
+                      <button onClick={addDayEntry} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+                    </div>
+                    {todayEntries.length === 0 ? (
+                      <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>No entries for today yet.</div>
+                    ) : (
+                      <div>
+                        {todayEntries.filter(e => !e.done).map(e => (
+                          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                            <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0 }} />
+                            <span style={{ flex: 1, fontSize: 13 }}>{e.text}</span>
+                            <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                          </div>
+                        ))}
+                        {todayEntries.filter(e => e.done).map(e => (
+                          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
+                            <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
+                            <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{e.text}</span>
+                            <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Card 2: History (past days) ── */}
+                  {pastDates.length > 0 && (
+                    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                      <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontWeight: 500, fontSize: 14 }}>🗂 History</span>
+                        <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{pastDates.length} day{pastDates.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                        {pastDates.map(d => {
+                          const entries = grouped[d];
+                          const done = entries.filter(e => e.done).length;
+                          const isExpanded = expandedDay === d;
+                          return (
+                            <div key={d}>
+                              {/* Day row — click to expand */}
+                              <div
+                                onClick={() => setExpandedDay(isExpanded ? null : d)}
+                                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", cursor: "pointer", background: isExpanded ? "#f0f7f3" : "transparent" }}
+                                onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? "#f0f7f3" : "transparent"; }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▶</span>
+                                  <span style={{ fontSize: 13, color: "var(--color-text-primary)", fontWeight: isExpanded ? 600 : 400 }}>
+                                    {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: 11, color: done === entries.length ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: 500 }}>{done}/{entries.length} done</span>
+                              </div>
+                              {/* Expanded entries with delete */}
+                              {isExpanded && (
+                                <div style={{ background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                                  {entries.map(e => (
+                                    <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px 7px 30px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: e.done ? 0.65 : 1 }}>
+                                      <button onClick={() => toggleDayEntry(e.id)} style={{ width: 16, height: 16, borderRadius: 3, border: e.done ? "1.5px solid #1a6b3c" : "1.5px solid var(--color-border-secondary)", background: e.done ? "#e8f5ee" : "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 9 }}>{e.done ? "✓" : ""}</button>
+                                      <span style={{ flex: 1, fontSize: 12, textDecoration: e.done ? "line-through" : "none", color: e.done ? "var(--color-text-secondary)" : "var(--color-text-primary)" }}>{e.text}</span>
+                                      <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px", flexShrink: 0 }}>✕</button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+          )}
+
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── NoteBlock Component (OneNote-style) ─────────────────────────────────────
+function NoteBlock({ note, onUpdate, onDelete, colors }) {
+  const [editing, setEditing] = useState(!note.title && !note.content);
+  const [localTitle, setLocalTitle] = useState(note.title || "");
+  const [localContent, setLocalContent] = useState(note.content || "");
+  const [showColors, setShowColors] = useState(false);
+  const saveTimer = useRef(null);
+
+  function triggerSave(title, content) {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      onUpdate(note.id, { title, content });
+    }, 600);
+  }
+
+  const fmt = (iso) => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div style={{ borderRadius: 10, border: "0.5px solid var(--color-border-secondary)", background: note.color || "#fff", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+      {/* Note header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderBottom: editing ? "0.5px solid var(--color-border-tertiary)" : "none" }}>
+        {editing ? (
+          <input
+            placeholder="Note title…"
+            value={localTitle}
+            onChange={e => { setLocalTitle(e.target.value); triggerSave(e.target.value, localContent); }}
+            style={{ flex: 1, fontSize: 13, fontWeight: 600, border: "none", background: "transparent", outline: "none", color: "var(--color-text-primary)", padding: 0 }}
+            autoFocus={!note.title && !note.content}
+          />
+        ) : (
+          <div onClick={() => setEditing(true)} style={{ flex: 1, fontSize: 13, fontWeight: 600, cursor: "text", color: note.title ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontStyle: note.title ? "normal" : "italic" }}>
+            {note.title || "Untitled note"}
+          </div>
+        )}
+        {/* Color picker */}
+        <div style={{ position: "relative" }}>
+          <button onClick={() => setShowColors(s => !s)} style={{ width: 16, height: 16, borderRadius: "50%", background: note.color || "#fff", border: "1px solid var(--color-border-secondary)", cursor: "pointer", flexShrink: 0 }} title="Note color" />
+          {showColors && (
+            <>
+              <div onClick={() => setShowColors(false)} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
+              <div style={{ position: "absolute", right: 0, top: 22, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 6, zIndex: 100, display: "flex", gap: 5, flexWrap: "wrap", width: 114 }}>
+                {colors.map(c => (
+                  <button key={c} onClick={() => { onUpdate(note.id, { color: c }); setShowColors(false); }}
+                    style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid var(--color-border-secondary)", cursor: "pointer" }} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        {editing ? (
+          <button onClick={() => setEditing(false)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>Done</button>
+        ) : (
+          <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "0 2px" }} title="Edit">✏️</button>
+        )}
+        <button onClick={() => onDelete(note.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>🗑</button>
+      </div>
+      {/* Note body */}
+      {editing ? (
+        <textarea
+          placeholder="Write your note here… supports multiple lines, links, anything."
+          value={localContent}
+          onChange={e => { setLocalContent(e.target.value); triggerSave(localTitle, e.target.value); }}
+          rows={5}
+          style={{ width: "100%", boxSizing: "border-box", border: "none", background: "transparent", resize: "vertical", outline: "none", fontSize: 13, padding: "8px 10px", lineHeight: 1.6, fontFamily: "inherit", color: "var(--color-text-primary)" }}
+        />
+      ) : (
+        note.content ? (
+          <div onClick={() => setEditing(true)} style={{ padding: "8px 10px", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap", cursor: "text", minHeight: 32 }}>{note.content}</div>
+        ) : (
+          <div onClick={() => setEditing(true)} style={{ padding: "8px 10px", fontSize: 12, color: "var(--color-text-secondary)", fontStyle: "italic", cursor: "text" }}>Click to add content…</div>
+        )
+      )}
+      {/* Footer */}
+      {note.updatedAt && (
+        <div style={{ padding: "4px 10px 6px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+          Updated {fmt(note.updatedAt)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Canvas Sticky Note — draggable, editable, deletable ─────────────────────
+function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
+  const [dragging, setDragging] = useState(null);
+  const [hovered, setHovered] = useState(false);
+  const COLORS = ["#fef9c3","#dcfce7","#dbeafe","#fce7f3","#ede9fe","#fee2e2","#ffedd5","#f0fdf4"];
+
+  function onMouseDown(e) {
+    if (e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") return;
+    e.stopPropagation();
+    setDragging({ ox: e.clientX - note.x, oy: e.clientY - note.y, moved: false });
+  }
+  function onMouseMove(e) {
+    if (!dragging) return;
+    onUpdate(note.id, { x: e.clientX - dragging.ox, y: e.clientY - dragging.oy });
+    setDragging(d => ({ ...d, moved: true }));
+  }
+  function onMouseUp() {
+    if (dragging?.moved && onMoveEnd) onMoveEnd();
+    setDragging(null);
+  }
+
+  return (
+    <div
+      data-nocanvas="1"
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={() => { onMouseUp(); setHovered(false); }}
+      onMouseEnter={() => setHovered(true)}
+      style={{
+        position: "absolute",
+        left: note.x + pan.x,
+        top: note.y + pan.y,
+        width: note.w || 200,
+        zIndex: 8,
+        cursor: dragging ? "grabbing" : "grab",
+        background: note.color || "#fef9c3",
+        borderRadius: 10,
+        boxShadow: hovered ? "0 6px 20px rgba(0,0,0,0.18)" : "0 3px 12px rgba(0,0,0,0.10)",
+        border: hovered ? "1.5px solid rgba(0,0,0,0.18)" : "1px solid rgba(0,0,0,0.07)",
+        padding: "0 0 6px 0",
+        display: "flex",
+        flexDirection: "column",
+        userSelect: "none",
+        transition: "box-shadow 0.15s, border 0.15s",
+      }}
+    >
+      {/* Top drag bar with color dots + delete */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px 4px", borderBottom: "1px solid rgba(0,0,0,0.06)", cursor: "grab" }}>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <span style={{ fontSize: 9, color: "rgba(0,0,0,0.25)", marginRight: 2, letterSpacing: 1 }}>⠿</span>
+          {COLORS.map(c => (
+            <button key={c} onMouseDown={e => { e.stopPropagation(); onUpdate(note.id, { color: c }); }}
+              style={{ width: 11, height: 11, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid rgba(0,0,0,0.18)", cursor: "pointer", padding: 0, flexShrink: 0 }} />
+          ))}
+        </div>
+        {/* Delete button — always visible on hover, subtle otherwise */}
+        <button
+          onMouseDown={e => { e.stopPropagation(); onDelete(note.id); }}
+          title="Delete sticky note"
+          style={{
+            background: hovered ? "#fee2e2" : "none",
+            border: hovered ? "1px solid #fca5a5" : "none",
+            borderRadius: 5, cursor: "pointer", fontSize: 11,
+            color: "#d44", lineHeight: 1, padding: "2px 5px",
+            fontWeight: 700, transition: "all 0.12s",
+            opacity: hovered ? 1 : 0.35,
+          }}>✕</button>
+      </div>
+
+      {/* Textarea */}
+      <textarea
+        id={"cninput-" + note.id}
+        value={note.text}
+        onChange={e => onUpdate(note.id, { text: e.target.value })}
+        onMouseDown={e => e.stopPropagation()}
+        onBlur={() => {
+          // Auto-delete if note is empty and user clicks away
+          if (!note.text.trim()) onDelete(note.id);
+        }}
+        placeholder="Type here… click ✕ to delete"
+        rows={3}
+        style={{
+          background: "transparent", border: "none", outline: "none",
+          resize: "none", fontSize: 12.5, lineHeight: 1.65,
+          color: "#333", fontFamily: "inherit",
+          width: "100%", boxSizing: "border-box",
+          userSelect: "text", cursor: "text",
+          padding: "7px 10px 2px",
+          minHeight: 60,
+        }}
+        onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+      />
+
+      {/* Resize handle bottom-right */}
+      <div
+        onMouseDown={e => {
+          e.stopPropagation();
+          const startX = e.clientX, startW = note.w || 200;
+          function move(ev) { onUpdate(note.id, { w: Math.max(120, startW + ev.clientX - startX) }); }
+          function up() { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); }
+          window.addEventListener("mousemove", move);
+          window.addEventListener("mouseup", up);
+        }}
+        style={{ alignSelf: "flex-end", cursor: "ew-resize", fontSize: 10, color: "rgba(0,0,0,0.22)", padding: "0 6px 2px", lineHeight: 1 }}
+        title="Drag to resize">⟺</div>
+    </div>
+  );
+}
+
+// ─── Merged Note + MindMap Editor — Split view (Note left · Map right) ────────
+// ─── Merged Note + MindMap Editor ────────────────────────────────────────────
+function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, makeDefaultMindmap }) {
+  const MAX_HISTORY = 80;
+  const NC  = ["#ede9fe","#dbeafe","#dcfce7","#fef9c3","#fce7f3","#fee2e2","#ffedd5","#f0fdf4"];
+
+  // ── 1. ALL useState ──────────────────────────────────────────────────────
+  const initMM = note.mindmap || makeDefaultMindmap();
+  const [title,      setTitle]      = useState(note.title || "");
+  const [nodes,      setNodes]      = useState(initMM.nodes);
+  const [edges,      setEdges]      = useState(initMM.edges);
+  const [textBlocks, setTextBlocks] = useState(note.textBlocks || []);
+  const [collapsed,  setCollapsed]  = useState(new Set());
+  const [histVer,    setHistVer]    = useState(0);
+  const [selected,   setSelected]   = useState(null);
+  const [editingId,  setEditingId]  = useState(null);
+  const [editLabel,  setEditLabel]  = useState("");
+  const [dragging,   setDragging]   = useState(null);
+  const [pan,        setPan]        = useState({ x: 0, y: 0 });
+  const [panStart,   setPanStart]   = useState(null);
+
+  // ── 2. ALL useRef ────────────────────────────────────────────────────────
+  const undoStack      = useRef([]);
+  const redoStack      = useRef([]);
+  const nodesRef       = useRef(nodes);
+  const edgesRef       = useRef(edges);
+  const textBlocksRef  = useRef(textBlocks);
+  const saveTimer      = useRef(null);
+
+  // ── 3. ALL useEffect ─────────────────────────────────────────────────────
+  useEffect(() => { nodesRef.current      = nodes;      }, [nodes]);
+  useEffect(() => { edgesRef.current      = edges;      }, [edges]);
+  useEffect(() => { textBlocksRef.current = textBlocks; }, [textBlocks]);
+
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      updateNote(note.id, { title, mindmap: { nodes, edges }, textBlocks });
+    }, 600);
+  }, [title, nodes, edges, textBlocks]); // eslint-disable-line
+
+  useEffect(() => {
+    function onKey(e) {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []); // eslint-disable-line
+
+  // ── Undo / Redo ──────────────────────────────────────────────────────────
+  function snap() {
+    undoStack.current.push({
+      nodes:      JSON.parse(JSON.stringify(nodesRef.current)),
+      edges:      JSON.parse(JSON.stringify(edgesRef.current)),
+      textBlocks: JSON.parse(JSON.stringify(textBlocksRef.current)),
+    });
+    if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
+    redoStack.current = [];
+    setHistVer(v => v + 1);
+  }
+  function undo() {
+    if (!undoStack.current.length) return;
+    redoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)), textBlocks: JSON.parse(JSON.stringify(textBlocksRef.current)) });
+    const p = undoStack.current.pop();
+    setNodes(p.nodes); setEdges(p.edges); setTextBlocks(p.textBlocks);
+    setHistVer(v => v + 1);
+  }
+  function redo() {
+    if (!redoStack.current.length) return;
+    undoStack.current.push({ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)), textBlocks: JSON.parse(JSON.stringify(textBlocksRef.current)) });
+    const nx = redoStack.current.pop();
+    setNodes(nx.nodes); setEdges(nx.edges); setTextBlocks(nx.textBlocks);
+    setHistVer(v => v + 1);
+  }
+
+  // ── Collapse ─────────────────────────────────────────────────────────────
+  function getHidden(col) {
+    const h = new Set(), q = [];
+    col.forEach(id => edges.filter(e => e.from === id).forEach(e => q.push(e.to)));
+    while (q.length) { const id = q.shift(); if (h.has(id)) continue; h.add(id); edges.filter(e => e.from === id).forEach(e => { if (!h.has(e.to)) q.push(e.to); }); }
+    return h;
+  }
+  const hiddenSet    = getHidden(collapsed);
+  const visibleNodes = nodes.filter(n => !hiddenSet.has(n.id));
+  const visibleEdges = edges.filter(e => !hiddenSet.has(e.from) && !hiddenSet.has(e.to));
+
+  // ── Map node actions ─────────────────────────────────────────────────────
+  function addChild(parentId) {
+    snap();
+    const parent = nodes.find(n => n.id === parentId); if (!parent) return;
+    const angles = edges.filter(e => e.from === parentId).map(e => { const c = nodes.find(n => n.id === e.to); return c ? Math.atan2(c.y - parent.y, c.x - parent.x) : null; }).filter(a => a !== null);
+    const angle = angles.length ? Math.max(...angles) + 0.6 : 0;
+    const id = "n" + Date.now();
+    setCollapsed(s => { const ns = new Set(s); ns.delete(parentId); return ns; });
+    setNodes(p => [...p, { id, label: "New node", x: parent.x + 180 * Math.cos(angle), y: parent.y + 180 * Math.sin(angle), color: NC[nodes.length % NC.length] }]);
+    setEdges(p => [...p, { id: "e" + Date.now(), from: parentId, to: id }]);
+    setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("New node"); }, 0);
+  }
+  function addRootNode() {
+    snap();
+    const id = "root" + Date.now();
+    setNodes(p => [...p, { id, label: "Central Idea", x: 200 + Math.random() * 200 - pan.x, y: 150 + Math.random() * 100 - pan.y, isRoot: true, color: "#ede9fe" }]);
+    setTimeout(() => { setSelected(id); setEditingId(id); setEditLabel("Central Idea"); }, 0);
+  }
+  function deleteNode(nodeId) {
+    // Allow deleting any node that isn't the very last root node
+    const rootNodes = nodes.filter(n => n.isRoot);
+    if (nodeId === "root" && rootNodes.length <= 1) return; // don't delete the only root
+    snap();
+    const del = new Set(), q = [nodeId];
+    while (q.length) { const id = q.shift(); del.add(id); edges.filter(e => e.from === id).forEach(e => q.push(e.to)); }
+    setNodes(p => p.filter(n => !del.has(n.id))); setEdges(p => p.filter(e => !del.has(e.from) && !del.has(e.to))); setSelected(null);
+  }
+  function commitEdit() {
+    if (!editingId) return; snap();
+    setNodes(p => p.map(n => n.id === editingId ? { ...n, label: editLabel } : n)); setEditingId(null);
+  }
+  function changeNodeColor(nodeId, color) { snap(); setNodes(p => p.map(n => n.id === nodeId ? { ...n, color } : n)); }
+  function toggleCollapse(nodeId) {
+    if (!edges.some(e => e.from === nodeId)) return;
+    setCollapsed(s => { const ns = new Set(s); ns.has(nodeId) ? ns.delete(nodeId) : ns.add(nodeId); return ns; });
+  }
+
+  // ── Text block actions ───────────────────────────────────────────────────
+  // Each textBlock: { id, x, y, text, fontSize, bold, color }
+  function addTextBlock(x, y) {
+    snap();
+    const id = "tb" + Date.now();
+    setTextBlocks(p => [...p, { id, x, y, text: "Text", fontSize: 16, bold: false, color: "#1a1a2e" }]);
+    setTimeout(() => { const el = document.getElementById("tb-" + id); if (el) { el.focus(); el.select(); } }, 50);
+  }
+  function addTextBlockCenter() {
+    addTextBlock(320 - pan.x + Math.random() * 40, 180 - pan.y + Math.random() * 40);
+  }
+  function updateTextBlock(id, changes) { setTextBlocks(p => p.map(t => t.id === id ? { ...t, ...changes } : t)); }
+  function deleteTextBlock(id) { snap(); setTextBlocks(p => p.filter(t => t.id !== id)); }
+
+  // ── Drag / Pan ───────────────────────────────────────────────────────────
+  function onNodeMouseDown(e, nodeId) {
+    e.stopPropagation(); setSelected(nodeId);
+    const node = nodes.find(n => n.id === nodeId);
+    setDragging({ type: "node", nodeId, offsetX: e.clientX - node.x, offsetY: e.clientY - node.y, moved: false });
+  }
+  function onTextBlockMouseDown(e, tbId) {
+    e.stopPropagation();
+    const tb = textBlocks.find(t => t.id === tbId); if (!tb) return;
+    setDragging({ type: "tb", id: tbId, offsetX: e.clientX - tb.x - pan.x, offsetY: e.clientY - tb.y - pan.y });
+  }
+  function onCanvasMouseDown(e) {
+    if (editingId) { commitEdit(); return; }
+    setSelected(null);
+    setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  }
+  function onCanvasDblClick(e) {
+    let el = e.target;
+    while (el && el !== e.currentTarget) { if (el.dataset?.nocanvas) return; el = el.parentElement; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    addTextBlock(e.clientX - rect.left - pan.x, e.clientY - rect.top - pan.y);
+  }
+  function onMouseMove(e) {
+    if (dragging?.type === "node") {
+      setNodes(p => p.map(n => n.id === dragging.nodeId ? { ...n, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY } : n));
+      setDragging(d => ({ ...d, moved: true }));
+    } else if (dragging?.type === "tb") {
+      setTextBlocks(p => p.map(t => t.id === dragging.id ? { ...t, x: e.clientX - dragging.offsetX - pan.x, y: e.clientY - dragging.offsetY - pan.y } : t));
+    } else if (panStart) {
+      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+    }
+  }
+  function onMouseUp() {
+    if (dragging?.moved) snap();
+    setDragging(null); setPanStart(null);
+  }
+
+  const selNode  = nodes.find(n => n.id === selected);
+  const canUndo  = undoStack.current.length > 0;
+  const canRedo  = redoStack.current.length > 0;
+  const btn      = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+
+      {/* ── Toolbar ── */}
+      <div style={{ padding: "6px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.97)", flexShrink: 0, flexWrap: "wrap" }}>
+        <button onClick={undo} disabled={!canUndo} title="Undo Ctrl+Z" style={{ ...btn, opacity: canUndo ? 1 : 0.3 }}>↩ Undo</button>
+        <button onClick={redo} disabled={!canRedo} title="Redo Ctrl+Y" style={{ ...btn, opacity: canRedo ? 1 : 0.3 }}>↪ Redo</button>
+
+        <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+
+        {/* ── TEXT button — replaces Note ── */}
+        <button onClick={addTextBlockCenter} title="Add text anywhere on canvas (or double-click canvas)"
+          style={{ ...btn, background: "#f0f4ff", border: "1.5px solid #6d28d9", color: "#4c1d95", fontWeight: 700, fontSize: 12, padding: "4px 11px", display: "flex", alignItems: "center", gap: 5 }}>
+          T&nbsp; Text
+        </button>
+
+        <button onClick={addRootNode} title="Add a new Central Idea node"
+          style={{ ...btn, background: "#ede9fe", border: "1.5px solid #7c3aed", color: "#5b21b6", fontWeight: 700, fontSize: 12, padding: "4px 11px", display: "flex", alignItems: "center", gap: 5 }}>
+          ＋ Central Idea
+        </button>
+
+        <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+
+        {/* Canvas bg color dots */}
+        {NOTE_COLORS.map(c => (
+          <button key={c} onClick={() => updateNote(note.id, { color: c })}
+            style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />
+        ))}
+
+        {/* Node selected actions */}
+        {selNode && (<>
+          <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Node:</span>
+          <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btn }}>✏️ Rename</button>
+          {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
+          {selNode.isRoot && nodes.filter(n => n.isRoot).length > 1 && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
+          <div style={{ display: "flex", gap: 3 }}>
+            {NC.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
+          </div>
+        </>)}
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btn, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
+          <button onClick={() => deleteNote(note.id)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑 Delete note</button>
+        </div>
+      </div>
+
+      {/* ── Canvas ── */}
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
+        <div
+          onMouseDown={onCanvasMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          onDoubleClick={onCanvasDblClick}
+          style={{ position: "relative", width: 2800, height: 2000, background: note.color || "#f0eff8", cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
+        >
+          {/* SVG edges */}
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+            <g transform={`translate(${pan.x},${pan.y})`}>
+              {visibleEdges.map(edge => {
+                const f = nodes.find(n => n.id === edge.from), t = nodes.find(n => n.id === edge.to);
+                if (!f || !t) return null;
+                const mx = (f.x + t.x) / 2;
+                return <path key={edge.id} d={`M ${f.x} ${f.y} C ${mx} ${f.y} ${mx} ${t.y} ${t.x} ${t.y}`} stroke="#a78bfa" strokeWidth={1.5} fill="none" opacity={0.6} />;
+              })}
+            </g>
+          </svg>
+
+          {/* Mind-map nodes */}
+          <div data-nocanvas="1" style={{ position: "absolute", inset: 0, transform: `translate(${pan.x}px,${pan.y}px)` }}>
+            {visibleNodes.map(node => {
+              const isSel    = selected === node.id;
+              const hasKids  = edges.some(e => e.from === node.id);
+              const isCol    = collapsed.has(node.id);
+              const kidCount = edges.filter(e => e.from === node.id).length;
+              const NW = 130, NH = 36;
+              return (
+                <div key={node.id} style={{ position: "absolute", left: node.x - NW/2, top: node.y - NH/2 }}>
+                  <div onMouseDown={e => onNodeMouseDown(e, node.id)} onDoubleClick={() => { setEditingId(node.id); setEditLabel(node.label); }}
+                    style={{ width: NW, minHeight: NH, background: node.color || "#ede9fe", border: isSel ? "2px solid #6d28d9" : "1.5px solid rgba(0,0,0,0.1)", borderRadius: node.isRoot ? 14 : 9, padding: "5px 12px", cursor: dragging?.nodeId === node.id ? "grabbing" : "grab", userSelect: "none", zIndex: isSel ? 10 : 2, boxShadow: isSel ? "0 3px 14px rgba(109,40,217,0.22)" : "0 1px 5px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                    {editingId === node.id
+                      ? <input autoFocus value={editLabel} onChange={e => setEditLabel(e.target.value)} onBlur={commitEdit} onKeyDown={e => (e.key==="Enter"||e.key==="Escape") && commitEdit()} onMouseDown={e => e.stopPropagation()} style={{ border:"none", outline:"none", background:"transparent", fontSize: node.isRoot?13:12, fontWeight: node.isRoot?700:500, width:"100%", fontFamily:"inherit", color:"#111", textAlign:"center" }} />
+                      : <span style={{ fontSize: node.isRoot?13:12, fontWeight: node.isRoot?700:500, color:"#111", wordBreak:"break-word", textAlign:"center", lineHeight:1.35 }}>{node.label}</span>}
+                  </div>
+                  {/* + child */}
+                  <div onMouseDown={e => { e.stopPropagation(); addChild(node.id); }} title="Add child"
+                    style={{ position:"absolute", right:-11, top:"50%", transform:"translateY(-50%)", width:20, height:20, borderRadius:"50%", background:"#1a6b3c", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, cursor:"pointer", zIndex:20, boxShadow:"0 1px 4px rgba(0,0,0,0.18)", lineHeight:1 }}>+</div>
+                  {hasKids && (
+                    <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCol ? `Show ${kidCount}` : "Collapse"}
+                      style={{ position:"absolute", bottom:-11, left:"50%", transform:"translateX(-50%)", width:20, height:20, borderRadius:"50%", background: isCol?"#6d28d9":"#e5e7eb", color: isCol?"#fff":"#6b7280", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, cursor:"pointer", zIndex:20, border:"1.5px solid "+(isCol?"#5b21b6":"#d1d5db") }}>
+                      {isCol ? `+${kidCount}` : "−"}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Text blocks — plain draggable text ── */}
+          {textBlocks.map(tb => (
+            <div key={tb.id} data-nocanvas="1"
+              style={{ position: "absolute", left: tb.x + pan.x, top: tb.y + pan.y, zIndex: 7, minWidth: 60 }}>
+              {/* Drag strip + controls above text */}
+              <div
+                onMouseDown={e => onTextBlockMouseDown(e, tb.id)}
+                style={{ height: 20, cursor: dragging?.id === tb.id ? "grabbing" : "grab", display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 2, background: "rgba(109,40,217,0.07)", borderRadius: "4px 4px 0 0", paddingLeft: 4, borderBottom: "1px dashed rgba(109,40,217,0.2)" }}>
+                {/* Formatting mini-bar */}
+                <div style={{ display: "flex", gap: 3, alignItems: "center" }} onMouseDown={e => e.stopPropagation()}>
+                  <button onClick={() => updateTextBlock(tb.id, { bold: !tb.bold })}
+                    style={{ background: tb.bold ? "#6d28d9" : "none", border: "0.5px solid #ccc", borderRadius: 3, padding: "0 4px", fontSize: 10, fontWeight: 700, cursor: "pointer", color: tb.bold ? "#fff" : "#555", lineHeight: "13px" }}>B</button>
+                  <select value={tb.fontSize || 16} onChange={e => updateTextBlock(tb.id, { fontSize: parseInt(e.target.value) })}
+                    onMouseDown={e => e.stopPropagation()}
+                    style={{ fontSize: 9, border: "0.5px solid #ccc", borderRadius: 3, padding: "0 2px", cursor: "pointer", background: "#fff", height: 14 }}>
+                    {[10,12,14,16,18,20,24,28,32,40].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {/* Color dots for text */}
+                  {["#1a1a2e","#1a6b3c","#6d28d9","#d44","#d97706","#0ea5e9"].map(c => (
+                    <button key={c} onMouseDown={e => e.stopPropagation()} onClick={() => updateTextBlock(tb.id, { color: c })}
+                      style={{ width: 10, height: 10, borderRadius: "50%", background: c, border: tb.color===c?"2px solid #000":"1px solid rgba(0,0,0,0.2)", cursor: "pointer", padding: 0, flexShrink: 0 }} />
+                  ))}
+                </div>
+                {/* Delete */}
+                <button onMouseDown={e => e.stopPropagation()} onClick={() => deleteTextBlock(tb.id)}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#d44", padding: 0, lineHeight: 1, marginLeft: 4 }}>✕</button>
+              </div>
+              {/* The editable text */}
+              <div
+                id={"tb-" + tb.id}
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={e => updateTextBlock(tb.id, { text: e.currentTarget.innerText })}
+                onMouseDown={e => e.stopPropagation()}
+                style={{
+                  fontSize: tb.fontSize || 16,
+                  fontWeight: tb.bold ? 700 : 400,
+                  color: tb.color || "#1a1a2e",
+                  fontFamily: "inherit",
+                  outline: "none",
+                  minWidth: 40,
+                  cursor: "text",
+                  lineHeight: 1.4,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  padding: "1px 2px",
+                  borderBottom: "1.5px dashed rgba(109,40,217,0.25)",
+                }}
+                dangerouslySetInnerHTML={{ __html: tb.text }}
+              />
+            </div>
+          ))}
+
+          {/* Canvas hint */}
+          <div style={{ position:"absolute", bottom:10, right:14, fontSize:10, color:"#c0bedd", pointerEvents:"none", textAlign:"right", lineHeight:1.7 }}>
+            <b style={{color:"#6d28d9"}}>T Text</b> in toolbar or <b>double-click</b> empty space to add text<br/>
+            <span style={{color:"#7c3aed"}}>＋ Central Idea</span> = add new idea · <span style={{color:"#a78bfa"}}>+</span> = add child · drag purple bar = move text
+          </div>
+        </div>
+      </div>
+
+      {/* Note title bar at bottom */}
+      <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", flexShrink: 0, padding: "8px 16px" }}>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Note title…"
+          style={{ display:"block", width:"100%", boxSizing:"border-box", border:"none", outline:"none", background:"transparent", fontSize:14, fontWeight:600, fontFamily:"inherit", color:"var(--color-text-primary)" }} />
+      </div>
+    </div>
+  );
+}
+
+// ─── DraggableList — drag-to-reorder rows with a ⠿ handle ───────────────────
+function DraggableList({ items, onReorder, renderItem, keyFn }) {
+  const dragIdx = useRef(null);
+  const [dragOver, setDragOver] = useState(null);
+
+  function onDragStart(e, i) {
+    dragIdx.current = i;
+    e.dataTransfer.effectAllowed = "move";
+    // Ghost image: use the row itself
+    e.dataTransfer.setDragImage(e.currentTarget, 20, 20);
+  }
+  function onDragOver(e, i) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (i !== dragOver) setDragOver(i);
+  }
+  function onDrop(e, i) {
+    e.preventDefault();
+    if (dragIdx.current === null || dragIdx.current === i) { cleanup(); return; }
+    const next = [...items];
+    const [moved] = next.splice(dragIdx.current, 1);
+    next.splice(i, 0, moved);
+    onReorder(next);
+    cleanup();
+  }
+  function cleanup() { dragIdx.current = null; setDragOver(null); }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((item, i) => (
+        <div key={keyFn(item)}
+          draggable
+          onDragStart={e => onDragStart(e, i)}
+          onDragOver={e => onDragOver(e, i)}
+          onDrop={e => onDrop(e, i)}
+          onDragEnd={cleanup}
+          style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: 8,
+            background: dragOver === i ? "#e8f5ee" : "var(--color-background-secondary)",
+            border: dragOver === i ? "1.5px dashed #1a6b3c" : "0.5px solid var(--color-border-tertiary)",
+            transition: "background 0.12s, border 0.12s", cursor: "default", userSelect: "none" }}>
+          {/* Drag handle */}
+          <div style={{ padding: "0 4px 0 10px", color: "#bbb", fontSize: 16, cursor: "grab", flexShrink: 0, lineHeight: 1 }}
+            title="Drag to reorder">⠿</div>
+          {/* Row content fills the rest */}
+          <div style={{ flex: 1, minWidth: 0 }}>{renderItem(item, i)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Shared Components ────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, icon, danger, pnl, big, accent, tooltip }) {
   const color = pnl !== undefined ? (pnl >= 0 ? "#1a6b3c" : "#d44") : danger ? "#d44" : "var(--color-text-primary)";
   return (
@@ -5233,3 +11462,2901 @@ function filterByPeriod(dateStr, period) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // NSE STOCK DATABASE — symbol → company name (top ~200 stocks)
 // ═══════════════════════════════════════════════════════════════════════════════
+const NSE_STOCKS = [
+  ["RELIANCE","Reliance Industries Ltd"],["TCS","Tata Consultancy Services"],["HDFCBANK","HDFC Bank Ltd"],
+  ["INFY","Infosys Ltd"],["ICICIBANK","ICICI Bank Ltd"],["HINDUNILVR","Hindustan Unilever Ltd"],
+  ["ITC","ITC Ltd"],["SBIN","State Bank of India"],["BHARTIARTL","Bharti Airtel Ltd"],
+  ["KOTAKBANK","Kotak Mahindra Bank Ltd"],["LT","Larsen & Toubro Ltd"],["HCLTECH","HCL Technologies Ltd"],
+  ["AXISBANK","Axis Bank Ltd"],["ASIANPAINT","Asian Paints Ltd"],["MARUTI","Maruti Suzuki India Ltd"],
+  ["SUNPHARMA","Sun Pharmaceutical Industries"],["TITAN","Titan Company Ltd"],["BAJFINANCE","Bajaj Finance Ltd"],
+  ["WIPRO","Wipro Ltd"],["ULTRACEMCO","UltraTech Cement Ltd"],["ONGC","Oil & Natural Gas Corp"],
+  ["NTPC","NTPC Ltd"],["POWERGRID","Power Grid Corp of India"],["TECHM","Tech Mahindra Ltd"],
+  ["NESTLEIND","Nestle India Ltd"],["ADANIENT","Adani Enterprises Ltd"],["ADANIPORTS","Adani Ports & SEZ Ltd"],
+  ["JSWSTEEL","JSW Steel Ltd"],["TATASTEEL","Tata Steel Ltd"],["COALINDIA","Coal India Ltd"],
+  ["DRREDDY","Dr Reddy's Laboratories"],["DIVISLAB","Divi's Laboratories"],["CIPLA","Cipla Ltd"],
+  ["HINDALCO","Hindalco Industries Ltd"],["GRASIM","Grasim Industries Ltd"],["BAJAJFINSV","Bajaj Finserv Ltd"],
+  ["EICHERMOT","Eicher Motors Ltd"],["HEROMOTOCO","Hero MotoCorp Ltd"],["BPCL","Bharat Petroleum Corp"],
+  ["TATAMOTORS","Tata Motors Ltd"],["M&M","Mahindra & Mahindra Ltd"],["INDUSINDBK","IndusInd Bank Ltd"],
+  ["BRITANNIA","Britannia Industries Ltd"],["APOLLOHOSP","Apollo Hospitals Enterprise"],
+  ["SBILIFE","SBI Life Insurance Co"],["HDFCLIFE","HDFC Life Insurance Co"],["BAJAJ-AUTO","Bajaj Auto Ltd"],
+  ["TATACONSUM","Tata Consumer Products Ltd"],["UPL","UPL Ltd"],["SHREECEM","Shree Cement Ltd"],
+  ["PIDILITIND","Pidilite Industries Ltd"],["DMART","Avenue Supermarts Ltd"],["MUTHOOTFIN","Muthoot Finance Ltd"],
+  ["HAVELLS","Havells India Ltd"],["VOLTAS","Voltas Ltd"],["BERGEPAINT","Berger Paints India Ltd"],
+  ["GODREJCP","Godrej Consumer Products"],["DABUR","Dabur India Ltd"],["MARICO","Marico Ltd"],
+  ["COLPAL","Colgate-Palmolive (India)"],["AMBUJACEM","Ambuja Cements Ltd"],["ACC","ACC Ltd"],
+  ["INDIGO","InterGlobe Aviation Ltd"],["ZOMATO","Zomato Ltd"],["NYKAA","FSN E-Commerce Ventures"],
+  ["PAYTM","One 97 Communications"],["POLICYBZR","PB Fintech Ltd"],["DELHIVERY","Delhivery Ltd"],
+  ["TATAPOWER","Tata Power Co Ltd"],["ADANIGREEN","Adani Green Energy Ltd"],["ADANITRANS","Adani Transmission Ltd"],
+  ["ADANIPOWER","Adani Power Ltd"],["ADANIWILMAR","Adani Wilmar Ltd"],["SIEMENS","Siemens Ltd"],
+  ["ABB","ABB India Ltd"],["BOSCHLTD","Bosch Ltd"],["MCDOWELL-N","United Spirits Ltd"],
+  ["TATAELXSI","Tata Elxsi Ltd"],["COFORGE","Coforge Ltd"],["MPHASIS","Mphasis Ltd"],
+  ["LTIM","LTIMindtree Ltd"],["PERSISTENT","Persistent Systems Ltd"],["OFSS","Oracle Financial Services"],
+  ["KPITTECH","KPIT Technologies Ltd"],["IRCTC","Indian Railway Catering & Tourism"],
+  ["ZYDUSLIFE","Zydus Lifesciences Ltd"],["TORNTPHARM","Torrent Pharmaceuticals"],
+  ["AUROPHARMA","Aurobindo Pharma Ltd"],["LUPIN","Lupin Ltd"],["BIOCON","Biocon Ltd"],
+  ["GLAND","Gland Pharma Ltd"],["ALKEM","Alkem Laboratories Ltd"],["IPCALAB","IPCA Laboratories"],
+  ["BANKBARODA","Bank of Baroda"],["PNB","Punjab National Bank"],["CANBK","Canara Bank"],
+  ["FEDERALBNK","Federal Bank Ltd"],["RBLBANK","RBL Bank Ltd"],["BANDHANBNK","Bandhan Bank Ltd"],
+  ["IDFCFIRSTB","IDFC First Bank Ltd"],["AUBANK","AU Small Finance Bank"],
+  ["CHOLAFIN","Cholamandalam Investment"],["SHRIRAMFIN","Shriram Finance Ltd"],["LICHSGFIN","LIC Housing Finance Ltd"],
+  ["PNBHOUSING","PNB Housing Finance Ltd"],["MANAPPURAM","Manappuram Finance Ltd"],
+  ["M&MFIN","Mahindra & Mahindra Financial"],["RECLTD","REC Ltd"],["PFC","Power Finance Corp"],
+  ["IRFC","Indian Railway Finance Corp"],["HUDCO","Housing & Urban Dev Corp"],
+  ["DLF","DLF Ltd"],["GODREJPROP","Godrej Properties Ltd"],["OBEROIRLTY","Oberoi Realty Ltd"],
+  ["PRESTIGE","Prestige Estates Projects"],["PHOENIXLTD","Phoenix Mills Ltd"],
+  ["ZEEL","Zee Entertainment Enterprises"],["SUNTV","Sun TV Network Ltd"],["PVRINOX","PVR INOX Ltd"],
+  ["JUBLFOOD","Jubilant FoodWorks Ltd"],["DEVYANI","Devyani International Ltd"],
+  ["WESTLIFE","Westlife Foodworld Ltd"],["SAPPHIRE","Sapphire Foods India Ltd"],
+  ["VEDL","Vedanta Ltd"],["NMDC","NMDC Ltd"],["SAIL","Steel Authority of India"],
+  ["JINDALSTEL","Jindal Steel & Power Ltd"],["JSWENERGY","JSW Energy Ltd"],
+  ["TORNTPOWER","Torrent Power Ltd"],["CESC","CESC Ltd"],["NHPC","NHPC Ltd"],["SJVN","SJVN Ltd"],
+  ["GAIL","GAIL (India) Ltd"],["IOC","Indian Oil Corp"],["HPCL","Hindustan Petroleum Corp"],
+  ["MRF","MRF Ltd"],["APOLLOTYRE","Apollo Tyres Ltd"],["CEAT","CEAT Ltd"],["BALKRISIND","Balkrishna Industries"],
+  ["MOTHERSON","Samvardhana Motherson Intl"],["BHARATFORG","Bharat Forge Ltd"],["SUNDRMFAST","Sundram Fasteners Ltd"],
+  ["ENDURANCE","Endurance Technologies"],["SWARAJENG","Swaraj Engines Ltd"],
+  ["PAGEIND","Page Industries Ltd"],["KALYANKJIL","Kalyan Jewellers India"],
+  ["RAJESHEXPO","Rajesh Exports Ltd"],["TRIBHOVANDAS","Tribhovandas Bhimji Zaveri"],
+  ["TRENT","Trent Ltd"],["ABFRL","Aditya Birla Fashion & Retail"],["SHOPERSTOP","Shopper's Stop Ltd"],
+  ["VBL","Varun Beverages Ltd"],["RADICO","Radico Khaitan Ltd"],["UBL","United Breweries Ltd"],
+  ["GLAXO","GlaxoSmithKline Pharmaceuticals"],["PFIZER","Pfizer Ltd"],["ABBOTINDIA","Abbott India Ltd"],
+  ["SANOFI","Sanofi India Ltd"],["3MINDIA","3M India Ltd"],["HONAUT","Honeywell Automation India"],
+  ["CUMMINSIND","Cummins India Ltd"],["THERMAX","Thermax Ltd"],["AIAENG","AIA Engineering Ltd"],
+  ["GRINDWELL","Grindwell Norton Ltd"],["CARBORUNIV","Carborundum Universal Ltd"],
+  ["ASTRAL","Astral Ltd"],["SUPREMEIND","Supreme Industries Ltd"],["FINOLEX","Finolex Cables Ltd"],
+  ["POLYCAB","Polycab India Ltd"],["KEI","KEI Industries Ltd"],
+  ["DIXON","Dixon Technologies India"],["AMBER","Amber Enterprises India"],
+  ["BLUESTARCO","Blue Star Ltd"],["WHIRLPOOL","Whirlpool of India Ltd"],
+  ["BATAINDIA","Bata India Ltd"],["VIPIND","VIP Industries Ltd"],
+  ["ICICIlombard","ICICI Lombard General Insurance"],["STARHEALTH","Star Health & Allied Insurance"],
+  ["GICRE","General Insurance Corp of India"],["NIACL","New India Assurance Co"],
+  ["CDSL","Central Depository Services"],["BSE","BSE Ltd"],["MCX","Multi Commodity Exchange"],
+  ["CAMS","Computer Age Management Services"],["ANGELONE","Angel One Ltd"],["ICICIPRULI","ICICI Prudential Life Insurance"],
+  ["ICICIGI","ICICI Lombard General Insurance"],["360ONE","360 One WAM Ltd"],
+  ["LICI","Life Insurance Corp of India"],["PGHH","Procter & Gamble Hygiene"],
+  ["HINDPETRO","Hindustan Petroleum Corp"],["CONCOR","Container Corp of India"],
+  ["GMRINFRA","GMR Airports Infrastructure"],["IRB","IRB Infrastructure Developers"],
+  ["ASHOKA","Ashoka Buildcon Ltd"],["KNR","KNR Constructions Ltd"],
+  ["NCC","NCC Ltd"],["NBCC","NBCC (India) Ltd"],
+];
+
+// Build lookup maps
+const NSE_BY_SYMBOL = Object.fromEntries(NSE_STOCKS.map(([s,n]) => [s, n]));
+const NSE_SEARCH = NSE_STOCKS.map(([symbol, name]) => ({ symbol, name, lower: symbol.toLowerCase() + " " + name.toLowerCase() }));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO PAGE — CORS-safe prices via corsproxy.io + stock autocomplete
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Portfolio Hub — tabs: Overall / Indian Stocks / US Stocks / Mutual Funds ─
+function PortfolioHub({ data, update }) {
+  const [tab, setTab] = useState("overall");
+
+  // ── Nifty50 live fetch ──────────────────────────────────────────────────────
+  const [niftyData, setNiftyData] = useState(null);
+  const [niftyLoading, setNiftyLoading] = useState(false);
+  const [niftyError, setNiftyError]   = useState("");
+  const [niftyUpdated, setNiftyUpdated] = useState(null);
+
+  // ── Gold Price live fetch ────────────────────────────────────────────────────
+  const [goldData, setGoldData]       = useState(null);
+  const [goldLoading, setGoldLoading] = useState(false);
+  const [goldError, setGoldError]     = useState("");
+  const [goldUpdated, setGoldUpdated] = useState(null);
+
+  async function fetchGold() {
+    setGoldLoading(true); setGoldError("");
+    try {
+      // Uses the same Yahoo Finance proxy — XAU/INR = Gold spot price in INR per troy oz
+      const res = await fetch("/api/stock-price?ticker=GC%3DF");
+      if (!res.ok) throw new Error("API error");
+      const json = await res.json();
+      const d = json["GC=F"] || Object.values(json)[0];
+      if (d?.ok) {
+        // GC=F is in USD per troy oz — convert to INR per gram
+        // 1 troy oz = 31.1035 grams
+        const usdInrRate = data.usdInrRate || 84;
+        const priceInrPerOz  = d.price * usdInrRate;
+        const priceInrPerGram = priceInrPerOz / 31.1035;
+        const price24k = priceInrPerGram;              // 24K = 99.9% pure
+        const price22k = priceInrPerGram * (22 / 24);  // 22K = 91.67% pure
+        const changeInrPerGram = (d.change * usdInrRate) / 31.1035;
+        setGoldData({ price24k, price22k, change: changeInrPerGram, changePct: d.changePct });
+        setGoldUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+      } else throw new Error("No data");
+    } catch (_) { setGoldError("Could not fetch Gold price"); }
+    setGoldLoading(false);
+  }
+
+  useEffect(() => { fetchGold(); }, []); // eslint-disable-line
+
+  async function fetchNifty() {
+    setNiftyLoading(true); setNiftyError("");
+    try {
+      const res = await fetch("/api/stock-price?ticker=%5ENSEI");
+      if (!res.ok) throw new Error("API error");
+      const json = await res.json();
+      const d = json["^NSEI"] || json["%5ENSEI"] || Object.values(json)[0];
+      if (d?.ok) {
+        setNiftyData(d);
+        setNiftyUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+      } else throw new Error("No data");
+    } catch(_) { setNiftyError("Could not fetch Nifty 50"); }
+    setNiftyLoading(false);
+  }
+
+  useEffect(() => { fetchNifty(); }, []); // eslint-disable-line
+
+  // ── Portfolio totals (same calculation as Overview) ─────────────────────────
+  const usdInr      = data.usdInrRate || 84;
+  const indHoldings = data.portfolioHoldings || [];
+  const indPrices   = data["portfolioHoldings_livePrices"] || {};
+  const usHoldings  = data.usHoldings || [];
+  const usPrices    = data["usHoldings_livePrices"] || {};
+  const mfs         = data.mutualFunds || [];
+
+  const indInvested  = indHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const indCurrent   = indHoldings.reduce((s,h) => {
+    const tk = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+    const ltp = tk && indPrices[tk]?.ok ? indPrices[tk].price : (h.buyPrice||0);
+    return s + ltp*(h.qty||0);
+  }, 0);
+  const indDayChange = indHoldings.reduce((s,h) => {
+    const tk = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? indPrices[tk] : null;
+    return pd?.ok && pd.change!=null ? s + pd.change*(h.qty||0) : s;
+  }, 0);
+
+  const usInvested  = usHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const usCurrent   = usHoldings.reduce((s,h) => {
+    const tk = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? usPrices[tk] : null;
+    const ltpInr = pd?.ok ? pd.price*usdInr : (h.buyPrice||0);
+    return s + ltpInr*(h.qty||0);
+  }, 0);
+  const usDayChange = usHoldings.reduce((s,h) => {
+    const tk = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? usPrices[tk] : null;
+    return pd?.ok && pd.change!=null ? s + (pd.change*usdInr)*(h.qty||0) : s;
+  }, 0);
+
+  const mfInvested  = mfs.reduce((s,m) => s + (m.investedAmount||0), 0);
+  const mfCurrent   = mfs.reduce((s,m) => s + (m.units||0)*(m.nav||0), 0);
+
+  const totalInvested  = indInvested + usInvested + mfInvested;
+  const totalCurrent   = indCurrent  + usCurrent  + mfCurrent;
+  const totalReturn    = totalCurrent - totalInvested;
+  const totalReturnPct = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0;
+  const totalDayChange = indDayChange + usDayChange;
+  const totalDayPct    = totalCurrent > 0 ? (totalDayChange / (totalCurrent - totalDayChange)) * 100 : 0;
+
+  const fmtCur = n => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const pnlColor = v => v >= 0 ? "#1a6b3c" : "#d44";
+
+  const TABS = [
+    { id: "overall",   label: "🏠 Overall"               },
+    { id: "indian",    label: "📈 Indian Stocks"         },
+    { id: "us",        label: "🇺🇸 US Stocks"            },
+    { id: "mf",        label: "💼 Mutual Funds"          },
+    { id: "analysis",  label: "📊 Analysis"              },
+    { id: "compare",   label: "🔍 Comparative Analysis"  },
+  ];
+
+  return (
+    <div>
+      {/* Tab bar — scrollable on mobile */}
+      <div style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", marginBottom: 20 }}>
+        <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content" }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{ padding: "10px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1, whiteSpace: "nowrap" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── OVERALL TAB ── */}
+      {tab === "overall" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Assets summary card */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+              <span style={{ fontWeight: 600, fontSize: 16 }}>📈 Assets</span>
+              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                {Object.keys(indPrices).length > 0 ? "Live prices loaded" : "Open tabs below & click Refresh to load prices"}
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+              {[
+                { label: "Invested",      val: fmtCur(totalInvested),  color: "var(--color-text-primary)" },
+                { label: "Current Value", val: fmtCur(totalCurrent),   color: "#1a6b3c" },
+                {
+                  label: "Total Return",
+                  val: (totalReturn >= 0 ? "+" : "") + fmtCur(totalReturn),
+                  sub: (totalReturnPct >= 0 ? "+" : "") + totalReturnPct.toFixed(2) + "%",
+                  color: pnlColor(totalReturn),
+                },
+                {
+                  label: "Day Change",
+                  val: totalDayChange !== 0
+                    ? (totalDayChange >= 0 ? "▲ +" : "▼ ") + fmtCur(totalDayChange)
+                    : "—",
+                  sub: totalDayChange !== 0
+                    ? (totalDayPct >= 0 ? "+" : "") + totalDayPct.toFixed(2) + "%"
+                    : "",
+                  color: pnlColor(totalDayChange),
+                },
+              ].map(c => (
+                <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.val}</div>
+                  {c.sub && <div style={{ fontSize: 11, color: c.color, marginTop: 2, fontWeight: 500 }}>{c.sub}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Breakdown by category */}
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+              {[
+                { label: "🇮🇳 Indian Stocks", invested: indInvested, current: indCurrent },
+                { label: "🇺🇸 US Stocks",     invested: usInvested,  current: usCurrent  },
+                { label: "💼 Mutual Funds",   invested: mfInvested,  current: mfCurrent  },
+              ].map(c => {
+                const ret = c.current - c.invested;
+                const pct = c.invested > 0 ? (ret / c.invested) * 100 : 0;
+                return (
+                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", cursor: "pointer" }}
+                    onClick={() => setTab(c.label.includes("Indian") ? "indian" : c.label.includes("US") ? "us" : "mf")}>
+                    <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtCur(c.current)}</div>
+                    <div style={{ fontSize: 11, color: pnlColor(ret), marginTop: 2 }}>
+                      {ret >= 0 ? "+" : ""}{fmtCur(ret)} ({pct >= 0 ? "+" : ""}{pct.toFixed(1)}%)
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Nifty 50 live card */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+              <span style={{ fontWeight: 600, fontSize: 16 }}>📊 Market Indices</span>
+              <button onClick={() => { fetchNifty(); fetchGold(); }} disabled={niftyLoading && goldLoading}
+                style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 10px", cursor: "pointer", opacity: (niftyLoading && goldLoading) ? 0.5 : 1 }}>
+                {(niftyLoading || goldLoading) ? "↻ Loading…" : "↻ Refresh"}
+              </button>
+            </div>
+
+            {niftyError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 10 }}>⚠ {niftyError}</div>}
+
+            {niftyData ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                {/* Big value */}
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Nifty 50</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px" }}>
+                    {Number(niftyData.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+
+                {/* Day change */}
+                <div style={{ background: niftyData.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 130 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(niftyData.change) }}>
+                    {niftyData.change >= 0 ? "▲ +" : "▼ "}{Number(niftyData.change).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+
+                {/* Day change % */}
+                <div style={{ background: niftyData.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 110 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change %</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(niftyData.changePct) }}>
+                    {niftyData.changePct >= 0 ? "+" : ""}{Number(niftyData.changePct).toFixed(2)}%
+                  </div>
+                </div>
+
+                {niftyUpdated && (
+                  <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>
+                    Updated {niftyUpdated}<br/>15-min delayed
+                  </div>
+                )}
+              </div>
+            ) : niftyLoading ? (
+              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Fetching Nifty 50…</div>
+            ) : (
+              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Click Refresh to load market data.</div>
+            )}
+
+            {/* ── Gold Price separator ── */}
+            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 16, paddingTop: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                🥇 Gold Price <span style={{ fontSize: 10, fontWeight: 400 }}>(per gram · INR)</span>
+              </div>
+              {goldError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {goldError}</div>}
+              {goldData ? (
+                <div style={{ display: "flex", flexDirection: "row", gap: 24, flexWrap: "wrap" }}>
+                  {[
+                    { label: "24K (999 fine)",     price: goldData.price24k, change: goldData.change,              changePct: goldData.changePct },
+                    { label: "22K (916 hallmark)", price: goldData.price22k, change: goldData.change * (22 / 24),  changePct: goldData.changePct },
+                  ].map(k => (
+                    <div key={k.label} style={{ flex: 1, minWidth: 260, background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                      {/* Karat label + price */}
+                      <div style={{ minWidth: 120 }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{k.label}</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--color-text-primary)" }}>
+                          {k.price.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      {/* Day Change */}
+                      <div style={{ background: k.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "8px 14px" }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: k.change >= 0 ? "#1a6b3c" : "#d44" }}>
+                          {k.change >= 0 ? "▲ +" : "▼ "}{Math.abs(k.change).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      {/* Day Change % */}
+                      <div style={{ background: k.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "8px 14px" }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change %</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: k.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
+                          {k.changePct >= 0 ? "+" : ""}{Number(k.changePct).toFixed(2)}%
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {goldUpdated && (
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", width: "100%" }}>
+                      Updated {goldUpdated} · 15-min delayed
+                    </div>
+                  )}
+                </div>
+              ) : goldLoading ? (
+                <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Fetching gold prices…</div>
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Click Refresh to load gold prices.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "indian"   && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
+      {tab === "us"       && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
+      {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
+      {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
+      {tab === "compare"  && <ComparativeAnalysisView data={data} />}
+    </div>
+  );
+}
+
+// ─── Dividend View ────────────────────────────────────────────────────────────
+function DividendView({ data }) {
+  const usdInr = data.usdInrRate || 84;
+  const indHoldings = data.portfolioHoldings || [];
+  const usHoldings  = data.usHoldings || [];
+
+  const [divData,  setDivData]  = useState({});
+  const [loading,  setLoading]  = useState(false);
+  const [loaded,   setLoaded]   = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [error,    setError]    = useState("");
+  const [sortCol,  setSortCol]  = useState("yield");
+  const [sortAsc,  setSortAsc]  = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const fmtCur = n => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const fmtUSD = n => "$" + Number(n || 0).toLocaleString("en-US",  { maximumFractionDigits: 2 });
+  const fmtDate = ts => ts ? new Date(ts * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : null;
+
+  function toYahooTicker(symbol, exchange, override) {
+    if (override && override.trim()) return override.trim().toUpperCase();
+    let s = (symbol || "").trim().toUpperCase().replace(/&/g, "-");
+    if (s.endsWith(".NS") || s.endsWith(".BO")) return s;
+    if (exchange === "NSE") return s + ".NS";
+    if (exchange === "BSE") return s + ".BO";
+    return s;
+  }
+
+  // Fetch dividend data using Vercel API route as a proxy with crumb auth
+  // The API route fetches a crumb from Yahoo and uses it for authenticated requests
+  async function fetchDividends(holdingsOverride) {
+    const holdings = holdingsOverride ?? indHoldings;
+    setLoading(true); setError(""); setLoaded(false);
+    const allH = holdings.map(h => ({ ...h, region: "IN" }));
+    if (!allH.length) { setLoading(false); setLoaded(true); return; }
+
+    const tickers = [...new Set(allH.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
+    setProgress({ done: 0, total: tickers.length });
+
+    // Try to get a crumb from Yahoo using a CORS proxy, then fetch dividend data
+    let crumb = "";
+    let yahooCookie = "";
+    try {
+      // Step 1: Get crumb via proxy
+      const crumbUrl = "https://query1.finance.yahoo.com/v1/test/getcrumb";
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(crumbUrl)}`;
+      const crumbRes = await fetch(proxyUrl, { credentials: "include", signal: AbortSignal.timeout(5000) });
+      if (crumbRes.ok) crumb = (await crumbRes.text()).trim();
+    } catch (_) {}
+
+    const BATCH = 3;
+    const collected = {};
+
+    for (let i = 0; i < tickers.length; i += BATCH) {
+      const batch = tickers.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(async ticker => {
+        // Build Yahoo v10 quoteSummary URL
+        const modules = "summaryDetail,defaultKeyStatistics";
+        const base = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}${crumb ? "&crumb=" + encodeURIComponent(crumb) : ""}`;
+        const base2 = base.replace("query1", "query2");
+
+        const attempts = [
+          `https://corsproxy.io/?${encodeURIComponent(base)}`,
+          `https://corsproxy.io/?${encodeURIComponent(base2)}`,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+        ];
+
+        for (const url of attempts) {
+          try {
+            const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) continue;
+            const j = await r.json();
+            const result = j?.quoteSummary?.result?.[0];
+            if (!result) continue;
+            const sd = result.summaryDetail || {};
+            const ks = result.defaultKeyStatistics || {};
+            const raw = v => (v && typeof v === "object" ? v.raw : v) ?? null;
+            const divRate  = raw(sd.dividendRate) ?? raw(sd.trailingAnnualDividendRate);
+            const divYield = raw(sd.dividendYield) ?? raw(sd.trailingAnnualDividendYield);
+            const isPaying = divRate != null && divRate > 0;
+            return {
+              ok: true, ticker, isPaying,
+              dividendRate: divRate, dividendYield: divYield,
+              trailingDivRate: raw(sd.trailingAnnualDividendRate),
+              trailingDivYield: raw(sd.trailingAnnualDividendYield),
+              exDividendDate: raw(sd.exDividendDate),
+              dividendDate: raw(ks.lastDividendDate) ?? raw(sd.exDividendDate),
+              lastDividendValue: raw(ks.lastDividendValue),
+              payoutRatio: raw(sd.payoutRatio),
+              fiveYearAvgYield: raw(sd.fiveYearAvgDividendYield),
+            };
+          } catch (_) {}
+        }
+
+        // Fallback: v8 chart endpoint (has trailingAnnualDividendRate in meta)
+        const chartBase = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+        const fallbackAttempts = [
+          `https://corsproxy.io/?${encodeURIComponent(chartBase)}`,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(chartBase)}`,
+        ];
+        for (const url of fallbackAttempts) {
+          try {
+            const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) continue;
+            const j = await r.json();
+            const meta = j?.chart?.result?.[0]?.meta;
+            if (!meta) continue;
+            const divRate  = meta.trailingAnnualDividendRate ?? null;
+            const divYield = meta.trailingAnnualDividendYield ?? null;
+            return { ok: true, ticker, isPaying: divRate > 0, dividendRate: divRate, dividendYield: divYield,
+              trailingDivRate: divRate, trailingDivYield: divYield, exDividendDate: null, dividendDate: null,
+              lastDividendValue: null, payoutRatio: null, fiveYearAvgYield: null };
+          } catch (_) {}
+        }
+
+        return { ok: false, ticker, isPaying: false };
+      }));
+      results.forEach((r, j) => { collected[batch[j]] = r; });
+      setProgress({ done: Math.min(i + BATCH, tickers.length), total: tickers.length });
+    }
+
+    setDivData(collected);
+    setLoaded(true);
+    setLoading(false);
+    setLastUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+
+    // Show error if nothing worked
+    const successCount = Object.values(collected).filter(d => d.ok).length;
+    if (successCount === 0 && tickers.length > 0) {
+      setError("Could not fetch dividend data — Yahoo Finance may be temporarily unavailable. Try Refresh.");
+    }
+  }
+
+  // Auto-fetch whenever indHoldings populates (Firestore is async — could be [] on first render)
+  const hasFetchedRef = useRef(false);
+  useEffect(() => {
+    if (indHoldings.length > 0 && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchDividends(indHoldings); // pass directly — avoids any closure staleness
+    }
+  }, [indHoldings]); // eslint-disable-line
+
+  // Build rows — Indian stocks only for Dividend view
+  const allH = [
+    ...indHoldings.map(h => ({ ...h, region: "IN" })),
+  ];
+
+  const allRows = allH.map(h => {
+    const ticker  = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
+    const d       = divData[ticker] || {};
+    const isUS    = h.region === "US";
+    const qty     = h.qty || 0;
+    const divRate  = d.dividendRate ?? null;
+    const divYield = d.dividendYield ?? null;
+    const exDate   = fmtDate(d.exDividendDate);
+    const payDate  = fmtDate(d.dividendDate);
+    const payoutR  = d.payoutRatio != null ? (d.payoutRatio * 100).toFixed(1) + "%" : null;
+    const fiveYrY  = d.fiveYearAvgYield != null ? d.fiveYearAvgYield.toFixed(2) + "%" : null;
+    const annualDivInr = divRate != null && divRate > 0
+      ? (isUS ? divRate * usdInr * qty : divRate * qty)
+      : null;
+    return { ...h, ticker, divRate, divYield, exDate, payDate, payoutR, fiveYrY, annualDivInr, isUS, isPaying: d.isPaying || false };
+  });
+
+  // ── Only show dividend-paying stocks ──
+  const payingRows   = allRows.filter(r => r.isPaying && r.divRate > 0);
+  const nonPayingCnt = allRows.length - payingRows.length;
+  const totalAnnualInr = payingRows.reduce((s, r) => s + (r.annualDivInr || 0), 0);
+  const monthlyEstInr  = totalAnnualInr / 12;
+
+  const sorted = [...payingRows].sort((a, b) => {
+    let av, bv;
+    if      (sortCol === "yield")  { av = a.divYield ?? -1;      bv = b.divYield ?? -1; }
+    else if (sortCol === "annual") { av = a.annualDivInr ?? -1;  bv = b.annualDivInr ?? -1; }
+    else if (sortCol === "symbol") { return sortAsc ? a.symbol.localeCompare(b.symbol) : b.symbol.localeCompare(a.symbol); }
+    else                           { av = a.divRate ?? -1;        bv = b.divRate ?? -1; }
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  function SortTh({ col, label, right }) {
+    const active = sortCol === col;
+    return (
+      <th onClick={() => { if (active) setSortAsc(a => !a); else { setSortCol(col); setSortAsc(false); } }}
+        style={{ padding: "8px 10px", textAlign: right ? "right" : "left", fontSize: 11, fontWeight: 600,
+          color: active ? "#1a6b3c" : "var(--color-text-secondary)",
+          borderBottom: "0.5px solid var(--color-border-tertiary)", cursor: "pointer", whiteSpace: "nowrap", userSelect: "none" }}>
+        {label}{active ? (sortAsc ? " ↑" : " ↓") : ""}
+      </th>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
+
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        {[
+          { label: "💰 Est. Annual Dividend", val: loaded ? fmtCur(totalAnnualInr) : "—", color: "#1a6b3c" },
+          { label: "📅 Est. Monthly Income",  val: loaded ? fmtCur(monthlyEstInr)  : "—", color: "#1a6b3c" },
+          { label: "✅ Dividend-Paying",       val: loaded ? `${payingRows.length} stocks` : "—", color: "var(--color-text-primary)" },
+          { label: "⬜ Non-Paying / ETFs",     val: loaded ? `${nonPayingCnt} stocks` : "—", color: "var(--color-text-secondary)" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table card */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div>
+            <span style={{ fontWeight: 600, fontSize: 16 }}>💰 Dividend-Paying Holdings</span>
+            <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 10 }}>Click column headers to sort · Non-paying stocks are hidden</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {lastUpdated && !loading && (
+              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Updated {lastUpdated}</span>
+            )}
+            <button onClick={() => fetchDividends(indHoldings)} disabled={loading}
+              style={{ padding: "5px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", opacity: loading ? 0.6 : 1 }}>
+              {loading ? "⟳ Loading…" : "↻ Refresh"}
+            </button>
+          </div>
+        </div>
+
+        {/* Progress bar while loading */}
+        {loading && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+              <span>Fetching dividend data from Yahoo Finance…</span>
+              <span>{progress.done}/{progress.total}</span>
+            </div>
+            <div style={{ height: 4, background: "var(--color-border-tertiary)", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ height: "100%", background: "#1a6b3c", borderRadius: 4, width: progress.total ? `${(progress.done / progress.total) * 100}%` : "0%", transition: "width 0.3s" }} />
+            </div>
+          </div>
+        )}
+
+        {error && <div style={{ fontSize: 13, color: "#d44", marginBottom: 10 }}>⚠ {error}</div>}
+
+        {loaded && payingRows.length === 0 && !loading && (
+          <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 14 }}>
+            {allH.length === 0
+              ? "No Indian holdings found. Add stocks in the Indian Stocks tab."
+              : "No dividend-paying Indian stocks found in your portfolio yet."}
+          </div>
+        )}
+
+        {(payingRows.length > 0 || loading) && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "var(--color-background-secondary)" }}>
+                  <th style={{ padding: "8px 10px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", width: 32 }}></th>
+                  <SortTh col="symbol" label="Stock" />
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Qty</th>
+                  <SortTh col="rate"   label="Div / Share" right />
+                  <SortTh col="yield"  label="Yield %" right />
+                  <SortTh col="annual" label="Annual (₹)" right />
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Payout Ratio</th>
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>5yr Avg Yield</th>
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Ex-Date</th>
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Pay Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r, i) => (
+                  <tr key={r.id || i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "8px 10px", textAlign: "center" }}>{r.region === "IN" ? "🇮🇳" : "🇺🇸"}</td>
+                    <td style={{ padding: "8px 10px" }}>
+                      <div style={{ fontWeight: 600 }}>{r.symbol}</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{r.name || r.ticker}</div>
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--color-text-secondary)" }}>{r.qty}</td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 500, color: "#1a6b3c" }}>
+                      {r.divRate > 0 ? (r.isUS ? fmtUSD(r.divRate) : fmtCur(r.divRate)) : "—"}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                      {r.divYield > 0
+                        ? <span style={{ fontWeight: 600, color: r.divYield >= 0.04 ? "#1a6b3c" : r.divYield >= 0.02 ? "#f59e0b" : "var(--color-text-primary)" }}>
+                            {(r.divYield * 100).toFixed(2)}%
+                          </span>
+                        : "—"}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: "#1a6b3c" }}>
+                      {r.annualDivInr > 0 ? fmtCur(r.annualDivInr) : "—"}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      {r.payoutR || "—"}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      {r.fiveYrY || "—"}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      {r.exDate || "—"}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      {r.payDate || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          ⓘ Dividend data from Yahoo Finance (fetched live in browser). Shows Indian portfolio stocks only. Annual (₹) = div/share × qty. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
+        </p>
+
+      </div>
+    </div>
+  );
+}
+
+// ─── Comparative Analysis View ────────────────────────────────────────────────
+function ComparativeAnalysisView({ data }) {
+  const usdInrRate = data.usdInrRate || 84;
+
+  // ── Compute values for each category ────────────────────────────────────────
+  const indHoldings = data.portfolioHoldings || [];
+  const indPrices   = data["portfolioHoldings_livePrices"] || {};
+  const usHoldings  = data.usHoldings || [];
+  const usPrices    = data["usHoldings_livePrices"] || {};
+  const mfs         = data.mutualFunds || [];
+
+  const indInvested = indHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const indCurrent  = indHoldings.reduce((s,h) => {
+    const tk = Object.keys(indPrices).find(k => k.startsWith(h.symbol));
+    const ltp = tk && indPrices[tk]?.ok ? indPrices[tk].price : (h.buyPrice||0);
+    return s + ltp*(h.qty||0);
+  }, 0);
+
+  const usInvested = usHoldings.reduce((s,h) => s + (h.buyPrice||0)*(h.qty||0), 0);
+  const usCurrent  = usHoldings.reduce((s,h) => {
+    const tk = Object.keys(usPrices).find(k => k.startsWith(h.symbol));
+    const pd = tk ? usPrices[tk] : null;
+    const ltpInr = pd?.ok ? pd.price*usdInrRate : (h.buyPrice||0);
+    return s + ltpInr*(h.qty||0);
+  }, 0);
+
+  const mfInvested = mfs.reduce((s,m) => s + (m.investedAmount||0), 0);
+  const mfCurrent  = mfs.reduce((s,m) => s + (m.units||0)*(m.nav||0), 0);
+
+  const totalInvested = indInvested + usInvested + mfInvested;
+  const totalCurrent  = indCurrent  + usCurrent  + mfCurrent;
+  const totalReturn   = totalCurrent - totalInvested;
+
+  const fmtC = n => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const pColor = v => v >= 0 ? "#1a6b3c" : "#d44";
+
+  const categories = [
+    { label: "🇮🇳 Indian Stocks", flag: "🇮🇳", invested: indInvested, current: indCurrent,  count: indHoldings.length, color: "#1a6b3c" },
+    { label: "🇺🇸 US Stocks",     flag: "🇺🇸", invested: usInvested,  current: usCurrent,   count: usHoldings.length,  color: "#4da6ff" },
+    { label: "💼 Mutual Funds",   flag: "💼", invested: mfInvested,  current: mfCurrent,   count: mfs.length,          color: "#9b59b6" },
+  ];
+
+  const [sortKey, setSortKey] = useState("current");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  // ── Benchmark chart state ─────────────────────────────────────────────────
+  // Correct Yahoo Finance tickers for Indian indices:
+  // Nifty 50: ^NSEI  |  Nifty Midcap 150: ^NSEMDCP50  |  Nifty Smallcap 250: ^CNXSC
+  // Note: ^CNXSC = Nifty Smallcap 100; correct 250 ticker is ^NIFTYSC but use ^CNX200 as fallback
+  const BENCHMARKS = [
+    { id: "nifty50",  label: "Nifty 50",          ticker: "%5ENSEI",       color: "#f59e0b" },
+    { id: "midcap",   label: "Nifty Midcap 150",   ticker: "%5ENSEMDCP50", color: "#8b5cf6" },
+    { id: "smallcap", label: "Nifty Smallcap 250",  ticker: "%5ECNX200",   color: "#ef4444" },
+  ];
+  const [activeBenchmarks, setActiveBenchmarks] = useState(["nifty50", "midcap", "smallcap"]);
+  const [showPortfolio,    setShowPortfolio]     = useState(true);
+  const [benchData,   setBenchData]   = useState({});
+  const [benchLoading,setBenchLoading]= useState(false);
+  const [benchError,  setBenchError]  = useState("");
+  const [benchUpdated,setBenchUpdated]= useState(null);
+  const [period,      setPeriod]      = useState("5y");
+  const autoRefreshRef = useRef(null);
+
+  // ── Live index prices for legend display ─────────────────────────────────
+  const [liveIndexPrices, setLiveIndexPrices] = useState({});
+  useEffect(() => {
+    async function fetchLiveIndices() {
+      try {
+        const tickers = BENCHMARKS.map(b => b.ticker).join(",");
+        const res = await fetch(`/api/stock-price?ticker=${tickers}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        // Map by benchmark id
+        const mapped = {};
+        BENCHMARKS.forEach(b => {
+          const decoded = decodeURIComponent(b.ticker);
+          const entry = json[decoded] || json[b.ticker] || Object.values(json).find(v => v?.ticker === decoded);
+          if (entry?.ok) mapped[b.id] = entry;
+        });
+        setLiveIndexPrices(mapped);
+      } catch (_) {}
+    }
+    fetchLiveIndices();
+    const iv = setInterval(fetchLiveIndices, 5 * 60 * 1000); // refresh every 5 min
+    return () => clearInterval(iv);
+  }, []); // eslint-disable-line
+
+  // ── Tooltip state for chart hover ─────────────────────────────────────────
+  const [tooltip, setTooltip] = useState(null); // { x, y, date, values: [{label, color, value}] }
+
+  // Period → { range, interval } for Yahoo Finance API
+  // Note: 1D intraday (5m) is unreliable for NSE indices via Yahoo Finance public API
+  // We use range=5d + interval=1h to get recent hourly bars as a workaround
+  const PERIOD_CONFIG = {
+    "1d":  { range: "5d",  interval: "1h"  },   // 5-day hourly → most recent bars
+    "1mo": { range: "1mo", interval: "1d"  },
+    "6mo": { range: "6mo", interval: "1wk" },
+    "1y":  { range: "1y",  interval: "1mo" },
+    "3y":  { range: "3y",  interval: "1mo" },
+    "5y":  { range: "5y",  interval: "1mo" },
+  };
+
+  const PERIOD_OPTIONS = [
+    { id: "1d",  label: "1D"  },
+    { id: "1mo", label: "1M"  },
+    { id: "6mo", label: "6M"  },
+    { id: "1y",  label: "1Y"  },
+    { id: "3y",  label: "3Y"  },
+    { id: "5y",  label: "5Y"  },
+  ];
+
+  async function fetchBenchmarks() {
+    setBenchLoading(true); setBenchError("");
+    try {
+      const cfg = PERIOD_CONFIG[period] || PERIOD_CONFIG["5y"];
+      const results = {};
+      await Promise.all(BENCHMARKS.map(async b => {
+        try {
+          const res = await fetch(`/api/stock-history?ticker=${b.ticker}&range=${cfg.range}&interval=${cfg.interval}`);
+          if (res.ok) {
+            const d = await res.json();
+            if (d.prices && d.prices.length > 0) {
+              // For 1D: filter to only today's bars (IST = UTC+5:30)
+              let prices = d.prices;
+              if (period === "1d") {
+                const nowTs   = Math.floor(Date.now() / 1000);
+                const todayIST = new Date(); todayIST.setHours(0,0,0,0);
+                const todayStart = Math.floor((todayIST.getTime() - 5.5 * 3600 * 1000) / 1000);
+                const todayPrices = prices.filter(p => p.date >= todayStart && p.date <= nowTs);
+                // If market not yet open / no intraday bars, show last 2 available bars as fallback
+                prices = todayPrices.length >= 2 ? todayPrices : prices.slice(-8);
+              }
+              if (prices.length > 0) results[b.id] = prices;
+            }
+          }
+        } catch (_) {}
+      }));
+      setBenchData(results);
+      setBenchUpdated(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+      if (Object.keys(results).length === 0) {
+        setBenchError("Could not load benchmark data — the /api/stock-history endpoint may not be deployed yet.");
+      } else {
+        setBenchError("");
+      }
+    } catch (e) {
+      setBenchError("Failed to load benchmark data.");
+    }
+    setBenchLoading(false);
+  }
+
+  // Fetch on period change
+  useEffect(() => { fetchBenchmarks(); }, [period]); // eslint-disable-line
+
+  // Auto-refresh: every 5 minutes for intraday, 15 min otherwise
+  useEffect(() => {
+    if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    const ms = period === "1d" ? 5 * 60 * 1000 : 15 * 60 * 1000;
+    autoRefreshRef.current = setInterval(() => { fetchBenchmarks(); }, ms);
+    return () => { if (autoRefreshRef.current) clearInterval(autoRefreshRef.current); };
+  }, [period]); // eslint-disable-line
+
+  // ── Normalise series to 100 at start ──────────────────────────────────────
+  function normalise(prices) {
+    if (!prices || prices.length === 0) return [];
+    const base = prices[0].close;
+    if (!base || base === 0) return [];
+    return prices.map(p => ({ date: p.date, value: (p.close / base) * 100 }));
+  }
+
+  // Portfolio growth: weighted-average buy date anchors the line correctly per period
+  const portfolioReturn = totalInvested > 0 ? ((totalCurrent / totalInvested) - 1) * 100 : 0;
+
+  // Weighted average buy date (by invested amount) — used to anchor the portfolio line
+  const allHoldings = [
+    ...indHoldings.map(h => ({ buyDate: h.buyDate, invested: (h.buyPrice||0)*(h.qty||0) })),
+    ...usHoldings.map(h => ({ buyDate: h.buyDate, invested: (h.buyPrice||0)*(h.qty||0) })),
+    ...(data.mutualFunds||[]).map(m => ({ buyDate: m.buyDate || m.startDate, invested: m.investedAmount||0 })),
+  ].filter(h => h.buyDate && h.invested > 0);
+
+  const avgBuyTimestamp = (() => {
+    if (allHoldings.length === 0) return null;
+    const totalInv = allHoldings.reduce((s, h) => s + h.invested, 0);
+    if (totalInv === 0) return null;
+    const weightedMs = allHoldings.reduce((s, h) => s + new Date(h.buyDate).getTime() * h.invested, 0);
+    return weightedMs / totalInv / 1000; // unix seconds
+  })();
+
+  // ── Build SVG chart ───────────────────────────────────────────────────────
+  function BenchmarkChart() {
+    const W = 900, H = 320, PAD = { top: 20, right: 20, bottom: 36, left: 52 };
+    const chartW = W - PAD.left - PAD.right;
+    const chartH = H - PAD.top  - PAD.bottom;
+
+    // Collect all normalised series
+    const series = [];
+    BENCHMARKS.filter(b => activeBenchmarks.includes(b.id)).forEach(b => {
+      const raw = benchData[b.id];
+      if (!raw) return;
+      const norm = normalise(raw);
+      if (norm.length > 0) series.push({ ...b, points: norm });
+    });
+
+    if (series.length === 0 && !benchLoading) {
+      return (
+        <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+          {benchError || "No data. Click ↻ Refresh."}
+        </div>
+      );
+    }
+    if (benchLoading && series.length === 0) {
+      return <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>Loading benchmark data…</div>;
+    }
+
+    // Gather all values + dates
+    const allValues = series.flatMap(s => s.points.map(p => p.value));
+    if (showPortfolio && totalInvested > 0) allValues.push(100, 100 + portfolioReturn);
+    const minV = Math.min(...allValues, 80);
+    const maxV = Math.max(...allValues, 120);
+    const allDates = series.length > 0 ? series[0].points.map(p => p.date) : [];
+
+    function xScale(i) { return PAD.left + (i / Math.max(allDates.length - 1, 1)) * chartW; }
+    function yScale(v) { return PAD.top + chartH - ((v - minV) / (maxV - minV)) * chartH; }
+
+    // Y grid lines
+    const yTicks = [];
+    const step = Math.ceil((maxV - minV) / 5 / 10) * 10;
+    for (let y = Math.ceil(minV / step) * step; y <= maxV; y += step) yTicks.push(y);
+
+    // X labels — show time (HH:MM) for 1D intraday, date for 1M, year for longer
+    const xLabels = (() => {
+      if (period === "1d") {
+        // Show time labels every ~2 bars
+        return allDates.reduce((acc, d, i) => {
+          if (i === 0 || i === allDates.length - 1 || i % Math.max(1, Math.floor(allDates.length / 6)) === 0) {
+            const t = new Date(d * 1000);
+            const hh = t.getHours().toString().padStart(2, "0");
+            const mm = t.getMinutes().toString().padStart(2, "0");
+            acc.push({ i, label: `${hh}:${mm}` });
+          }
+          return acc;
+        }, []);
+      } else if (period === "1mo") {
+        // Show day labels
+        return allDates.reduce((acc, d, i) => {
+          const dt = new Date(d * 1000);
+          const dayStr = dt.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+          if (acc.length === 0 || i % Math.max(1, Math.floor(allDates.length / 6)) === 0) {
+            acc.push({ i, label: dayStr });
+          }
+          return acc;
+        }, []);
+      } else {
+        // Show year labels (original logic)
+        return allDates.reduce((acc, d, i) => {
+          const yr = new Date(d * 1000).getFullYear();
+          if (acc.length === 0 || new Date(allDates[acc[acc.length-1].i] * 1000).getFullYear() !== yr) acc.push({ i, label: String(yr) });
+          return acc;
+        }, []);
+      }
+    })();
+
+    // ── Mouse hover handler ───────────────────────────────────────────────
+    function handleMouseMove(e) {
+      const svgEl = e.currentTarget;
+      const rect  = svgEl.getBoundingClientRect();
+      // Convert screen coords → SVG viewBox coords
+      const scaleX = W / rect.width;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      // Find nearest data index
+      if (allDates.length === 0) return;
+      const rawIdx = (mouseX - PAD.left) / chartW * (allDates.length - 1);
+      const idx    = Math.max(0, Math.min(allDates.length - 1, Math.round(rawIdx)));
+      // Build tooltip values
+      const values = series.map(s => {
+        const pt = s.points[idx];
+        return pt ? { label: s.label, color: s.color, indexedVal: pt.value, pct: (pt.value - 100).toFixed(1) } : null;
+      }).filter(Boolean);
+      const dateLabel = (() => {
+        const ts = allDates[idx];
+        if (!ts) return "";
+        const d = new Date(ts * 1000);
+        if (period === "1d") return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+        if (period === "1mo") return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+        return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+      })();
+      setTooltip({ svgX: xScale(idx), idx, date: dateLabel, values });
+    }
+    function handleMouseLeave() { setTooltip(null); }
+
+    const ttX = tooltip ? tooltip.svgX : null;
+
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair" }}
+        onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
+        {/* Grid */}
+        {yTicks.map(y => (
+          <g key={y}>
+            <line x1={PAD.left} x2={W - PAD.right} y1={yScale(y)} y2={yScale(y)} stroke="var(--color-border-tertiary)" strokeWidth={0.5} strokeDasharray="4 4" />
+            <text x={PAD.left - 6} y={yScale(y) + 4} textAnchor="end" fontSize={9} fill="var(--color-text-secondary)">{y}</text>
+          </g>
+        ))}
+        {/* Baseline 100 */}
+        <line x1={PAD.left} x2={W - PAD.right} y1={yScale(100)} y2={yScale(100)} stroke="#94a3b8" strokeWidth={1} strokeDasharray="6 3" />
+
+        {/* Benchmark lines */}
+        {series.map(s => {
+          const pts = s.points.map((p, i) => `${xScale(i)},${yScale(p.value)}`).join(" ");
+          const last = s.points[s.points.length - 1];
+          const lastX = xScale(s.points.length - 1);
+          const lastY = yScale(last.value);
+          return (
+            <g key={s.id}>
+              <polyline points={pts} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              {/* Hover dot */}
+              {tooltip && s.points[tooltip.idx] && (
+                <circle cx={xScale(tooltip.idx)} cy={yScale(s.points[tooltip.idx].value)} r={4} fill={s.color} stroke="#fff" strokeWidth={1.5}/>
+              )}
+              <circle cx={lastX} cy={lastY} r={4} fill={s.color} />
+              <text x={lastX + 6} y={lastY + 4} fontSize={9} fill={s.color} fontWeight={600}>{last.value.toFixed(0)}</text>
+            </g>
+          );
+        })}
+
+        {/* Portfolio line — anchored to weighted avg buy date */}
+        {showPortfolio && totalInvested > 0 && (() => {
+          // Find where avgBuyTimestamp falls on the chart x-axis
+          // allDates is in unix seconds; chart goes from allDates[0] to allDates[last]
+          const chartStart = allDates.length > 0 ? allDates[0] : null;
+          const chartEnd   = allDates.length > 0 ? allDates[allDates.length - 1] : null;
+
+          if (!chartStart || !chartEnd) return null;
+
+          // If avg buy date is AFTER the chart window ends → nothing to show
+          if (avgBuyTimestamp && avgBuyTimestamp > chartEnd) {
+            return null;
+          }
+
+          // Where does the buy date sit on the x-axis? (clamped to chart start)
+          let startFraction = 0;
+          if (avgBuyTimestamp && avgBuyTimestamp > chartStart) {
+            startFraction = (avgBuyTimestamp - chartStart) / (chartEnd - chartStart);
+          }
+
+          const x1 = PAD.left + startFraction * chartW;
+          const x2 = W - PAD.right;
+
+          // If period is shorter than holding — show full portfolio return across full chart
+          // but label it correctly with a note
+          const holdingYears = avgBuyTimestamp
+            ? (Date.now() / 1000 - avgBuyTimestamp) / (365.25 * 24 * 3600)
+            : null;
+
+          const periodDays = { "1d": 1, "1mo": 30, "6mo": 180, "1y": 365, "3y": 1095, "5y": 1825 };
+          const selectedDays = periodDays[period] || 3650;
+          const holdingDays = holdingYears ? holdingYears * 365.25 : null;
+
+          // If avg buy is before chart start — portfolio line spans full chart width
+          // The return shown is still total return (since we don't have historical data)
+          // Show a note that return is since avg buy (longer than chart)
+          const buyBeforeChart = !avgBuyTimestamp || avgBuyTimestamp <= chartStart;
+          const labelNote = buyBeforeChart && holdingDays && holdingDays > selectedDays
+            ? ` (since avg buy)` : ``;
+
+          return (
+            <g>
+              <line
+                x1={x1} y1={yScale(100)}
+                x2={x2} y2={yScale(100 + portfolioReturn)}
+                stroke="#1a6b3c" strokeWidth={2.5} strokeDasharray="8 4"
+              />
+              {/* Start marker at avg buy date */}
+              {startFraction > 0.01 && (
+                <circle cx={x1} cy={yScale(100)} r={4} fill="#1a6b3c" opacity={0.6} />
+              )}
+              <circle cx={x2} cy={yScale(100 + portfolioReturn)} r={5} fill="#1a6b3c" />
+              <text x={x2 - 6} y={yScale(100 + portfolioReturn) - 7} fontSize={9} fill="#1a6b3c" fontWeight={700} textAnchor="end">
+                My Portfolio {portfolioReturn >= 0 ? "+" : ""}{portfolioReturn.toFixed(1)}%{labelNote}
+              </text>
+            </g>
+          );
+        })()}
+
+        {/* X-axis labels */}
+        {xLabels.map(({ i, label }) => (
+          <text key={i} x={xScale(i)} y={H - 8} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)">{label}</text>
+        ))}
+
+        {/* Y-axis label */}
+        <text x={12} y={PAD.top + chartH / 2} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)" transform={`rotate(-90, 12, ${PAD.top + chartH / 2})`}>Indexed (Base=100)</text>
+
+        {/* ── Crosshair + tooltip box ── */}
+        {tooltip && ttX != null && (
+          <g pointerEvents="none">
+            {/* Vertical crosshair line */}
+            <line x1={ttX} x2={ttX} y1={PAD.top} y2={PAD.top + chartH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" />
+
+            {/* Tooltip box — auto-flip if near right edge */}
+            {(() => {
+              const TW = 160, TH = 20 + tooltip.values.length * 18 + 16;
+              const flip = ttX + TW + 16 > W - PAD.right;
+              const bx = flip ? ttX - TW - 10 : ttX + 10;
+              const by = PAD.top + 4;
+              return (
+                <g>
+                  <rect x={bx} y={by} width={TW} height={TH} rx={6} ry={6} fill="#1e293b" opacity={0.92} />
+                  {/* Date header */}
+                  <text x={bx + 10} y={by + 16} fontSize={10} fill="#cbd5e1" fontWeight={600}>{tooltip.date}</text>
+                  {/* Values */}
+                  {tooltip.values.map((v, vi) => (
+                    <g key={v.label}>
+                      <circle cx={bx + 14} cy={by + 28 + vi * 18} r={4} fill={v.color} />
+                      <text x={bx + 24} y={by + 32 + vi * 18} fontSize={10} fill="#f1f5f9">
+                        {v.label}
+                      </text>
+                      <text x={bx + TW - 8} y={by + 32 + vi * 18} fontSize={10} fill={v.pct >= 0 ? "#4ade80" : "#f87171"} textAnchor="end" fontWeight={700}>
+                        {v.pct >= 0 ? "+" : ""}{v.pct}%
+                      </text>
+                    </g>
+                  ))}
+                </g>
+              );
+            })()}
+          </g>
+        )}
+      </svg>
+    );
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortAsc(a => !a);
+    else { setSortKey(key); setSortAsc(false); }
+  }
+
+  const sorted = [...categories].sort((a, b) => {
+    let av, bv;
+    if (sortKey === "label")      { av = a.label; bv = b.label; }
+    else if (sortKey === "invested") { av = a.invested; bv = b.invested; }
+    else if (sortKey === "current")  { av = a.current;  bv = b.current;  }
+    else if (sortKey === "return")   { av = a.current - a.invested; bv = b.current - b.invested; }
+    else if (sortKey === "pct")      { av = a.invested > 0 ? (a.current-a.invested)/a.invested : 0; bv = b.invested > 0 ? (b.current-b.invested)/b.invested : 0; }
+    else if (sortKey === "alloc")    { av = totalCurrent > 0 ? a.current/totalCurrent : 0; bv = totalCurrent > 0 ? b.current/totalCurrent : 0; }
+    else                             { av = a.count; bv = b.count; }
+    if (typeof av === "string") return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  function Th({ col, label, right }) {
+    const active = sortKey === col;
+    return (
+      <th onClick={() => toggleSort(col)} style={{ padding: "8px 12px", textAlign: right ? "right" : "left", fontSize: 11, fontWeight: 600, color: active ? "#1a6b3c" : "var(--color-text-secondary)", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap", userSelect: "none" }}>
+        {label} {active ? (sortAsc ? "↑" : "↓") : ""}
+      </th>
+    );
+  }
+
+  const BAR_MAX = Math.max(...categories.map(c => c.current), 1);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
+
+      {/* ── Benchmark Chart ── */}
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+
+        {/* Header row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>📈 Portfolio vs Benchmark</div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>All series indexed to 100 at start. Portfolio shown as implied growth from your avg buy price.</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {/* Period selector */}
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 2, gap: 1 }}>
+              {PERIOD_OPTIONS.map(p => (
+                <button key={p.id} onClick={() => setPeriod(p.id)}
+                  style={{ padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: period === p.id ? "#1a6b3c" : "transparent",
+                    color: period === p.id ? "#fff" : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={fetchBenchmarks} disabled={benchLoading}
+              style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "4px 11px", cursor: "pointer", opacity: benchLoading ? 0.5 : 1 }}>
+              {benchLoading ? "↻ Loading…" : "↻ Refresh"}
+            </button>
+          </div>
+        </div>
+
+        {/* Legend + toggles */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+          {/* My Portfolio toggle */}
+          <button onClick={() => setShowPortfolio(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${showPortfolio ? "#1a6b3c" : "var(--color-border-secondary)"}`,
+              background: showPortfolio ? "#e8f5ee" : "var(--color-background-secondary)", cursor: "pointer", fontSize: 12, fontWeight: 600, color: showPortfolio ? "#1a6b3c" : "var(--color-text-secondary)" }}>
+            <svg width={24} height={4}><line x1={0} y1={2} x2={24} y2={2} stroke="#1a6b3c" strokeWidth={2.5} strokeDasharray="6 3" /></svg>
+            My Portfolio ({portfolioReturn >= 0 ? "+" : ""}{portfolioReturn.toFixed(1)}%)
+          </button>
+
+          {BENCHMARKS.map(b => {
+            const active = activeBenchmarks.includes(b.id);
+            const lastPt = benchData[b.id];
+            const lastVal = lastPt ? normalise(lastPt) : null;
+            const lastPct = lastVal && lastVal.length > 0 ? (lastVal[lastVal.length - 1].value - 100).toFixed(1) : null;
+            const liveData = liveIndexPrices[b.id];
+            return (
+              <button key={b.id} onClick={() => setActiveBenchmarks(prev => prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id])}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 20,
+                  border: `1.5px solid ${active ? b.color : "var(--color-border-secondary)"}`,
+                  background: active ? b.color + "18" : "var(--color-background-secondary)", cursor: "pointer",
+                  fontSize: 12, fontWeight: 600, color: active ? b.color : "var(--color-text-secondary)" }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: active ? b.color : "var(--color-border-primary)" }} />
+                <span>{b.label}</span>
+                {liveData && (
+                  <span style={{ fontWeight: 700, marginLeft: 2 }}>
+                    {Number(liveData.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    <span style={{ fontWeight: 500, marginLeft: 3, color: liveData.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
+                      ({liveData.changePct >= 0 ? "+" : ""}{liveData.changePct.toFixed(2)}%)
+                    </span>
+                  </span>
+                )}
+                {!liveData && lastPct != null && (
+                  <span style={{ fontWeight: 500, marginLeft: 2 }}>({lastPct >= 0 ? "+" : ""}{lastPct}%)</span>
+                )}
+              </button>
+            );
+          })}
+          {benchUpdated && <span style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>Updated {benchUpdated} · {period === "1d" ? "hourly bars" : "15-min delayed"}</span>}
+        </div>
+
+        {benchError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {benchError}</div>}
+
+        {/* Chart */}
+        <div style={{ overflowX: "auto" }}>
+          <BenchmarkChart />
+        </div>
+
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 8 }}>
+          ⓘ Click legend buttons to show/hide lines. "My Portfolio" shows your total return spread across the selected period (dashed green line). Benchmark data via Yahoo Finance.
+          {period === "1d" && " · 1D shows today's hourly bars (intraday 5-min data is unavailable for NSE indices via public API)."}
+        </div>
+      </div>
+
+      {/* ── Summary KPI cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+        {[
+          { label: "Total Invested",   val: fmtC(totalInvested), color: "var(--color-text-primary)" },
+          { label: "Total Current",    val: fmtC(totalCurrent),  color: "#1a6b3c" },
+          { label: "Total Return",     val: (totalReturn >= 0 ? "+" : "") + fmtC(totalReturn),
+            sub: totalInvested > 0 ? (totalReturn >= 0 ? "+" : "") + (totalReturn/totalInvested*100).toFixed(2) + "%" : "—",
+            color: pColor(totalReturn) },
+          { label: "Holdings",         val: (indHoldings.length + usHoldings.length + mfs.length) + " assets", color: "var(--color-text-primary)" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: c.color }}>{c.val}</div>
+            {c.sub && <div style={{ fontSize: 11, color: c.color, marginTop: 2, fontWeight: 500 }}>{c.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
+// ─── Mutual Funds Page ────────────────────────────────────────────────────────
+function MutualFundsPage({ data, update }) {
+  const mfs = data.mutualFunds || [];
+  const [tab, setTab] = useState("holdings"); // "holdings" | "sip"
+  const [form, setForm] = useState({ name: "", units: "", nav: "", investedAmount: "", startDate: "" });
+  const [showForm, setShowForm] = useState(false);
+
+  // SIP Calculator state
+  const [monthly, setMonthly]   = useState(5000);
+  const [stepUp, setStepUp]     = useState(10);
+  const [rate, setRate]         = useState(12);
+  const [years, setYears]       = useState(10);
+  const [inflation, setInflation] = useState(6);
+
+  function addMF() {
+    if (!form.name.trim() || !form.nav) return;
+    update(p => ({ mutualFunds: [...(p.mutualFunds || []), { id: Date.now(), ...form, units: parseFloat(form.units) || 0, nav: parseFloat(form.nav) || 0, investedAmount: parseFloat(form.investedAmount) || 0, startDate: form.startDate || "", addedAt: new Date().toISOString() }] }));
+    setForm({ name: "", units: "", nav: "", investedAmount: "", startDate: "" }); setShowForm(false);
+  }
+  function deleteMF(id) { update(p => ({ mutualFunds: (p.mutualFunds || []).filter(m => m.id !== id) })); }
+
+  // SIP Step-Up calculation
+  function calcSIP() {
+    let invested = 0, corpus = 0, sip = monthly;
+    for (let y = 0; y < years; y++) {
+      for (let m = 0; m < 12; m++) {
+        corpus = (corpus + sip) * (1 + rate / 100 / 12);
+        invested += sip;
+      }
+      sip = sip * (1 + stepUp / 100);
+    }
+    const realCorpus = corpus / Math.pow(1 + inflation / 100, years);
+    return { invested, corpus, returns: corpus - invested, realCorpus };
+  }
+  const sip = calcSIP();
+
+  function fmt(n) { return "₹" + Math.round(n).toLocaleString("en-IN"); }
+
+  const totalInvested = mfs.reduce((s, m) => s + (m.investedAmount || 0), 0);
+  const currentValue  = mfs.reduce((s, m) => s + (m.units || 0) * (m.nav || 0), 0);
+  const totalReturn   = currentValue - totalInvested;
+  const returnPct     = totalInvested > 0 ? ((totalReturn / totalInvested) * 100).toFixed(2) : "0.00";
+
+  // ── Portfolio-level XIRR & CAGR for Mutual Funds ─────────────────────────────
+  const mfXIRR = useMemo(() => {
+    const cashflows = [];
+    mfs.forEach(m => {
+      if (!m.startDate) return;
+      const invested = m.investedAmount || 0;
+      const curVal   = (m.units || 0) * (m.nav || 0);
+      if (!invested || !curVal) return;
+      cashflows.push({ amount: -invested, date: new Date(m.startDate) });
+      cashflows.push({ amount: curVal,    date: new Date() });
+    });
+    return calcXIRR(cashflows);
+  }, [mfs]); // eslint-disable-line
+
+  const mfCAGR = useMemo(() => {
+    if (totalInvested <= 0 || currentValue <= 0) return null;
+    const dates = mfs.map(m => m.startDate).filter(Boolean).map(d => new Date(d).getTime());
+    if (!dates.length) return null;
+    const earliest = new Date(Math.min(...dates));
+    return calcCAGR(totalInvested, currentValue, earliest);
+  }, [totalInvested, currentValue, mfs]); // eslint-disable-line
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>💼 Mutual Funds</h1>
+        <button onClick={() => setShowForm(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+          {showForm ? "✕ Cancel" : "+ Add Fund"}
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Total Invested", val: fmt(totalInvested), color: "var(--color-text-primary)" },
+          { label: "Current Value",  val: fmt(currentValue),  color: "#1a6b3c" },
+          { label: "Total Return",   val: fmt(totalReturn),   color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
+          { label: "Return %",       val: returnPct + "%",    color: parseFloat(returnPct) >= 0 ? "#1a6b3c" : "#d44" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
+          </div>
+        ))}
+        {/* XIRR */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>XIRR</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: mfXIRR != null ? (mfXIRR >= 0 ? "#1a6b3c" : "#d44") : "var(--color-text-secondary)" }}>
+            {mfXIRR != null ? fmtRate(mfXIRR) : "—"}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+            {mfXIRR != null ? "Annualised return" : "Add start dates"}
+          </div>
+        </div>
+        {/* CAGR */}
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>CAGR</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: mfCAGR != null ? (mfCAGR >= 0 ? "#1a6b3c" : "#d44") : "var(--color-text-secondary)" }}>
+            {mfCAGR != null ? fmtRate(mfCAGR) : "—"}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+            {mfCAGR != null ? "Since earliest fund" : "Add start dates"}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+        {[["holdings","📊 Holdings"],["sip","🧮 SIP Calculator"]].map(([v, lbl]) => (
+          <button key={v} onClick={() => setTab(v)} style={{ padding: "8px 20px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === v ? 500 : 400, borderBottom: tab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {/* ── HOLDINGS TAB ── */}
+      {tab === "holdings" && (
+        <>
+          {showForm && (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem", marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10 }}>
+                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Fund Name *</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Mirae Asset Large Cap" style={{ width: "100%", boxSizing: "border-box" }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Units</label><input type="number" value={form.units} onChange={e => setForm(p => ({ ...p, units: e.target.value }))} placeholder="e.g. 100.5" style={{ width: "100%", boxSizing: "border-box" }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Current NAV (₹)</label><input type="number" value={form.nav} onChange={e => setForm(p => ({ ...p, nav: e.target.value }))} placeholder="e.g. 85.4" style={{ width: "100%", boxSizing: "border-box" }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Invested (₹)</label><input type="number" value={form.investedAmount} onChange={e => setForm(p => ({ ...p, investedAmount: e.target.value }))} placeholder="e.g. 8000" style={{ width: "100%", boxSizing: "border-box" }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label><input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} /></div>
+              </div>
+              <button onClick={addMF} style={{ marginTop: 10, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>+ Add Fund</button>
+            </div>
+          )}
+          {mfs.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)", fontSize: 13 }}>No mutual funds yet. Click "+ Add Fund" to add.</div>
+          ) : (
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead><tr style={{ background: "var(--color-background-secondary)" }}>
+                  {["Fund","Units","NAV","Invested","Current Value","Return","Return %","CAGR","XIRR",""].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: h === "Fund" ? "left" : "right", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {mfs.map((m, i) => {
+                    const cur = (m.units || 0) * (m.nav || 0);
+                    const ret = cur - (m.investedAmount || 0);
+                    const pct = m.investedAmount > 0 ? ((ret / m.investedAmount) * 100).toFixed(2) : "0.00";
+                    const mCAGR = m.startDate && m.investedAmount > 0 && cur > 0
+                      ? calcCAGR(m.investedAmount, cur, m.startDate) : null;
+                    const mXIRR = m.startDate && m.investedAmount > 0 && cur > 0
+                      ? calcXIRR([{ amount: -(m.investedAmount), date: new Date(m.startDate) }, { amount: cur, date: new Date() }])
+                      : null;
+                    const rateColor = r => r == null ? "var(--color-text-secondary)" : r >= 0 ? "#1a6b3c" : "#d44";
+                    return (
+                      <tr key={m.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
+                        <td style={{ padding: "9px 14px", fontWeight: 500 }}>
+                          {m.name}
+                          {m.startDate && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>📅 Since {new Date(m.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
+                        </td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>{m.units}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>₹{m.nav}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>{fmt(m.investedAmount || 0)}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right", color: "#1a6b3c", fontWeight: 600 }}>{fmt(cur)}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right", color: ret >= 0 ? "#1a6b3c" : "#d44", fontWeight: 600 }}>{fmt(ret)}</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right", color: parseFloat(pct) >= 0 ? "#1a6b3c" : "#d44" }}>{pct}%</td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                          {mCAGR != null
+                            ? <span style={{ color: rateColor(mCAGR), fontWeight: 600 }}>{fmtRate(mCAGR)}</span>
+                            : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add start date">—</span>}
+                        </td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                          {mXIRR != null
+                            ? <span style={{ color: rateColor(mXIRR), fontWeight: 600 }}>{fmtRate(mXIRR)}</span>
+                            : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add start date">—</span>}
+                        </td>
+                        <td style={{ padding: "9px 14px", textAlign: "right" }}><button onClick={() => deleteMF(m.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── SIP CALCULATOR TAB ── */}
+      {tab === "sip" && (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, alignItems: "start" }}>
+          {/* Sliders */}
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem" }}>
+            <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 20 }}>🧮 Step-Up SIP Calculator</h3>
+            {[
+              { label: "Monthly Investment", val: monthly, set: setMonthly, min: 500, max: 200000, step: 500, suffix: "₹", prefix: true },
+              { label: "Annual Step-Up %",   val: stepUp,  set: setStepUp,  min: 0,   max: 30,     step: 1,   suffix: "%" },
+              { label: "Expected Return (p.a.)", val: rate, set: setRate,   min: 1,   max: 30,     step: 0.5, suffix: "%" },
+              { label: "Time Period",         val: years,  set: setYears,   min: 1,   max: 40,     step: 1,   suffix: " Yr" },
+              { label: "Inflation Rate (p.a.)", val: inflation, set: setInflation, min: 0, max: 15, step: 0.5, suffix: "%" },
+            ].map(s => (
+              <div key={s.label} style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{s.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 10px" }}>
+                    {s.prefix ? "₹" : ""}{s.val.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}
+                  </span>
+                </div>
+                <input type="range" min={s.min} max={s.max} step={s.step} value={s.val} onChange={e => s.set(Number(e.target.value))}
+                  style={{ width: "100%", accentColor: "#1a6b3c", cursor: "pointer" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                  <span>{s.prefix ? "₹" : ""}{s.min.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}</span>
+                  <span>{s.prefix ? "₹" : ""}{s.max.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Results */}
+          <div>
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem", marginBottom: 12 }}>
+              <h4 style={{ margin: "0 0 16px", fontSize: 14, color: "var(--color-text-secondary)", fontWeight: 500 }}>Projection after {years} years</h4>
+              {/* Donut chart */}
+              <div style={{ position: "relative", width: 160, height: 160, margin: "0 auto 20px" }}>
+                <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e8f5ee" strokeWidth="3.5" />
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#1a6b3c" strokeWidth="3.5"
+                    strokeDasharray={`${(sip.invested / sip.corpus * 100).toFixed(1)} 100`} />
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#4da6ff" strokeWidth="3.5"
+                    strokeDasharray={`${(sip.returns / sip.corpus * 100).toFixed(1)} 100`}
+                    strokeDashoffset={`${-(sip.invested / sip.corpus * 100).toFixed(1)}`} />
+                </svg>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Total</div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(sip.corpus)}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 20, fontSize: 11 }}>
+                <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#1a6b3c", marginRight: 4 }} />Invested</span>
+                <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#4da6ff", marginRight: 4 }} />Returns</span>
+              </div>
+              {[
+                { label: "Invested Amount", val: fmt(sip.invested), color: "#1a6b3c" },
+                { label: "Est. Returns",    val: fmt(sip.returns),  color: "#4da6ff" },
+                { label: "Total Value",     val: fmt(sip.corpus),   color: "var(--color-text-primary)", bold: true },
+              ].map(r => (
+                <div key={r.label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{r.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: r.bold ? 700 : 600, color: r.color }}>{r.val}</span>
+                </div>
+              ))}
+            </div>
+            {/* Inflation-adjusted */}
+            <div style={{ background: "#fef9c3", borderRadius: 12, border: "0.5px solid #fbbf24", padding: "1rem 1.1rem" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 6 }}>📉 Inflation-Adjusted Value ({inflation}% p.a.)</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#78350f" }}>{fmt(sip.realCorpus)}</div>
+              <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}>Real purchasing power after {years} years at {inflation}% inflation</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "portfolioHoldings", defaultExchange = "NSE" }) {
+  const holdings = data[holdingsKey] || [];
+  const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+
+  // ── local UI state ──────────────────────────────────────────────────────────
+  const [form, setForm] = useState({ symbol: "", name: "", buyPrice: "", qty: "", exchange: defaultExchange, yahooOverride: "", buyDate: "" });
+  const [showSellForm, setShowSellForm] = useState(false);
+  const [sellForm, setSellForm] = useState({ holdingId: "", symbol: "", qty: "", sellPrice: "", sellDate: today() });
+  const [editId, setEditId]     = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [prices, setPrices]     = useState({});
+  const [loading, setLoading]   = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [priceError, setPriceError]   = useState("");
+  const [sortBy, setSortBy]     = useState("symbol");
+
+  // ── USD ↔ INR currency toggle (US Stocks only) ────────────────────────────
+  const isUS = holdingsKey === "usHoldings";
+  const [showUSD, setShowUSD]       = useState(true);   // USD is default for US Stocks
+  const [usdRate, setUsdRate]       = useState(data.usdInrRate || 84);
+  const [editingRate, setEditingRate] = useState(false);
+  const [rateLoading, setRateLoading] = useState(false);
+
+  // ── Auto-fetch live USD→INR rate on mount ──────────────────────────────────
+  useEffect(() => {
+    if (!isUS) return;
+    setRateLoading(true);
+    fetch("https://api.frankfurter.app/latest?from=USD&to=INR")
+      .then(r => r.json())
+      .then(d => {
+        const rate = d?.rates?.INR;
+        if (rate && rate > 0) {
+          setUsdRate(Math.round(rate * 100) / 100);
+          update(() => ({ usdInrRate: Math.round(rate * 100) / 100 }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRateLoading(false));
+  }, []); // eslint-disable-line
+
+  // Format value in current currency mode
+  function fmtVal(inrVal) {
+    if (!isUS || !showUSD) return fmtCur(inrVal);
+    if (inrVal == null || inrVal === 0) return "$0.00";
+    return "$" + (inrVal / usdRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtPnlVal(inrVal) {
+    if (!isUS || !showUSD) {
+      if (inrVal == null) return "—";
+      return (inrVal >= 0 ? "+" : "") + fmtCur(inrVal);
+    }
+    if (inrVal == null) return "—";
+    const usd = inrVal / usdRate;
+    return (usd >= 0 ? "+" : "") + "$" + Math.abs(usd).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const curSymbol = isUS && showUSD ? "$" : "₹";
+
+  // Autocomplete state
+  const [acResults, setAcResults]   = useState([]);
+  const [acOpen, setAcOpen]         = useState(false);
+  const acRef = useRef(null);
+
+  // ── ticker helper ───────────────────────────────────────────────────────────
+  // ── Known NSE→Yahoo symbol corrections ──────────────────────────────────────
+  // Some NSE symbols differ from Yahoo Finance's naming convention
+  const YAHOO_CORRECTIONS = {
+    // Aditya Birla Capital — common mis-spelling
+    "ABCCAPITAL":   "ABCAPITAL",
+    // Adani Energy Solutions — newly listed, try as-is first
+    "ADANIENSOL":   "ADANIENSOL",
+    // Amara Raja — user stored as ARM&M (wrong), real Yahoo ticker
+    "ARM&M":        "AMARAJAEL",
+    "ARM-M":        "AMARAJAEL",
+    "AMARAJA":      "AMARAJAEL",
+    // Mahindra & Mahindra
+    "M&M":          "M-M",
+    "L&TFH":        "L-TFH",
+    "AT&T":         "T",
+    // Common NSE stocks with known Yahoo ticker differences
+    "MUTHOOTFIN":   "MUTHOOTFIN",
+    "BANDHANBNK":   "BANDHANBNK",
+    "FEDERALBNK":   "FEDERALBNK",
+    "HCLTECH":      "HCLTECH",
+    "ASHOKLEY":     "ASHOKLEY",
+    "ABCAPITAL":    "ABCAPITAL",
+  };
+
+  function toYahooTicker(symbol, exchange, override) {
+    if (override && override.trim()) return override.trim().toUpperCase();
+    let s = (symbol || "").trim().toUpperCase();
+    // If symbol already contains a full Yahoo ticker (e.g. "ABCAPITAL.NS"), use it directly
+    if (s.endsWith(".NS") || s.endsWith(".BO")) return s;
+    // Apply known corrections
+    s = YAHOO_CORRECTIONS[s] || s;
+    // Replace & with - (Yahoo convention for NSE)
+    s = s.replace(/&/g, "-");
+    if (exchange === "NSE") return s + ".NS";
+    if (exchange === "BSE") return s + ".BO";
+    return s;
+  }
+
+  // ── Auto-merge duplicate symbol+exchange into weighted avg ──────────────────
+  function computeMerged(list) {
+    const map = new Map();
+    (list || []).forEach(h => {
+      const key = `${(h.symbol || "").trim().toUpperCase()}|${h.exchange || "NSE"}`;
+      if (!map.has(key)) {
+        map.set(key, { ...h, _ids: [h.id], _merged: false, _originalCount: 1 });
+      } else {
+        const ex = map.get(key);
+        const totalQty = ex.qty + h.qty;
+        const avgPrice = ((ex.buyPrice * ex.qty) + (h.buyPrice * h.qty)) / totalQty;
+        map.set(key, { ...ex, qty: totalQty, buyPrice: Math.round(avgPrice * 100) / 100, _ids: [...ex._ids, h.id], _merged: true, _originalCount: ex._originalCount + 1, yahooOverride: ex.yahooOverride || h.yahooOverride });
+      }
+    });
+    return Array.from(map.values());
+  }
+  const mergedHoldings = computeMerged(holdings);
+
+  // ── CORS-safe price fetch via Vercel serverless /api/stock-price ─────────────
+  const fetchPrices = useCallback(async (holdingsList) => {
+    if (!holdingsList || holdingsList.length === 0) return;
+    setLoading(true);
+    setPriceError("");
+    const tickers = [...new Set(holdingsList.map(h => toYahooTicker(h.symbol, h.exchange, h.yahooOverride)))];
+
+    try {
+      const res = await fetch(`/api/stock-price?ticker=${tickers.map(encodeURIComponent).join(",")}`);
+      if (!res.ok) throw new Error("API error " + res.status);
+      const priceData = await res.json();
+
+      // For any still-failed tickers, also try .BO alternative automatically
+      const retryMap = {};
+      Object.entries(priceData).forEach(([t, v]) => {
+        if (!v.ok) {
+          const alt = t.endsWith(".NS") ? t.replace(".NS", ".BO")
+                    : t.endsWith(".BO") ? t.replace(".BO", ".NS") : null;
+          if (alt) retryMap[alt] = t;
+        }
+      });
+
+      if (Object.keys(retryMap).length > 0) {
+        try {
+          const res2 = await fetch(`/api/stock-price?ticker=${Object.keys(retryMap).map(encodeURIComponent).join(",")}`);
+          if (res2.ok) {
+            const d2 = await res2.json();
+            Object.entries(d2).forEach(([altT, val]) => {
+              if (val.ok) priceData[retryMap[altT]] = { ...val, _autoFixedTo: altT };
+            });
+          }
+        } catch (_) {}
+      }
+
+      setPrices(priceData);
+      // Save live prices to data so Overview portfolio card can use them
+      update(p => ({ [`${holdingsKey}_livePrices`]: priceData }));
+      const failed = Object.values(priceData).filter(r => !r.ok).length;
+      if (failed > 0) setPriceError(`${failed} ticker(s) not found on Yahoo Finance — use "Fix ticker" to correct the symbol.`);
+      else setPriceError("");
+    } catch (e) {
+      setPriceError("Price API unreachable — check your /api/stock-price serverless function.");
+    }
+
+    setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+    setLoading(false);
+  }, []); // eslint-disable-line
+
+  // Fetch prices on mount, when holdings count changes, OR when any override changes
+  const holdingsLen = holdings.length;
+  const overrideKey = holdings.map(h => `${h.id}:${h.yahooOverride || ""}`).join("|");
+  useEffect(() => {
+    const merged = computeMerged(data[holdingsKey] || []);
+    if (merged.length > 0) fetchPrices(merged);
+  }, [holdingsLen, overrideKey]); // eslint-disable-line
+
+  // ── autocomplete logic ──────────────────────────────────────────────────────
+  function handleSymbolInput(raw) {
+    const val = raw.toUpperCase();
+    setForm(f => ({ ...f, symbol: val }));
+    if (val.length < 1) { setAcResults([]); setAcOpen(false); return; }
+    const q = val.toLowerCase();
+    const matches = NSE_SEARCH.filter(s => s.lower.includes(q)).slice(0, 8);
+    setAcResults(matches);
+    setAcOpen(matches.length > 0);
+  }
+
+  function selectAcStock(stock) {
+    setForm(f => ({ ...f, symbol: stock.symbol, name: stock.name, exchange: "NSE" }));
+    setAcResults([]);
+    setAcOpen(false);
+  }
+
+  // Close autocomplete on outside click
+  useEffect(() => {
+    function handler(e) { if (acRef.current && !acRef.current.contains(e.target)) setAcOpen(false); }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // ── form helpers ────────────────────────────────────────────────────────────
+  function openAdd()  { setForm({ symbol: "", name: "", buyPrice: "", qty: "", exchange: "NSE", yahooOverride: "", buyDate: "" }); setEditId(null); setShowForm(true); setAcOpen(false); }
+  function openEdit(h){ setForm({ symbol: h.symbol, name: h.name || "", buyPrice: String(h.buyPrice), qty: String(h.qty), exchange: h.exchange || "NSE", yahooOverride: h.yahooOverride || "", buyDate: h.buyDate || "", _mergedIds: h._ids || [] }); setEditId(h.id); setShowForm(true); }
+  function closeForm(){ setShowForm(false); setEditId(null); setAcOpen(false); }
+
+  function saveHolding() {
+    const sym = form.symbol.trim().toUpperCase();
+    if (!sym || !form.buyPrice || !form.qty) return;
+    const resolvedName = form.name.trim() || NSE_BY_SYMBOL[sym] || sym;
+    let override = form.yahooOverride.trim().toUpperCase() || "";
+    // Auto-clear override if it equals what auto-detection already produces (redundant)
+    if (override && override === toYahooTicker(sym, form.exchange, "")) override = "";
+    // If US stocks in USD mode, user entered price in $, store in ₹
+    const rawPrice = Number(form.buyPrice);
+    const storedPrice = (isUS && showUSD && usdRate > 0) ? Math.round(rawPrice * usdRate * 100) / 100 : rawPrice;
+    const newH = { id: editId || Date.now(), symbol: sym, name: resolvedName, buyPrice: storedPrice, qty: Number(form.qty), exchange: form.exchange, yahooOverride: override, buyDate: form.buyDate || "", addedAt: editId ? undefined : today() };
+    if (editId) {
+      // Check if we are editing a merged row (form may carry _ids from merged data)
+      // In that case: update the primary entry and remove the duplicates
+      const mergedIds = form._mergedIds || [];
+      if (mergedIds.length > 1) {
+        update(p => ({
+          [holdingsKey]: (p[holdingsKey] || [])
+            .filter(h => !mergedIds.slice(1).includes(h.id)) // delete extra duplicates
+            .map(h => h.id === editId ? { ...h, ...newH } : h) // update primary
+        }));
+      } else {
+        update(p => ({ [holdingsKey]: (p[holdingsKey] || []).map(h => h.id === editId ? { ...h, ...newH } : h) }));
+      }
+    } else {
+      update(p => ({ [holdingsKey]: [...(p[holdingsKey] || []), newH] }));
+    }
+    closeForm();
+    // Clear stale price for this ticker so it re-fetches fresh
+    const oldTicker = toYahooTicker(sym, form.exchange, override);
+    setPrices(prev => { const next = { ...prev }; delete next[oldTicker]; return next; });
+
+    setTimeout(() => {
+      const updated = editId
+        ? holdings.map(h => h.id === editId ? { ...h, ...newH } : h)
+        : [...holdings, newH];
+      // Re-compute merged — MUST carry yahooOverride through
+      const map = new Map();
+      updated.forEach(h => {
+        const key = `${(h.symbol||"").trim().toUpperCase()}|${h.exchange || "NSE"}`;
+        if (!map.has(key)) {
+          map.set(key, { ...h });
+        } else {
+          const e = map.get(key);
+          const tq = e.qty + h.qty;
+          map.set(key, {
+            ...e,
+            qty: tq,
+            buyPrice: ((e.buyPrice * e.qty) + (h.buyPrice * h.qty)) / tq,
+            // Prefer override from either entry
+            yahooOverride: e.yahooOverride || h.yahooOverride || "",
+          });
+        }
+      });
+      fetchPrices(Array.from(map.values()));
+    }, 300);
+  }
+
+  function deleteHolding(id) { update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(h => h.id !== id) })); }
+
+  function recordSell() {
+    const qty = Number(sellForm.qty);
+    const sellPrice = Number(sellForm.sellPrice);
+    if (!sellForm.holdingId || !qty || !sellPrice || !sellForm.sellDate) return;
+    // Find the original holding to get buy price
+    const h = (data[holdingsKey] || []).find(x => String(x.id) === String(sellForm.holdingId)) ||
+              mergedHoldings.find(x => String(x.id) === String(sellForm.holdingId));
+    if (!h) return;
+    const buyPriceInr = h.buyPrice; // stored in INR
+    const sellPriceInr = (isUS && showUSD) ? sellPrice * usdRate : sellPrice;
+    const realizedProfit = (sellPriceInr - buyPriceInr) * qty;
+    const soldEntry = {
+      id: Date.now(),
+      symbol: h.symbol,
+      name: h.name || h.symbol,
+      exchange: h.exchange || "NSE",
+      buyPrice: buyPriceInr,
+      sellPrice: sellPriceInr,
+      qty,
+      sellDate: sellForm.sellDate,
+      buyDate: h.buyDate || "",
+      realizedProfit,
+      soldAt: new Date().toISOString(),
+    };
+    const soldKey = holdingsKey + "_sold";
+    update(p => ({
+      [soldKey]: [...(p[soldKey] || []), soldEntry],
+      // Reduce qty from holding or remove if fully sold
+      [holdingsKey]: (p[holdingsKey] || []).map(hh => {
+        if (String(hh.id) !== String(sellForm.holdingId)) return hh;
+        const remaining = hh.qty - qty;
+        return remaining <= 0 ? null : { ...hh, qty: remaining };
+      }).filter(Boolean)
+    }));
+    setSellForm({ holdingId: "", symbol: "", qty: "", sellPrice: "", sellDate: today() });
+    setShowSellForm(false);
+  }
+
+  // ── enriched rows using mergedHoldings ──────────────────────────────────────
+  const rows = mergedHoldings.map(h => {
+    const ticker = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
+    let pd = prices[ticker] || {};
+    if (!pd.price) {
+      const alt = ticker.endsWith(".NS") ? ticker.replace(".NS", ".BO")
+                : ticker.endsWith(".BO") ? ticker.replace(".BO", ".NS") : null;
+      if (alt && prices[alt]?.ok) pd = prices[alt];
+    }
+
+    // For US stocks: Yahoo returns price in USD → convert to INR for all internal math
+    const priceRaw = pd.price ?? null;  // USD for US, ₹ for Indian
+    const curUsd   = isUS ? priceRaw : null;                         // USD value (US only)
+    const cur      = priceRaw != null
+                       ? (isUS ? priceRaw * usdRate : priceRaw)      // always in INR internally
+                       : null;
+
+    // buyPrice is stored in INR (both Indian stocks and US stocks after conversion on save)
+    const invested = h.buyPrice * h.qty;                             // INR
+    const curVal   = cur != null ? cur * h.qty : null;               // INR
+    const pnl      = curVal != null ? curVal - invested : null;       // INR
+    const pnlPct   = pnl != null ? (pnl / invested) * 100 : null;
+
+    // Day change: Yahoo gives per-share $ change for US, ₹ for Indian
+    const dayChangePerShare = pd.change ?? null;                       // USD or ₹
+    const dayChangeInr = dayChangePerShare != null
+                           ? (isUS ? dayChangePerShare * usdRate : dayChangePerShare)
+                           : null;                                     // always INR
+
+    return { ...h, ticker, cur, curUsd, invested, curVal, pnl, pnlPct,
+             dayChange: dayChangeInr, dayChangePct: pd.changePct ?? null,
+             fetchFailed: pd.ok === false };
+  });
+
+  const sorted = [...rows].sort((a, b) => {
+    if (sortBy === "pnl")   return (b.pnl ?? -Infinity) - (a.pnl ?? -Infinity);
+    if (sortBy === "value") return (b.curVal ?? -Infinity) - (a.curVal ?? -Infinity);
+    if (sortBy === "pct")   return (b.pnlPct ?? -Infinity) - (a.pnlPct ?? -Infinity);
+    return a.symbol.localeCompare(b.symbol);
+  });
+
+  const totalInvested = rows.reduce((s, r) => s + r.invested, 0);          // INR
+  const totalCurVal   = rows.filter(r => r.curVal != null).reduce((s, r) => s + r.curVal, 0);  // INR
+  const totalPnl      = rows.filter(r => r.pnl != null).reduce((s, r) => s + r.pnl, 0);       // INR
+  const totalPnlPct   = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+  const dayPnl        = rows.filter(r => r.dayChange != null).reduce((s, r) => s + r.dayChange * r.qty, 0); // INR
+
+  // ── Portfolio-level XIRR & CAGR ──────────────────────────────────────────────
+  const portfolioXIRR = useMemo(() => {
+    const cashflows = [];
+    mergedHoldings.forEach(h => {
+      if (!h.buyDate) return;
+      const invested = (h.buyPrice || 0) * (h.qty || 0);
+      const ticker   = toYahooTicker(h.symbol, h.exchange, h.yahooOverride);
+      let pd = prices[ticker] || {};
+      if (!pd.price) {
+        const alt = ticker.endsWith(".NS") ? ticker.replace(".NS", ".BO") : ticker.endsWith(".BO") ? ticker.replace(".BO", ".NS") : null;
+        if (alt && prices[alt]?.ok) pd = prices[alt];
+      }
+      const priceRaw = pd.price ?? null;
+      const cur      = priceRaw != null ? (isUS ? priceRaw * usdRate : priceRaw) : null;
+      const curVal   = cur != null ? cur * h.qty : null;
+      if (!invested || curVal == null) return;
+      cashflows.push({ amount: -invested, date: new Date(h.buyDate) });
+      cashflows.push({ amount: curVal,    date: new Date() });
+    });
+    return calcXIRR(cashflows);
+  }, [mergedHoldings, prices, usdRate, isUS]); // eslint-disable-line
+
+  // Earliest buyDate among holdings for portfolio-level CAGR
+  const portfolioCAGR = useMemo(() => {
+    if (totalInvested <= 0 || totalCurVal <= 0) return null;
+    const dates = mergedHoldings.map(h => h.buyDate).filter(Boolean).map(d => new Date(d).getTime());
+    if (!dates.length) return null;
+    const earliest = new Date(Math.min(...dates));
+    return calcCAGR(totalInvested, totalCurVal, earliest);
+  }, [totalInvested, totalCurVal, mergedHoldings]); // eslint-disable-line
+
+  const pnlColor = (v) => v == null ? "var(--color-text-secondary)" : v >= 0 ? "#1a6b3c" : "#d44";
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: isMobile ? 22 : 26 }}>{title}</h1>
+          <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+            {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add your demat holdings to get started"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {/* USD ↔ INR segmented control — only for US Stocks */}
+          {isUS && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 3, gap: 2 }}>
+                <button onClick={() => setShowUSD(false)}
+                  style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: !showUSD ? "#1a6b3c" : "transparent",
+                    color: !showUSD ? "#fff" : "var(--color-text-secondary)",
+                    transition: "all 0.15s" }}>
+                  ₹ INR
+                </button>
+                <button onClick={() => setShowUSD(true)}
+                  style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: showUSD ? "#1a6b3c" : "transparent",
+                    color: showUSD ? "#fff" : "var(--color-text-secondary)",
+                    transition: "all 0.15s" }}>
+                  $ USD
+                </button>
+              </div>
+              {showUSD && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 9px" }}>
+                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>1$=₹</span>
+                  {rateLoading
+                    ? <span style={{ fontSize: 11, color: "#1a6b3c", animation: "spin 1s linear infinite", display: "inline-block" }}>↻</span>
+                    : editingRate ? (
+                    <input type="number" value={usdRate} onChange={e => setUsdRate(Number(e.target.value))}
+                      onBlur={() => { setEditingRate(false); update(() => ({ usdInrRate: usdRate })); }}
+                      onKeyDown={e => e.key === "Enter" && setEditingRate(false)}
+                      autoFocus
+                      style={{ width: 52, fontSize: 12, padding: "2px 5px", borderRadius: 5, border: "0.5px solid #1a6b3c", outline: "none", fontFamily: "inherit" }} />
+                  ) : (
+                    <button onClick={() => setEditingRate(true)}
+                      title="Click to edit rate manually"
+                      style={{ fontSize: 12, fontWeight: 700, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}>
+                      {usdRate} ✏️
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={() => fetchPrices(mergedHoldings)} disabled={loading || mergedHoldings.length === 0}
+            style={{ padding: "7px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.6 : 1 }}>
+            <span style={{ display: "inline-block", animation: loading ? "spin 1s linear infinite" : "none" }}>↻</span>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button onClick={() => { setShowSellForm(p => !p); setShowForm(false); }}
+            style={{ background: showSellForm ? "#e8f5ee" : "var(--color-background-secondary)", color: showSellForm ? "#1a6b3c" : "var(--color-text-secondary)", border: "0.5px solid " + (showSellForm ? "#1a6b3c" : "var(--color-border-secondary)"), borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            💰 Record Sell
+          </button>
+          <button onClick={openAdd}
+            style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            + Add Stock
+          </button>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      {holdings.length > 0 && (
+        <>
+          {mergedHoldings.some(h => h._merged) && (
+            <div style={{ fontSize: 12, color: "#92400e", background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 8, padding: "6px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+              ⚡ <strong>{holdings.length - mergedHoldings.length}</strong> duplicate entr{holdings.length - mergedHoldings.length === 1 ? "y" : "ies"} auto-merged into weighted avg price. Showing {mergedHoldings.length} unique holdings.
+            </div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
+            <StatCard label={`Total Invested (${isUS && showUSD ? "USD" : "INR"})`} value={fmtVal(totalInvested)} icon="💰" />
+            <StatCard label={`Current Value (${isUS && showUSD ? "USD" : "INR"})`}  value={fmtVal(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
+            <StatCard label="Total P&L"      value={fmtPnlVal(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
+            <StatCard label="Day's P&L"      value={fmtPnlVal(dayPnl)}         icon="📅" pnl={dayPnl} />
+            <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
+            </div>
+          {/* XIRR + CAGR always on same row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+            <StatCard
+              label="XIRR"
+              value={portfolioXIRR != null ? fmtRate(portfolioXIRR) : "Add buy dates"}
+              sub={portfolioXIRR != null ? "Annualised return" : "↑ Edit holdings"}
+              icon="📐"
+              pnl={portfolioXIRR != null ? portfolioXIRR : null}
+              tooltip="Extended Internal Rate of Return — accounts for timing of each investment"
+            />
+            <StatCard
+              label="CAGR"
+              value={portfolioCAGR != null ? fmtRate(portfolioCAGR) : "Add buy dates"}
+              sub={portfolioCAGR != null ? "Since earliest buy" : "↑ Edit holdings"}
+              icon="📈"
+              pnl={portfolioCAGR != null ? portfolioCAGR : null}
+              tooltip="Compound Annual Growth Rate — from your earliest purchase to today"
+            />
+          </div>
+        </>
+      )}
+
+      {/* Add/Edit form */}
+      {showForm && (
+        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
+          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+
+            {/* Exchange selector */}
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Exchange</label>
+              <select value={form.exchange} onChange={e => setForm(f => ({ ...f, exchange: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <option value="NSE">NSE (India)</option>
+                <option value="BSE">BSE (India)</option>
+                <option value="US">US (NYSE / NASDAQ)</option>
+                <option value="OTHER">Other (full ticker)</option>
+              </select>
+            </div>
+
+            {/* Symbol with autocomplete */}
+            <div ref={acRef} style={{ position: "relative" }}>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>
+                {form.exchange === "NSE" || form.exchange === "BSE" ? "Search Stock / Symbol" : "Symbol"}
+              </label>
+              <input
+                type="text"
+                placeholder={form.exchange === "NSE" ? "e.g. INFY or Infosys" : form.exchange === "US" ? "e.g. AAPL" : "Symbol"}
+                value={form.symbol}
+                onChange={e => handleSymbolInput(e.target.value)}
+                onFocus={() => { if (acResults.length > 0) setAcOpen(true); }}
+                style={{ width: "100%", boxSizing: "border-box" }}
+                autoComplete="off"
+              />
+              {/* Dropdown */}
+              {acOpen && acResults.length > 0 && (
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 300, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,0.12)", marginTop: 2, maxHeight: 220, overflowY: "auto" }}>
+                  {acResults.map(s => (
+                    <div key={s.symbol} onMouseDown={() => selectAcStock(s)}
+                      style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{s.symbol}</span>
+                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)", maxWidth: 180, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Company name (auto-filled) */}
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Company Name</label>
+              <input type="text" placeholder="Auto-filled for NSE stocks" value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                style={{ width: "100%", boxSizing: "border-box", background: form.name ? "#fff" : "#f9f9f9" }} />
+            </div>
+
+            <LabelInput label={isUS && showUSD ? "Avg Buy Price ($)" : "Avg Buy Price (₹)"} placeholder={isUS && showUSD ? "e.g. 20.50" : "1500"} type="number" value={form.buyPrice} onChange={v => setForm(f => ({ ...f, buyPrice: v }))} />
+            <LabelInput label="Quantity (shares)"  placeholder="10"   type="number" value={form.qty}      onChange={v => setForm(f => ({ ...f, qty: v }))} />
+
+            {/* Buy Date */}
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Buy Date <span style={{ fontWeight: 400, color: "#94a3b8" }}>(optional)</span></label>
+              <input type="date" value={form.buyDate}
+                onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))}
+                max={new Date().toISOString().split("T")[0]}
+                style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          {/* Hint line + Yahoo ticker preview */}
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", margin: "8px 0 8px" }}>
+            {(form.exchange === "NSE" || form.exchange === "BSE") && "Start typing the symbol or company name — suggestions will appear."}
+            {form.exchange === "US"    && "Use US tickers: AAPL, MSFT, TSLA, GOOGL, AMZN …"}
+            {form.exchange === "OTHER" && "Enter full Yahoo Finance ticker e.g. RELIANCE.NS or BTC-USD"}
+          </div>
+
+          {/* Yahoo override — shown when symbol is filled */}
+          {form.symbol.trim() && (
+            <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: "#0369a1", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                📡 Yahoo Finance ticker:
+                <code style={{ background: "#e0f2fe", borderRadius: 4, padding: "1px 6px", fontSize: 12 }}>{toYahooTicker(form.symbol, form.exchange, form.yahooOverride)}</code>
+                <span style={{ fontWeight: 400, color: "#64748b" }}>— used to fetch live prices</span>
+              </div>
+
+              {/* Quick-try buttons for common alternatives */}
+              {form.symbol.trim() && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 7 }}>
+                  <span style={{ fontSize: 10, color: "#64748b", alignSelf: "center" }}>Try:</span>
+                  {[
+                    form.symbol.trim().toUpperCase() + ".NS",
+                    form.symbol.trim().toUpperCase() + ".BO",
+                    form.symbol.trim().toUpperCase().replace(/&/g, "-") + ".NS",
+                  ].filter((t, i, a) => a.indexOf(t) === i && t !== toYahooTicker(form.symbol, form.exchange, form.yahooOverride)).map(t => (
+                    <button key={t} onClick={() => setForm(f => ({ ...f, yahooOverride: t }))}
+                      style={{ fontSize: 10, background: "#e0f2fe", border: "0.5px solid #7dd3fc", borderRadius: 4, padding: "2px 8px", cursor: "pointer", color: "#0369a1", fontFamily: "monospace" }}>
+                      {t}
+                    </button>
+                  ))}
+                  <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(form.symbol)}`}
+                    target="_blank" rel="noreferrer"
+                    style={{ fontSize: 10, background: "#fffbeb", border: "0.5px solid #fcd34d", borderRadius: 4, padding: "2px 8px", color: "#92400e", textDecoration: "none" }}>
+                    🔍 Search on Yahoo →
+                  </a>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="Paste correct ticker here e.g. ABCAPITAL.NS or AMARAJAEL.NS"
+                  value={form.yahooOverride}
+                  onChange={e => setForm(f => ({ ...f, yahooOverride: e.target.value.trim().toUpperCase() }))}
+                  style={{ flex: 1, fontSize: 11, padding: "5px 8px", border: "0.5px solid #bae6fd", borderRadius: 6, outline: "none", fontFamily: "monospace" }}
+                />
+                {form.yahooOverride && <button onClick={() => setForm(f => ({ ...f, yahooOverride: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>✕</button>}
+              </div>
+              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4, lineHeight: 1.5 }}>
+                If LTP shows "No price", search the stock on <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(form.symbol || "")}`} target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>Yahoo Finance</a>, copy the ticker exactly (e.g. <code>ABCAPITAL.NS</code>) and paste above.
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <GreenBtn onClick={saveHolding} label={editId ? "Save Changes" : "Add Holding"} />
+            <button onClick={closeForm} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Sell / Realize Profit Form */}
+      {showSellForm && (
+        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid #b6ddc2", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
+          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14, color: "#1a6b3c" }}>💰 Record Realized Profit</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Select Holding *</label>
+              <select value={sellForm.holdingId} onChange={e => {
+                const h = mergedHoldings.find(x => String(x.id) === e.target.value) || mergedHoldings.find(x => String(x._ids?.[0]) === e.target.value);
+                setSellForm(f => ({ ...f, holdingId: e.target.value, symbol: h?.symbol || "", qty: "", sellPrice: "" }));
+              }} style={{ width: "100%", boxSizing: "border-box" }}>
+                <option value="">— Select stock —</option>
+                {mergedHoldings.map(h => (
+                  <option key={h.id} value={String(h._ids?.[0] ?? h.id)}>{h.symbol} ({h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + h.buyPrice})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Qty Sold *</label>
+              <input type="number" placeholder="e.g. 5" value={sellForm.qty} onChange={e => setSellForm(f => ({ ...f, qty: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{isUS && showUSD ? "Sell Price ($) *" : "Sell Price (₹) *"}</label>
+              <input type="number" placeholder={isUS && showUSD ? "e.g. 25.00" : "e.g. 1800"} value={sellForm.sellPrice} onChange={e => setSellForm(f => ({ ...f, sellPrice: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Sell Date *</label>
+              <input type="date" value={sellForm.sellDate} onChange={e => setSellForm(f => ({ ...f, sellDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+          </div>
+          {/* Live profit preview */}
+          {sellForm.holdingId && sellForm.qty && sellForm.sellPrice && (() => {
+            const h = mergedHoldings.find(x => String(x._ids?.[0] ?? x.id) === sellForm.holdingId);
+            if (!h) return null;
+            const buyPriceInr = h.buyPrice;
+            const sellPriceInr = (isUS && showUSD) ? Number(sellForm.sellPrice) * usdRate : Number(sellForm.sellPrice);
+            const profit = (sellPriceInr - buyPriceInr) * Number(sellForm.qty);
+            const pct = ((sellPriceInr - buyPriceInr) / buyPriceInr) * 100;
+            return (
+              <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: profit >= 0 ? "#e8f5ee" : "#fff0f0", border: "0.5px solid " + (profit >= 0 ? "#b6ddc2" : "#f5c0c0") }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: profit >= 0 ? "#1a6b3c" : "#cc2222" }}>
+                  {profit >= 0 ? "📈 Realized Gain: " : "📉 Realized Loss: "}
+                  {fmtCur(Math.abs(profit))}
+                  <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>({pct >= 0 ? "+" : ""}{pct.toFixed(2)}%)</span>
+                </span>
+              </div>
+            );
+          })()}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <GreenBtn onClick={recordSell} label="✓ Record Sale" />
+            <button onClick={() => setShowSellForm(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {holdings.length === 0 && !showForm && (
+        <div style={{ textAlign: "center", padding: "4rem 1rem", background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 6 }}>No holdings yet</div>
+          <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>Add your demat account stocks to track real-time P&L</div>
+          <GreenBtn onClick={openAdd} label="+ Add Your First Stock" />
+        </div>
+      )}
+
+      {/* Holdings table */}
+      {holdings.length > 0 && (
+        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontWeight: 500, fontSize: 14 }}>
+              Holdings ({mergedHoldings.length})
+              {holdings.length !== mergedHoldings.length && <span style={{ fontSize: 11, color: "#92400e", background: "#fef9c3", borderRadius: 4, padding: "1px 6px", marginLeft: 6 }}>⚡ {holdings.length} entries merged</span>}
+            </span>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Sort:</span>
+              {[["symbol","A-Z"],["value","Value"],["pnl","P&L"],["pct","% Return"]].map(([k,l]) => (
+                <button key={k} onClick={() => setSortBy(k)} style={{ padding: "3px 9px", borderRadius: 6, border: "0.5px solid", borderColor: sortBy === k ? "#1a6b3c" : "var(--color-border-secondary)", background: sortBy === k ? "#1a6b3c" : "transparent", color: sortBy === k ? "#fff" : "var(--color-text-secondary)", fontSize: 11, cursor: "pointer" }}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Column headers — desktop only */}
+          {!isMobile && (
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            <span>STOCK</span>
+            <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={{ textAlign: "right" }}>DAY CHG</span>
+            <span style={{ textAlign: "right" }}>INVESTED {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={{ textAlign: "right" }}>CUR VALUE {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={{ textAlign: "right" }}>P&amp;L {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span />
+          </div>
+          )}
+
+          {/* Rows */}
+          {sorted.map(h => isMobile ? (
+            /* ── Mobile card layout ── */
+            <div key={h._ids ? h._ids[0] : h.id} style={{ padding: "12px 14px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+              {/* Row 1: symbol + badges + actions */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                    {h.symbol.replace(/\.(NS|BO)$/i, "")}
+                    <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
+                    {h._merged && <span style={{ fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600 }}>⚡ avg {h._originalCount}×</span>}
+                  </div>
+                  {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
+                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + fmt(h.buyPrice)}</div>
+                </div>
+                {/* P&L + actions on right */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  {h.pnl != null && (
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ color: pnlColor(h.pnl), fontWeight: 700, fontSize: 14 }}>{fmtPnlVal(h.pnl)}</div>
+                      <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
+                    </div>
+                  )}
+                  <button onClick={() => { const m = h._merged && h._ids?.length > 1 ? { ...h, id: h._ids[0] } : (holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h); openEdit(m); }}
+                    style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer", fontSize: 13, padding: "4px 8px", color: "var(--color-text-secondary)" }}>✏️</button>
+                  <button onClick={() => { if (window.confirm(`Delete ${h.symbol}?`)) { if (h._ids) update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(x => !h._ids.includes(x.id)) })); else update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(x => x.id !== h.id) })); } }}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#d44", padding: "2px 4px" }}>🗑</button>
+                </div>
+              </div>
+              {/* Row 2: LTP | Day Chg | Invested | Cur Value */}
+              <div className="mobile-stats-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>LTP</div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                    {loading ? "…" : h.cur != null ? (isUS && showUSD ? "$" + (h.curUsd ?? (h.cur / usdRate)).toFixed(2) : "₹" + fmt(h.cur)) : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Day</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: pnlColor(h.dayChangePct) }}>
+                    {h.dayChangePct != null ? `${h.dayChangePct >= 0 ? "▲" : "▼"}${Math.abs(h.dayChangePct).toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Inv.</div>
+                  <div style={{ fontSize: 12 }}>{fmtVal(h.invested)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Cur</div>
+                  <div style={{ fontSize: 12 }}>{h.curVal != null ? fmtVal(h.curVal) : "—"}</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
+              <div>
+                <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                  {h.symbol.replace(/\.(NS|BO)$/i, "")}
+                  <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
+                  {h._merged && (
+                    <span title={`${h._originalCount} entries merged — avg buy price`} style={{ fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600, cursor: "help" }}>
+                      ⚡ avg {h._originalCount}×
+                    </span>
+                  )}
+                </div>
+                {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
+                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) + " (₹" + fmt(h.buyPrice) + ")" : "₹" + fmt(h.buyPrice)}</div>
+                {h.buyDate && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>📅 Bought: {new Date(h.buyDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
+              </div>
+
+              {/* LTP — currency-aware */}
+              <div style={{ textAlign: "right" }}>
+                {loading
+                  ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
+                  : h.cur != null
+                    ? <div>
+                        {isUS && showUSD
+                          ? <div>
+                              <span style={{ fontWeight: 500 }}>${h.curUsd != null ? h.curUsd.toFixed(2) : (h.cur / usdRate).toFixed(2)}</span>
+                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>≈ ₹{fmt(h.cur)}</div>
+                            </div>
+                          : <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                        }
+                        {prices[h.ticker]?._autoFixedTo && (
+                          <div style={{ fontSize: 9, color: "#1d4ed8", background: "#dbeafe", borderRadius: 3, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>
+                            ⚡ via {prices[h.ticker]._autoFixedTo}
+                          </div>
+                        )}
+                      </div>
+                    : <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                        <span style={{ fontSize: 10, color: "#d44", fontWeight: 500 }}>⚠ No price</span>
+                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "monospace" }}>{h.ticker}</span>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          <button onClick={() => { const mergedAsOne = h._merged && h._ids?.length > 1 ? { ...h, id: h._ids[0] } : (holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h); openEdit(mergedAsOne); }}
+                            style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "2px 7px", cursor: "pointer", color: "#92400e", whiteSpace: "nowrap" }}>
+                            ✏️ Fix ticker
+                          </button>
+                          <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(h.symbol)}`}
+                            target="_blank" rel="noreferrer"
+                            style={{ fontSize: 9, background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 4, padding: "2px 7px", color: "#1d4ed8", textDecoration: "none", whiteSpace: "nowrap" }}>
+                            🔍 Search
+                          </a>
+                        </div>
+                      </div>
+                }
+              </div>
+
+              {/* Day change */}
+              <div style={{ textAlign: "right", color: pnlColor(h.dayChangePct), fontSize: 12 }}>
+                {h.dayChangePct != null ? <>{h.dayChangePct >= 0 ? "▲" : "▼"} {Math.abs(h.dayChangePct).toFixed(2)}%</> : "—"}
+              </div>
+
+              <div style={{ textAlign: "right" }}>{fmtVal(h.invested)}</div>
+
+              <div style={{ textAlign: "right" }}>
+                {h.curVal != null ? fmtVal(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+              </div>
+
+              <div style={{ textAlign: "right" }}>
+                {h.pnl != null ? (
+                  <div>
+                    <div style={{ color: pnlColor(h.pnl), fontWeight: 500 }}>{fmtPnlVal(h.pnl)}</div>
+                    <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
+                  </div>
+                ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+              </div>
+
+              <div style={{ textAlign: "right" }}>
+                <ThreeDotMenu
+                  onEdit={() => {
+                    if (h._merged && h._ids?.length > 1) {
+                      const mergedAsOne = { ...h, id: h._ids[0], qty: h.qty, buyPrice: h.buyPrice };
+                      openEdit(mergedAsOne);
+                    } else {
+                      openEdit(holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h);
+                    }
+                  }}
+                  onDelete={() => {
+                    if (h._merged && h._ids?.length > 1) {
+                      if (window.confirm(`This will delete all ${h._ids.length} entries for ${h.symbol}. Continue?`)) {
+                        h._ids.forEach(id => deleteHolding(id));
+                      }
+                    } else {
+                      deleteHolding(h._ids?.[0] ?? h.id);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+
+          {/* Footer */}
+          <div style={{ padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+            <span>Prices via Yahoo Finance · 15-min delayed · For informational purposes only</span>
+            {priceError && <span style={{ color: "#f0a020" }}>⚠ {priceError}</span>}
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+      {/* ── Realized Profit Section ── */}
+      {(() => {
+        const soldKey = holdingsKey + "_sold";
+        const soldEntries = (data[soldKey] || []).slice().sort((a, b) => b.sellDate?.localeCompare(a.sellDate));
+        if (soldEntries.length === 0) return null;
+        const totalRealized = soldEntries.reduce((s, e) => s + (e.realizedProfit || 0), 0);
+        const totalGains  = soldEntries.filter(e => e.realizedProfit >= 0).reduce((s, e) => s + e.realizedProfit, 0);
+        const totalLosses = soldEntries.filter(e => e.realizedProfit < 0).reduce((s, e) => s + e.realizedProfit, 0);
+        return (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              💰 Realized Profit / Loss
+              <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>({soldEntries.length} sale{soldEntries.length !== 1 ? "s" : ""})</span>
+            </div>
+            {/* Summary row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+              <div style={{ background: totalRealized >= 0 ? "#e8f5ee" : "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid " + (totalRealized >= 0 ? "#b6ddc2" : "#f5c0c0") }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Net Realized P&L</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: totalRealized >= 0 ? "#1a6b3c" : "#cc2222" }}>{totalRealized >= 0 ? "+" : ""}{fmtCur(totalRealized)}</div>
+              </div>
+              <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #b6ddc2" }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Gains</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: "#1a6b3c" }}>+{fmtCur(totalGains)}</div>
+              </div>
+              <div style={{ background: "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #f5c0c0" }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Losses</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: "#cc2222" }}>{fmtCur(totalLosses)}</div>
+              </div>
+            </div>
+            {/* Table */}
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600 }}>Symbol</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Qty</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Buy Price</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Sell Price</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Sell Date</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Realized P&L</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {soldEntries.map((e, i) => {
+                      const pct = e.buyPrice > 0 ? ((e.sellPrice - e.buyPrice) / e.buyPrice) * 100 : 0;
+                      const isGain = e.realizedProfit >= 0;
+                      return (
+                        <tr key={e.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                          onMouseEnter={ev => ev.currentTarget.style.background = "var(--color-background-secondary)"}
+                          onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
+                          <td style={{ padding: "9px 12px", fontWeight: 600 }}>
+                            <div>{e.symbol}</div>
+                            {e.name && e.name !== e.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 400 }}>{e.name}</div>}
+                          </td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>{e.qty}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{isUS && showUSD ? "$" + (e.buyPrice / usdRate).toFixed(2) : fmtCur(e.buyPrice)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{isUS && showUSD ? "$" + (e.sellPrice / usdRate).toFixed(2) : fmtCur(e.sellPrice)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)", fontSize: 12 }}>{e.sellDate}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                            <div style={{ fontWeight: 700, color: isGain ? "#1a6b3c" : "#cc2222" }}>
+                              {isGain ? "+" : ""}{fmtCur(e.realizedProfit)}
+                            </div>
+                            <div style={{ fontSize: 11, color: isGain ? "#1a6b3c" : "#cc2222", opacity: 0.8 }}>
+                              {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
+                            </div>
+                          </td>
+                          <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                            <button onClick={() => {
+                              if (window.confirm("Remove this realized entry?")) {
+                                update(p => ({ [soldKey]: (p[soldKey] || []).filter(x => x.id !== e.id) }));
+                              }
+                            }} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, padding: "2px 4px" }}
+                              onMouseEnter={ev => ev.currentTarget.style.opacity = "1"}
+                              onMouseLeave={ev => ev.currentTarget.style.opacity = "0.5"}>🗑</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO ANALYSIS VIEW — Live data from /api/stock-price (PE, Beta, Sector, Cap)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CAP_COLORS   = { Large:"#1a6b3c", Mid:"#4da6ff", Small:"#f59e0b", ETF:"#8b5cf6", Unknown:"#9ca3af" };
+const SECTOR_COLORS = ["#1a6b3c","#4da6ff","#f59e0b","#ef4444","#8b5cf6","#10b981","#f97316","#ec4899","#14b8a6","#6366f1","#84cc16","#0ea5e9","#a78bfa","#fb923c","#34d399","#f43f5e","#06b6d4"];
+
+function PortfolioAnalysisView({ data }) {
+  // Merge duplicate symbol+exchange entries into weighted avg (same logic as Portfolio tab)
+  function computeMerged(list) {
+    const map = new Map();
+    (list || []).forEach(h => {
+      const key = `${(h.symbol || "").trim().toUpperCase()}|${h.exchange || "NSE"}`;
+      if (!map.has(key)) {
+        map.set(key, { ...h, _ids: [h.id], _merged: false, _originalCount: 1 });
+      } else {
+        const ex = map.get(key);
+        const totalQty = ex.qty + h.qty;
+        const avgPrice = ((ex.buyPrice * ex.qty) + (h.buyPrice * h.qty)) / totalQty;
+        map.set(key, { ...ex, qty: totalQty, buyPrice: Math.round(avgPrice * 100) / 100, _ids: [...ex._ids, h.id], _merged: true, _originalCount: ex._originalCount + 1, yahooOverride: ex.yahooOverride || h.yahooOverride });
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  const indHoldings = computeMerged(data.portfolioHoldings || []);
+  const usHoldings  = computeMerged(data.usHoldings || []);
+  const allEmpty    = indHoldings.length === 0 && usHoldings.length === 0;
+
+  // Live fundamentals state: { "INFY.NS": { pe, beta, sector, cap, marketCap, ... } }
+  const [fundMap,   setFundMap]   = React.useState({});
+  const [fundLoading, setFundLoading] = React.useState(false);
+  const [fundLoaded,  setFundLoaded]  = React.useState(false);
+  const [sortCol,   setSortCol]   = React.useState("sector");
+  const [sortAsc,   setSortAsc]   = React.useState(true);
+
+  function toTicker(h) {
+    const s = h.symbol.trim().toUpperCase();
+    if ((h.exchange || "NSE") === "NSE") return s + ".NS";
+    if ((h.exchange || "") === "BSE")    return s + ".BO";
+    return s;
+  }
+
+  // Fetch fundamentals for all holdings in one batch call
+  async function fetchFundamentals() {
+    if (allEmpty) return;
+    setFundLoading(true);
+    const all = [...indHoldings, ...usHoldings];
+    const tickers = [...new Set(all.map(toTicker))];
+    try {
+      const res = await fetch(`/api/stock-fundamentals?ticker=${tickers.map(encodeURIComponent).join(",")}`);
+      if (res.ok) {
+        const d = await res.json();
+        setFundMap(d);
+      }
+    } catch (e) {}
+    setFundLoading(false);
+    setFundLoaded(true);
+  }
+
+  React.useEffect(() => { fetchFundamentals(); }, [indHoldings.length, usHoldings.length]);
+
+  function holdingValue(h) { return (h.buyPrice || 0) * (h.qty || 0); }
+
+  const indTotal   = indHoldings.reduce((s, h) => s + holdingValue(h), 0);
+  const usTotal    = usHoldings.reduce((s, h)  => s + holdingValue(h), 0);
+  const grandTotal = (indTotal + usTotal) || 1;
+
+  // Build enriched rows using live data from fundMap
+  function buildRows() {
+    const rows = [
+      ...indHoldings.map(h => ({ ...h, region: "🇮🇳" })),
+      ...usHoldings.map(h =>  ({ ...h, region: "🇺🇸" })),
+    ].map(h => {
+      const ticker = toTicker(h);
+      const fd     = fundMap[ticker] || {};
+      const val    = holdingValue(h);
+      return {
+        ...h, ticker,
+        val,
+        weight:  (val / grandTotal) * 100,
+        pe:      fd.pe     ?? null,
+        beta:    fd.beta   ?? null,
+        sector:  fd.sector ?? null,
+        cap:     fd.cap    ?? null,
+        marketCap: fd.marketCap ?? null,
+        liveName:  fd.name  ?? null,
+      };
+    });
+    return rows;
+  }
+
+  const rows = buildRows();
+
+  // Build sector total weight map for sector-by-weightage sort
+  const sectorWeight = {};
+  rows.forEach(r => {
+    const s = r.sector || "__none__";
+    sectorWeight[s] = (sectorWeight[s] || 0) + r.weight;
+  });
+
+  // Sort
+  function sortedRows() {
+    return [...rows].sort((a, b) => {
+      let av, bv;
+      if (sortCol === "weight")  { av = a.weight; bv = b.weight; }
+      else if (sortCol === "pe") { av = a.pe ?? (sortAsc ? Infinity : -Infinity); bv = b.pe ?? (sortAsc ? Infinity : -Infinity); }
+      else if (sortCol === "beta"){ av = a.beta ?? (sortAsc ? Infinity : -Infinity); bv = b.beta ?? (sortAsc ? Infinity : -Infinity); }
+      else if (sortCol === "cap") {
+        const order = { Large:0, Mid:1, Small:2, ETF:3, null:4 };
+        av = order[a.cap] ?? 4; bv = order[b.cap] ?? 4;
+      }
+      else if (sortCol === "symbol") { return sortAsc ? a.symbol.localeCompare(b.symbol) : b.symbol.localeCompare(a.symbol); }
+      else if (sortCol === "sector") {
+        // Sort sectors by their total weight (heaviest sector first)
+        const sa = a.sector || "__none__"; const sb = b.sector || "__none__";
+        const wa = sectorWeight[sa] || 0;  const wb = sectorWeight[sb] || 0;
+        if (wa !== wb) return sortAsc ? wa - wb : wb - wa;
+        // Within same sector, sort stocks by individual weight desc
+        return b.weight - a.weight;
+      }
+      else { av = a.weight; bv = b.weight; }
+      return sortAsc ? av - bv : bv - av;
+    });
+  }
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortAsc(p => !p);
+    else { setSortCol(col); setSortAsc(false); }
+  }
+
+  // Aggregations from live data
+  const sectorMap = {};
+  const capMap    = {};
+  rows.forEach(r => {
+    const sector = r.sector || "Other";
+    const cap    = r.cap    || "Unknown";
+    sectorMap[sector] = (sectorMap[sector] || 0) + r.val;
+    capMap[cap]       = (capMap[cap]       || 0) + r.val;
+  });
+
+  // Weighted PE & Beta
+  let wPeN=0,wPeD=0,wBN=0,wBD=0;
+  rows.filter(r=>r.region==="🇮🇳").forEach(r=>{
+    if(r.pe   !=null){wPeN+=r.pe*r.val;  wPeD+=r.val;}
+    if(r.beta !=null){wBN +=r.beta*r.val; wBD +=r.val;}
+  });
+  let wPeNus=0,wPeDus=0,wBNus=0,wBDus=0;
+  rows.filter(r=>r.region==="🇺🇸").forEach(r=>{
+    if(r.pe  !=null){wPeNus+=r.pe*r.val;  wPeDus+=r.val;}
+    if(r.beta!=null){wBNus +=r.beta*r.val; wBDus +=r.val;}
+  });
+  const indPE   = wPeD   >0 ? (wPeN  /wPeD  ).toFixed(1) : "—";
+  const indBeta = wBD    >0 ? (wBN   /wBD   ).toFixed(2) : "—";
+  const usPE    = wPeDus >0 ? (wPeNus/wPeDus).toFixed(1) : "—";
+  const usBeta  = wBDus  >0 ? (wBNus /wBDus ).toFixed(2) : "—";
+
+  // ── Render helpers ──────────────────────────────────────────────────────────
+  function DonutChart({ items, total, size=140 }) {
+    const [hov, setHov] = React.useState(null);
+    if (!items.length || !total) return null;
+    const r=50, cx=60, cy=60, stroke=18, circ=2*Math.PI*r;
+    let cum=0;
+    const slices = items.map((item,i) => {
+      const pct=item.value/total, dash=pct*circ, gap=circ-dash;
+      const offset = -cum*circ + circ*0.25;
+      cum+=pct;
+      return {...item, dash, gap, offset, pct, i};
+    });
+    return (
+      <svg width={size} height={size} viewBox="0 0 120 120">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--color-background-secondary)" strokeWidth={stroke}/>
+        {slices.map((s,i)=>(
+          <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color}
+            strokeWidth={hov===i ? stroke+3 : stroke}
+            strokeDasharray={`${s.dash} ${s.gap}`} strokeDashoffset={s.offset}
+            style={{cursor:"pointer", transition:"stroke-width 0.15s"}}
+            onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}/>
+        ))}
+        {hov!==null ? <>
+          <text x={cx} y={cy-5}  textAnchor="middle" fontSize="8"  fill="var(--color-text-secondary)">{slices[hov].label}</text>
+          <text x={cx} y={cy+8}  textAnchor="middle" fontSize="11" fontWeight="bold" fill="var(--color-text-primary)">{(slices[hov].pct*100).toFixed(1)}%</text>
+        </> : (
+          <text x={cx} y={cy+5}  textAnchor="middle" fontSize="10" fill="var(--color-text-secondary)">{items.length} items</text>
+        )}
+      </svg>
+    );
+  }
+
+  function AllocationCard({ title, items, total, colors }) {
+    const sorted = [...items].sort((a,b)=>b.value-a.value);
+    return (
+      <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>{title}</div>
+        <div style={{display:"flex",gap:16,alignItems:"center"}}>
+          <DonutChart items={sorted.map((it,i)=>({...it,color:colors[i%colors.length]}))} total={total} size={130}/>
+          <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,maxHeight:180,overflowY:"auto"}}>
+            {sorted.map((it,i)=>{
+              const pct=total>0?(it.value/total*100).toFixed(1):0;
+              return (
+                <div key={it.label} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                  <div style={{width:10,height:10,borderRadius:2,background:colors[i%colors.length],flexShrink:0}}/>
+                  <span style={{flex:1,color:"var(--color-text-secondary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.label}</span>
+                  <span style={{fontWeight:600,fontSize:11}}>{pct}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function MetricBadge({ label, value, sub, color }) {
+    return (
+      <div style={{background:"var(--color-background-secondary)",borderRadius:10,padding:"0.8rem 1rem",textAlign:"center"}}>
+        <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:4}}>{label}</div>
+        <div style={{fontSize:22,fontWeight:700,color:color||"var(--color-text-primary)"}}>{value}</div>
+        {sub && <div style={{fontSize:10,color:"var(--color-text-secondary)",marginTop:2}}>{sub}</div>}
+      </div>
+    );
+  }
+
+  function SortTh({ col, label, right }) {
+    const active = sortCol === col;
+    return (
+      <th onClick={() => toggleSort(col)}
+        style={{padding:"7px 10px",textAlign:right?"right":"left",fontSize:11,fontWeight:600,
+          color:active?"#1a6b3c":"var(--color-text-secondary)",whiteSpace:"nowrap",
+          borderBottom:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",userSelect:"none"}}>
+        {label} {active ? (sortAsc ? "↑" : "↓") : "↕"}
+      </th>
+    );
+  }
+
+  if (allEmpty) return (
+    <div style={{textAlign:"center",padding:"3rem",color:"var(--color-text-secondary)"}}>
+      <div style={{fontSize:36,marginBottom:10}}>📊</div>
+      <div style={{fontWeight:500,marginBottom:6}}>No portfolio holdings yet</div>
+      <div style={{fontSize:13}}>Add Indian or US stocks in the Portfolio tab to see analysis.</div>
+    </div>
+  );
+
+  const sectorItems = Object.entries(sectorMap).map(([label,value])=>({label,value}));
+  const capItemList = Object.entries(capMap).map(([label,value])=>({label,value,color:CAP_COLORS[label.replace(" Cap","")]||"#9ca3af"}));
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+      {/* Refresh button + status */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
+        {fundLoading && <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>⟳ Loading fundamentals…</span>}
+        {fundLoaded  && !fundLoading && <span style={{fontSize:12,color:"#1a6b3c"}}>✓ Live data loaded</span>}
+        <button onClick={fetchFundamentals} disabled={fundLoading}
+          style={{padding:"6px 14px",borderRadius:8,border:"0.5px solid var(--color-border-secondary)",
+            background:"var(--color-background-primary)",cursor:"pointer",fontSize:12,
+            color:"var(--color-text-secondary)",opacity:fundLoading?0.6:1}}>
+          ↻ Refresh
+        </button>
+      </div>
+
+      {/* Row 1: IN vs US + Cap */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(280px,100%),1fr))",gap:14}}>
+        <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
+          <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>🌏 Indian vs US Holdings</div>
+          <div style={{display:"flex",gap:16,alignItems:"center"}}>
+            <DonutChart
+              items={[
+                indTotal>0?{label:"🇮🇳 Indian",value:indTotal,color:"#1a6b3c"}:null,
+                usTotal >0?{label:"🇺🇸 US",    value:usTotal, color:"#4da6ff"}:null,
+              ].filter(Boolean)} total={grandTotal} size={130}/>
+            <div style={{flex:1,display:"flex",flexDirection:"column",gap:10}}>
+              {indTotal>0&&<div>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                  <div style={{width:10,height:10,borderRadius:2,background:"#1a6b3c"}}/>
+                  <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>🇮🇳 Indian (NSE/BSE)</span>
+                </div>
+                <div style={{fontSize:18,fontWeight:700,color:"#1a6b3c"}}>{(indTotal/grandTotal*100).toFixed(1)}%</div>
+                <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{indHoldings.length} stocks</div>
+              </div>}
+              {usTotal>0&&<div>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                  <div style={{width:10,height:10,borderRadius:2,background:"#4da6ff"}}/>
+                  <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>🇺🇸 US (NYSE/NASDAQ)</span>
+                </div>
+                <div style={{fontSize:18,fontWeight:700,color:"#4da6ff"}}>{(usTotal/grandTotal*100).toFixed(1)}%</div>
+                <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{usHoldings.length} stocks</div>
+              </div>}
+            </div>
+          </div>
+        </div>
+
+        {capItemList.length>0 ? (
+          <AllocationCard title="📏 Market Cap Allocation" items={capItemList} total={grandTotal}
+            colors={capItemList.map(c=>c.color)}/>
+        ) : (
+          <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--color-text-secondary)",fontSize:13}}>
+            {fundLoading?"Loading cap data…":"Cap data not available"}
+          </div>
+        )}
+      </div>
+
+      {/* Row 2: Sector */}
+      {sectorItems.length>0 && (
+        <AllocationCard title="🏭 Sector Allocation" items={sectorItems} total={grandTotal} colors={SECTOR_COLORS}/>
+      )}
+
+      {/* Row 3: PE & Beta summary */}
+      {(indHoldings.length>0||usHoldings.length>0) && (
+        <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
+          <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>📐 Portfolio PE & Beta</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+            {indHoldings.length>0&&<>
+              <MetricBadge label="🇮🇳 Avg PE" value={indPE}
+                sub="Weighted avg (Indian)" color={Number(indPE)>40?"#f59e0b":"#1a6b3c"}/>
+              <MetricBadge label="🇮🇳 Avg Beta" value={indBeta}
+                sub={Number(indBeta)>1.2?"High risk":Number(indBeta)<0.8?"Low risk":"Moderate"}
+                color={Number(indBeta)>1.2?"#ef4444":Number(indBeta)<0.8?"#1a6b3c":"#f59e0b"}/>
+            </>}
+            {usHoldings.length>0&&<>
+              <MetricBadge label="🇺🇸 Avg PE" value={usPE}
+                sub="Weighted avg (US)" color={Number(usPE)>40?"#f59e0b":"#4da6ff"}/>
+              <MetricBadge label="🇺🇸 Avg Beta" value={usBeta}
+                sub={Number(usBeta)>1.2?"High risk":Number(usBeta)<0.8?"Low risk":"Moderate"}
+                color={Number(usBeta)>1.2?"#ef4444":Number(usBeta)<0.8?"#4da6ff":"#f59e0b"}/>
+            </>}
+          </div>
+          <div style={{fontSize:11,color:"var(--color-text-secondary)",marginTop:10}}>
+            ⓘ PE & Beta fetched live from Yahoo Finance. Click ↻ Refresh to update.
+          </div>
+        </div>
+      )}
+
+      {/* Row 4: Per-stock table with sort */}
+      <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:10}}>
+          📋 Stock-Level Fundamentals
+          <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>Click column headers to sort</span>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:"var(--color-background-primary)"}}>
+                <th style={{padding:"7px 10px",textAlign:"center",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"}}></th>
+                <SortTh col="symbol" label="Symbol"/>
+                <th style={{padding:"7px 10px",textAlign:"left",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>Company</th>
+                <SortTh col="sector" label="Sector"/>
+                <SortTh col="cap"    label="Cap"/>
+                <SortTh col="pe"     label="PE" right/>
+                <SortTh col="beta"   label="Beta" right/>
+                <SortTh col="weight" label="Weight" right/>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows().map((h,i)=>{
+                const weight = h.weight.toFixed(1);
+                return (
+                  <tr key={i} style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--color-background-primary)"}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <td style={{padding:"7px 10px",textAlign:"center"}}>{h.region}</td>
+                    <td style={{padding:"7px 10px",fontWeight:600}}>{h.symbol}</td>
+                    <td style={{padding:"7px 10px",color:"var(--color-text-secondary)",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {h.liveName || h.name || "—"}
+                    </td>
+                    <td style={{padding:"7px 10px"}}>
+                      {h.sector
+                        ? <span style={{background:"var(--color-background-primary)",borderRadius:4,padding:"2px 6px",fontSize:10}}>{h.sector}</span>
+                        : <span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                    </td>
+                    <td style={{padding:"7px 10px",textAlign:"center"}}>
+                      {h.cap
+                        ? <span style={{color:CAP_COLORS[h.cap]||"#9ca3af",fontWeight:500,fontSize:11}}>{h.cap}</span>
+                        : <span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                    </td>
+                    <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
+                      color:h.pe==null?"var(--color-text-secondary)":h.pe>60?"#ef4444":h.pe>35?"#f59e0b":"#1a6b3c"}}>
+                      {h.pe??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                    </td>
+                    <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
+                      color:h.beta==null?"var(--color-text-secondary)":h.beta>1.3?"#ef4444":h.beta<0.8?"#1a6b3c":"#f59e0b"}}>
+                      {h.beta??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                    </td>
+                    <td style={{padding:"7px 10px",textAlign:"right"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+                        <div style={{width:60,height:5,borderRadius:3,background:"var(--color-border-tertiary)",overflow:"hidden"}}>
+                          <div style={{width:Math.min(100,h.weight/Math.max(...sortedRows().map(r=>r.weight))*100)+"%",height:"100%",
+                            background:h.region==="🇮🇳"?"#1a6b3c":"#4da6ff",borderRadius:3}}/>
+                        </div>
+                        <span style={{fontSize:11,color:"var(--color-text-secondary)",minWidth:36,textAlign:"right"}}>{weight}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
