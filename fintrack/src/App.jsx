@@ -49,6 +49,27 @@ const LIGHT_MODE_STYLE = `
   }
 `;
 
+// ── IndexedDB helpers — stores local file dataUrls so Firestore stays small ──
+const IDB_NAME = "fintrack_files";
+const IDB_STORE = "files";
+function openFileDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE, { keyPath: "id" });
+    req.onsuccess = e => res(e.target.result);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+async function idbSaveFile(id, dataUrl) {
+  try { const db = await openFileDB(); const tx = db.transaction(IDB_STORE, "readwrite"); tx.objectStore(IDB_STORE).put({ id, dataUrl }); await new Promise((r,j) => { tx.oncomplete=r; tx.onerror=j; }); } catch(e) { console.warn("idb save failed", e); }
+}
+async function idbGetFile(id) {
+  try { const db = await openFileDB(); return await new Promise((res,rej) => { const req = db.transaction(IDB_STORE,"readonly").objectStore(IDB_STORE).get(id); req.onsuccess=e=>res(e.target.result?.dataUrl||null); req.onerror=e=>rej(e.target.error); }); } catch(e) { return null; }
+}
+async function idbDeleteFile(id) {
+  try { const db = await openFileDB(); const tx = db.transaction(IDB_STORE,"readwrite"); tx.objectStore(IDB_STORE).delete(id); } catch(e) {}
+}
+
 // ── localStorage → kept only for one-time migration on first sign-in ──────────
 const STORAGE_KEY = "fintrack_data_v2";
 
@@ -9288,12 +9309,12 @@ function BusinessPage({ data, update }) {
                                           <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
                                         </div>
                                         <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                                          <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                          <button onClick={async () => { if (bill.source === "local") { const url = await idbGetFile(bill.fileId); if (url) { const w = window.open(); w.document.write(`<img src="${url}" style="max-width:100%">`) || (w.location.href = url); } } else { window.open(bill.fileUrl, "_blank"); } }}
                                             style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
                                             View
                                           </button>
                                           <button onClick={() => {
-                                            setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                            if (bill.source === 'local') idbDeleteFile(bill.fileId); update(d => ({ billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
                                           }}
                                             style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
                                             ×
@@ -9312,26 +9333,22 @@ function BusinessPage({ data, update }) {
                                     const file = ev.target.files?.[0];
                                     if (!file) return;
                                     
-                                    if (!drive?.connected) {
-                                      alert("Google Drive not connected. Please connect Google Drive in Settings to upload bills.");
-                                      return;
-                                    }
-
                                     try {
-                                      const result = await drive.uploadToDrive(file, null);
-                                      if (result?.id && result?.webViewLink) {
-                                        const newBill = {
-                                          monthId: entry.id,
-                                          fileName: file.name,
-                                          fileUrl: result.webViewLink,
-                                          fileId: result.id,
-                                          uploadDate: new Date().toISOString()
-                                        };
-                                        setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                        alert("Bill uploaded successfully to Google Drive!");
-                                      } else {
-                                        alert("Failed to upload bill. Please try again.");
+                                      let newBill;
+                                      if (drive?.connected) {
+                                        const result = await drive.uploadToDrive(file, null);
+                                        if (result?.id && result?.webViewLink) {
+                                          newBill = { monthId: entry.id, fileName: file.name, fileUrl: result.webViewLink, fileId: result.id, source: "gdrive", uploadDate: new Date().toISOString() };
+                                        }
                                       }
+                                      if (!newBill) {
+                                        // Local fallback — store in IndexedDB, not Firestore
+                                        const localId = "bill_local_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+                                        const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+                                        await idbSaveFile(localId, dataUrl);
+                                        newBill = { monthId: entry.id, fileName: file.name, fileId: localId, source: "local", uploadDate: new Date().toISOString() };
+                                      }
+                                      update(d => ({ billAttachments: [...(d.billAttachments || []), newBill] }));
                                     } catch (err) {
                                       console.error("Upload failed:", err);
                                       alert("Failed to upload bill. Please try again.");
@@ -9650,12 +9667,12 @@ function BusinessPage({ data, update }) {
                                   <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
                                 </div>
                                 <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                                  <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                                  <button onClick={async () => { if (bill.source === "local") { const url = await idbGetFile(bill.fileId); if (url) { const w = window.open(); w.document.write(`<img src="${url}" style="max-width:100%">`) || (w.location.href = url); } } else { window.open(bill.fileUrl, "_blank"); } }}
                                     style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
                                     View
                                   </button>
                                   <button onClick={() => {
-                                    setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                    if (bill.source === 'local') idbDeleteFile(bill.fileId); update(d => ({ billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
                                   }}
                                     style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
                                     ×
@@ -9674,26 +9691,21 @@ function BusinessPage({ data, update }) {
                             const file = ev.target.files?.[0];
                             if (!file) return;
                             
-                            if (!drive?.connected) {
-                              alert("Google Drive not connected. Please connect Google Drive in Settings to upload bills.");
-                              return;
-                            }
-
                             try {
-                              const result = await drive.uploadToDrive(file, null);
-                              if (result?.id && result?.webViewLink) {
-                                const newBill = {
-                                  monthId: entry.id,
-                                  fileName: file.name,
-                                  fileUrl: result.webViewLink,
-                                  fileId: result.id,
-                                  uploadDate: new Date().toISOString()
-                                };
-                                setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                alert("Bill uploaded successfully to Google Drive!");
-                              } else {
-                                alert("Failed to upload bill. Please try again.");
+                              let newBill;
+                              if (drive?.connected) {
+                                const result = await drive.uploadToDrive(file, null);
+                                if (result?.id && result?.webViewLink) {
+                                  newBill = { monthId: entry.id, fileName: file.name, fileUrl: result.webViewLink, fileId: result.id, source: "gdrive", uploadDate: new Date().toISOString() };
+                                }
                               }
+                              if (!newBill) {
+                                const localId = "bill_local_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+                                const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+                                await idbSaveFile(localId, dataUrl);
+                                newBill = { monthId: entry.id, fileName: file.name, fileId: localId, source: "local", uploadDate: new Date().toISOString() };
+                              }
+                              update(d => ({ billAttachments: [...(d.billAttachments || []), newBill] }));
                             } catch (err) {
                               console.error("Upload failed:", err);
                               alert("Failed to upload bill. Please try again.");
@@ -9880,12 +9892,12 @@ function BusinessPage({ data, update }) {
                               </div>
                             </div>
                             <div style={{ display:"flex",gap:6,flexShrink:0 }}>
-                              <button onClick={() => window.open(bill.fileUrl, '_blank')}
+                              <button onClick={async () => { if (bill.source === "local") { const url = await idbGetFile(bill.fileId); if (url) { const w = window.open(); w.document.write(`<img src="${url}" style="max-width:100%">`) || (w.location.href = url); } } else { window.open(bill.fileUrl, "_blank"); } }}
                                 style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:500 }}>
                                 View
                               </button>
                               <button onClick={() => {
-                                setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
+                                if (bill.source === 'local') idbDeleteFile(bill.fileId); update(d => ({ billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
                               }}
                                 style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600 }}>
                                 ×
@@ -9904,26 +9916,21 @@ function BusinessPage({ data, update }) {
                         const file = ev.target.files?.[0];
                         if (!file) return;
                         
-                        if (!drive?.connected) {
-                          alert("Google Drive not connected. Please connect Google Drive in Settings to upload bills.");
-                          return;
-                        }
-
                         try {
-                          const result = await drive.uploadToDrive(file, null);
-                          if (result?.id && result?.webViewLink) {
-                            const newBill = {
-                              monthId: activeMonthEntry.id,
-                              fileName: file.name,
-                              fileUrl: result.webViewLink,
-                              fileId: result.id,
-                              uploadDate: new Date().toISOString()
-                            };
-                            setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                            alert("Bill uploaded successfully to Google Drive!");
-                          } else {
-                            alert("Failed to upload bill. Please try again.");
+                          let newBill;
+                          if (drive?.connected) {
+                            const result = await drive.uploadToDrive(file, null);
+                            if (result?.id && result?.webViewLink) {
+                              newBill = { monthId: activeMonthEntry.id, fileName: file.name, fileUrl: result.webViewLink, fileId: result.id, source: "gdrive", uploadDate: new Date().toISOString() };
+                            }
                           }
+                          if (!newBill) {
+                            const localId = "bill_local_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+                            const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+                            await idbSaveFile(localId, dataUrl);
+                            newBill = { monthId: activeMonthEntry.id, fileName: file.name, fileId: localId, source: "local", uploadDate: new Date().toISOString() };
+                          }
+                          update(d => ({ billAttachments: [...(d.billAttachments || []), newBill] }));
                         } catch (err) {
                           console.error("Upload failed:", err);
                           alert("Failed to upload bill. Please try again.");
@@ -10201,9 +10208,12 @@ function ProjectsPage({ data, update }) {
           : null;
       }
       if (!fileEntry) {
-        // fallback local
+        // fallback local — store dataUrl in IndexedDB (not Firestore, avoids 1MB limit)
+        const localId = "local_" + Date.now() + "_" + Math.random().toString(36).slice(2);
         const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
-        fileEntry = { id: Date.now() + Math.random(), name: file.name, type: file.type, size: file.size, dataUrl, source: "local", uploadedAt: new Date().toISOString() };
+        await idbSaveFile(localId, dataUrl);
+        // Only store metadata (no dataUrl) in Firestore
+        fileEntry = { id: localId, name: file.name, type: file.type, size: file.size, source: "local", uploadedAt: new Date().toISOString() };
       }
       update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
         ? { ...pr, files: [...(pr.files || []), fileEntry] }
@@ -10214,6 +10224,8 @@ function ProjectsPage({ data, update }) {
   }
 
   function deleteFile(fileId) {
+    // Clean up IndexedDB if it was a local file
+    if (String(fileId).startsWith("local_")) idbDeleteFile(fileId);
     update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
       ? { ...pr, files: (pr.files || []).filter(f => f.id !== fileId) }
       : pr
@@ -10699,17 +10711,27 @@ function ProjectsPage({ data, update }) {
 
               function ProjectFileRow({ f }) {
                 const [expanded, setExpanded] = React.useState(false);
-                const canPreview = f.dataUrl || f.previewUrl || f.webViewLink;
-                const isImg = f.type?.startsWith("image/") || f.dataUrl?.startsWith("data:image");
-                const isPdf = f.type === "application/pdf" || f.dataUrl?.startsWith("data:application/pdf");
+                const [localDataUrl, setLocalDataUrl] = React.useState(f.dataUrl || null);
+
+                // Hydrate local files from IndexedDB (they're not stored in Firestore)
+                React.useEffect(() => {
+                  if (f.source === "local" && !f.dataUrl && String(f.id).startsWith("local_")) {
+                    idbGetFile(f.id).then(url => { if (url) setLocalDataUrl(url); });
+                  }
+                }, [f.id, f.source, f.dataUrl]);
+
+                const effectiveDataUrl = localDataUrl;
+                const canPreview = effectiveDataUrl || f.previewUrl || f.webViewLink;
+                const isImg = f.type?.startsWith("image/") || effectiveDataUrl?.startsWith("data:image");
+                const isPdf = f.type === "application/pdf" || effectiveDataUrl?.startsWith("data:application/pdf");
                 return (
                   <div style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px" }}>
                       {/* Thumbnail */}
                       <div onClick={() => canPreview && setExpanded(p => !p)}
                         style={{ width: 40, height: 40, borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: canPreview ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 22 }}>
-                        {isImg && f.dataUrl
-                          ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        {isImg && effectiveDataUrl
+                          ? <img src={effectiveDataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           : <span>{fileIcon2(f.type)}</span>}
                       </div>
                       {/* Name + size */}
@@ -10718,6 +10740,7 @@ function ProjectsPage({ data, update }) {
                         <div style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "flex", gap: 6, alignItems: "center" }}>
                           {fmtSz(f.size)}
                           {f.source === "gdrive" && <span style={{ background: "#dbeafe", color: "#1d4ed8", borderRadius: 3, padding: "0 4px", fontSize: 9 }}>☁ Drive</span>}
+                          {f.source === "local" && !effectiveDataUrl && <span style={{ background: "#fef3c7", color: "#92400e", borderRadius: 3, padding: "0 4px", fontSize: 9 }}>⏳ Loading…</span>}
                         </div>
                       </div>
                       {/* Actions */}
@@ -10733,26 +10756,26 @@ function ProjectsPage({ data, update }) {
                               <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6, whiteSpace: "nowrap" }}>☁ Open</a>
                               {f.downloadUrl && <a href={f.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#1d4ed8", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1d4ed8", borderRadius: 6 }}>⬇ Download</a>}
                             </>
-                          : f.dataUrl && <a href={f.dataUrl} download={f.name} style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6 }}>⬇</a>}
+                          : effectiveDataUrl && <a href={effectiveDataUrl} download={f.name} style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6 }}>⬇</a>}
                         <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
                       </div>
                     </div>
                     {/* Inline preview panel */}
                     {expanded && (
                       <div style={{ background: "var(--color-background-secondary)", padding: 12, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                        {isImg && f.dataUrl
-                          ? <img src={f.dataUrl} alt={f.name} style={{ maxWidth: "100%", maxHeight: 400, objectFit: "contain", borderRadius: 8, display: "block", margin: "0 auto" }} />
-                          : isPdf && f.dataUrl
-                            ? <object data={f.dataUrl} type="application/pdf" style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }}>
+                        {isImg && effectiveDataUrl
+                          ? <img src={effectiveDataUrl} alt={f.name} style={{ maxWidth: "100%", maxHeight: 400, objectFit: "contain", borderRadius: 8, display: "block", margin: "0 auto" }} />
+                          : isPdf && effectiveDataUrl
+                            ? <object data={effectiveDataUrl} type="application/pdf" style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }}>
                                 <div style={{ textAlign: "center", padding: 28, color: "var(--color-text-secondary)" }}>
                                   <div style={{ fontSize: 36, marginBottom: 8 }}>📕</div>
-                                  <a href={f.dataUrl} download={f.name} style={{ color: "#1a6b3c", fontWeight: 500 }}>⬇ Download PDF</a>
+                                  <a href={effectiveDataUrl} download={f.name} style={{ color: "#1a6b3c", fontWeight: 500 }}>⬇ Download PDF</a>
                                 </div>
                               </object>
                             : f.previewUrl
                               ? <iframe src={f.previewUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} allow="autoplay" />
-                              : f.dataUrl
-                                ? <iframe src={f.dataUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} />
+                              : effectiveDataUrl
+                                ? <iframe src={effectiveDataUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} />
                                 : f.webViewLink
                                   ? <div style={{ textAlign: "center", padding: 24 }}>
                                       <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ color: "#1a6b3c", fontWeight: 500 }}>Open in Google Drive ↗</a>
