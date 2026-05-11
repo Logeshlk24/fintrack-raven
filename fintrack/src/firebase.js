@@ -29,16 +29,20 @@ const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
 
-// Google provider with Drive scope — popup happens once ever at sign-in
+// Google provider with Drive scope — popup happens ONCE at sign-in only
 const provider = new GoogleAuthProvider();
 provider.addScope("https://www.googleapis.com/auth/drive.file");
 
 // ── Sign In ───────────────────────────────────────────────────────────────────
+// This is the ONLY place a popup ever appears.
+// The Google OAuth access token (with drive.file scope) is captured here
+// and stored in localStorage for all future Drive API calls.
 export const signInWithGoogle = async () => {
   const result      = await signInWithPopup(auth, provider);
   const credential  = GoogleAuthProvider.credentialFromResult(result);
   const accessToken = credential?.accessToken;
   if (accessToken) {
+    // Google OAuth tokens last 1 hour; store with a 2-min safety buffer
     const expiry = Date.now() + (3600 - 120) * 1000;
     localStorage.setItem("ft_drv_tok",   accessToken);
     localStorage.setItem("ft_drv_exp",   String(expiry));
@@ -47,61 +51,19 @@ export const signInWithGoogle = async () => {
   return result;
 };
 
-// ── getFreshDriveToken ─────────────────────────────────────────────────────────
-// Uses Firebase's own refresh_token via securetoken endpoint to get a fresh
-// Google access_token (with Drive scope) — zero popup, zero GIS, zero Client ID.
-// Works as long as the user is signed into Google via Firebase.
+// ── getFreshDriveToken ────────────────────────────────────────────────────────
+// Returns the stored Google OAuth token captured at sign-in.
+// NEVER shows a popup. NEVER does a network call.
+// Returns null silently if token is expired or missing —
+// App.jsx will simply skip Drive auto-connect until next sign-in.
 export async function getFreshDriveToken() {
-  try {
-    const user = auth.currentUser;
-    if (!user) return null;
+  const saved  = localStorage.getItem("ft_drv_tok");
+  const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
 
-    // Force Firebase to refresh its internal session
-    await user.getIdToken(true);
+  if (saved && Date.now() < expiry) return saved;
 
-    // Access Firebase's stored refresh_token
-    const refreshToken = user.stsTokenManager?.refreshToken
-      || user._delegate?.stsTokenManager?.refreshToken;
-
-    if (!refreshToken) {
-      // Fallback: return saved token if still valid
-      const saved  = localStorage.getItem("ft_drv_tok");
-      const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-      return (saved && Date.now() < expiry) ? saved : null;
-    }
-
-    // Exchange Firebase refresh_token for a fresh Google access_token
-    const res = await fetch(
-      `https://securetoken.googleapis.com/v1/token?key=${firebaseConfig.apiKey}`,
-      {
-        method:  "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body:    `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
-      }
-    );
-
-    if (!res.ok) {
-      const saved  = localStorage.getItem("ft_drv_tok");
-      const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-      return (saved && Date.now() < expiry) ? saved : null;
-    }
-
-    const json        = await res.json();
-    const accessToken = json.access_token;
-    const expiresIn   = parseInt(json.expires_in || "3600");
-
-    if (accessToken) {
-      localStorage.setItem("ft_drv_tok", accessToken);
-      localStorage.setItem("ft_drv_exp", String(Date.now() + (expiresIn - 120) * 1000));
-    }
-
-    return accessToken || null;
-  } catch (e) {
-    console.warn("getFreshDriveToken:", e);
-    const saved  = localStorage.getItem("ft_drv_tok");
-    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    return (saved && Date.now() < expiry) ? saved : null;
-  }
+  // Token expired or missing — return null silently, no popup, no retry
+  return null;
 }
 
 // ── Sign Out ──────────────────────────────────────────────────────────────────
@@ -114,6 +76,7 @@ export const signOutUser = () => {
 
 export { onAuthStateChanged };
 
+// ── Firestore helpers ─────────────────────────────────────────────────────────
 const userRef = (uid) => doc(db, "users", uid, "fintrack", "data");
 
 function cleanData(obj) {
