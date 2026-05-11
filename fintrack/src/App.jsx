@@ -3904,9 +3904,10 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
 // ─── IntegrationsSettings (Google Drive) ──────────────────────────────────────
 function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseUser }) {
-  const gdrive      = data.gdriveIntegration || {};
-  const isConnected = !!gdrive.connected;
-  const FOLDER_NAME = "FinTracker";
+  const gdrive        = data.gdriveIntegration || {};
+  const isConnected   = !!gdrive.connected;
+  const FOLDER_NAME   = "FinTracker";
+  const BACKUP_FOLDER = "Backup";
 
   const [status, setStatus]                 = useState(null);
   const [msg, setMsg]                       = useState({ type: null, text: "" });
@@ -3915,30 +3916,29 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
   const [loadingFiles, setLoadingFiles]     = useState(false);
   const [restoreConfirm, setRestoreConfirm] = useState(null);
   const [tokenExpired, setTokenExpired]     = useState(false);
+  const [lastAutoBackup, setLastAutoBackup] = useState(() =>
+    parseInt(localStorage.getItem("ft_last_auto_backup") || "0")
+  );
 
   function flashMsg(type, text, dur = 5000) {
     setMsg({ type, text });
     if (dur) setTimeout(() => setMsg({ type: null, text: "" }), dur);
   }
 
-  // ── Get stored OAuth token (set at sign-in by firebase.js) ───────────────────
-  // This is the real Google OAuth token with drive.file scope.
-  // It is NOT a Firebase ID token — it comes from GoogleAuthProvider.credentialFromResult().
+  // ── Get stored OAuth token ────────────────────────────────────────────────────
   function getStoredToken() {
     const token  = localStorage.getItem("ft_drv_tok");
     const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    if (!token)             { setTokenExpired(true); return null; }
-    if (Date.now() > expiry){ setTokenExpired(true); return null; }
+    if (!token)              { setTokenExpired(true); return null; }
+    if (Date.now() > expiry) { setTokenExpired(true); return null; }
     setTokenExpired(false);
     return token;
   }
 
-  // ── Re-authenticate: triggers a Google popup to get a fresh OAuth token ───────
+  // ── Re-authenticate ───────────────────────────────────────────────────────────
   async function reAuth() {
     setStatus("reauth");
     try {
-      // signInWithGoogle in firebase.js already uses provider+drive.file scope
-      // and stores the fresh token in localStorage
       await signInWithGoogle();
       setTokenExpired(false);
       flashMsg("success", "✅ Re-authenticated! Try your action again.");
@@ -3959,7 +3959,6 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      // 401 = token rejected by Google
       if (resp.status === 401) { setTokenExpired(true); throw new Error("TOKEN_EXPIRED"); }
       throw new Error(err?.error?.message || `Drive API error ${resp.status}`);
     }
@@ -3967,13 +3966,11 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
   }
 
   function handleDriveError(e) {
-    if (e.message === "TOKEN_EXPIRED") {
-      // Don't flash a confusing error — the UI already shows the re-auth banner
-      return;
-    }
+    if (e.message === "TOKEN_EXPIRED") return;
     flashMsg("error", `❌ ${e.message}`);
   }
 
+  // ── Ensure FinTracker/ folder exists, return its id ──────────────────────────
   async function ensureFinTrackerFolder() {
     const search = await driveRequest(
       `https://www.googleapis.com/drive/v3/files?q=name%3D'${FOLDER_NAME}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20trashed%3Dfalse&fields=files(id,name)`
@@ -3987,21 +3984,186 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     return created.id;
   }
 
+  // ── Ensure FinTracker/Backup/ subfolder exists, return its id ────────────────
+  async function ensureBackupFolder(parentFolderId) {
+    // Check if Backup/ already exists inside FinTracker/
+    if (gdrive.backupFolderId) return gdrive.backupFolderId;
+    const search = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${BACKUP_FOLDER}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20'${parentFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id,name)`
+    );
+    if (search.files?.length > 0) {
+      const backupFolderId = search.files[0].id;
+      update(() => ({ gdriveIntegration: { ...gdrive, backupFolderId } }));
+      return backupFolderId;
+    }
+    const created = await driveRequest(
+      "https://www.googleapis.com/drive/v3/files",
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: BACKUP_FOLDER, mimeType: "application/vnd.google-apps.folder", parents: [parentFolderId] }) }
+    );
+    update(() => ({ gdriveIntegration: { ...gdrive, backupFolderId: created.id } }));
+    return created.id;
+  }
+
+  // ── Core upload: always overwrites the same fixed file ──────────────────────
+  // Uses PATCH (update) if the file already exists, POST (create) if not.
+  // This keeps exactly ONE backup file: FinTracker/Backup/fintrack_backup.json
+  async function uploadBackup(token, backupFolderId, silent = false) {
+    const { user, ...exportable } = data;
+    const payload  = { _meta: { exportedAt: new Date().toISOString(), appVersion: "fintrack_v2" }, ...exportable };
+    const jsonStr  = JSON.stringify(payload, null, 2);
+    const FILE_NAME = "fintrack_backup.json";
+
+    // Check if file already exists in the Backup folder
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${FILE_NAME}'%20and%20'${backupFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!searchRes.ok) {
+      if (searchRes.status === 401) { setTokenExpired(true); return false; }
+      throw new Error(`Search failed (${searchRes.status})`);
+    }
+    const searchData = await searchRes.json();
+    const existingId = searchData.files?.[0]?.id || null;
+
+    let uploadRes;
+    if (existingId) {
+      // ── PATCH: overwrite existing file content (keep same file id) ───────────
+      uploadRes = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`,
+        {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: jsonStr,
+        }
+      );
+    } else {
+      // ── POST: create file for the first time ──────────────────────────────────
+      const boundary = "fintrack_boundary_xyz";
+      const body = [
+        `--${boundary}`,
+        "Content-Type: application/json; charset=UTF-8",
+        "",
+        JSON.stringify({ name: FILE_NAME, parents: [backupFolderId] }),
+        `--${boundary}`,
+        "Content-Type: application/json",
+        "",
+        jsonStr,
+        `--${boundary}--`,
+      ].join("\r\n");
+      uploadRes = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+          body,
+        }
+      );
+    }
+
+    if (!uploadRes.ok) {
+      if (uploadRes.status === 401) { setTokenExpired(true); return false; }
+      const err = await uploadRes.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Upload failed (${uploadRes.status})`);
+    }
+    if (!silent) flashMsg("success", `✅ Backup saved → FinTracker/Backup/${FILE_NAME}`);
+    return true;
+  }
+
+  // ── Manual save ──────────────────────────────────────────────────────────────
+  async function handleSaveToDrive() {
+    setStatus("saving");
+    setMsg({ type: null, text: "" });
+    try {
+      const token = getStoredToken();
+      if (!token) { setStatus(null); return; }
+      const folderId       = gdrive.folderId       || await ensureFinTrackerFolder();
+      const backupFolderId = gdrive.backupFolderId  || await ensureBackupFolder(folderId);
+      await uploadBackup(token, backupFolderId, false);
+      // Update last backup time
+      const now = Date.now();
+      localStorage.setItem("ft_last_auto_backup", String(now));
+      setLastAutoBackup(now);
+    } catch (e) {
+      handleDriveError(e);
+    } finally {
+      setStatus(null);
+    }
+  }
+
+  // ── Auto-backup every 6 hours (silent, no UI flash unless error) ─────────────
+  useEffect(() => {
+    if (!isConnected) return;
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+
+    async function runAutoBackup() {
+      const token = localStorage.getItem("ft_drv_tok");
+      const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+      if (!token || Date.now() > expiry) return; // token gone — skip silently
+
+      try {
+        // Need fresh gdrive values — read from localStorage snapshot via closure
+        const fid  = gdrive.folderId;
+        const bfid = gdrive.backupFolderId;
+        if (!fid) return;
+
+        // Resolve backup folder (re-use stored id if available)
+        let backupFolderId = bfid;
+        if (!backupFolderId) {
+          const search = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=name%3D'${BACKUP_FOLDER}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20'${fid}'+in+parents%20and%20trashed%3Dfalse&fields=files(id,name)`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (!search.ok) return;
+          const sdata = await search.json();
+          if (sdata.files?.length > 0) {
+            backupFolderId = sdata.files[0].id;
+          } else {
+            const cr = await fetch("https://www.googleapis.com/drive/v3/files", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ name: BACKUP_FOLDER, mimeType: "application/vnd.google-apps.folder", parents: [fid] }),
+            });
+            if (!cr.ok) return;
+            const cdata = await cr.json();
+            backupFolderId = cdata.id;
+          }
+          update(() => ({ gdriveIntegration: { ...gdrive, backupFolderId } }));
+        }
+
+        await uploadBackup(token, backupFolderId, true); // silent = true
+        const now = Date.now();
+        localStorage.setItem("ft_last_auto_backup", String(now));
+        setLastAutoBackup(now);
+      } catch (e) {
+        console.warn("Auto-backup failed silently:", e);
+      }
+    }
+
+    // Run immediately if 6h have passed since last backup
+    if (Date.now() - lastAutoBackup >= SIX_HOURS) runAutoBackup();
+
+    const interval = setInterval(runAutoBackup, SIX_HOURS);
+    return () => clearInterval(interval);
+  }, [isConnected, gdrive.folderId, gdrive.backupFolderId]); // eslint-disable-line
+
   // ── Connect (manual fallback) ─────────────────────────────────────────────────
   async function handleConnect() {
     setStatus("connecting");
     setMsg({ type: null, text: "" });
     try {
-      const folderId = await ensureFinTrackerFolder();
+      const folderId       = await ensureFinTrackerFolder();
+      const backupFolderId = await ensureBackupFolder(folderId);
       update(() => ({
         gdriveIntegration: {
           connected: true,
           email: firebaseUser?.email || "",
           folderId,
+          backupFolderId,
           connectedAt: new Date().toISOString(),
         }
       }));
-      flashMsg("success", "✅ Google Drive connected! FinTracker folder is ready.");
+      flashMsg("success", "✅ Google Drive connected! FinTracker/Backup/ folder is ready.");
     } catch (e) {
       handleDriveError(e);
     } finally {
@@ -4018,64 +4180,27 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     flashMsg("success", "Google Drive disconnected.", 3000);
   }
 
-  // ── Save backup ───────────────────────────────────────────────────────────────
-  async function handleSaveToDrive() {
-    setStatus("saving");
-    setMsg({ type: null, text: "" });
-    try {
-      const token = getStoredToken();
-      if (!token) { setStatus(null); return; }
-
-      const folderId = gdrive.folderId || await ensureFinTrackerFolder();
-      const { user, ...exportable } = data;
-      const payload  = { _meta: { exportedAt: new Date().toISOString(), appVersion: "fintrack_v2" }, ...exportable };
-      const jsonStr  = JSON.stringify(payload, null, 2);
-      const ts       = new Date().toISOString().slice(0, 10);
-      const fileName = `fintrack_backup_${ts}.json`;
-
-      const boundary = "fintrack_boundary_xyz";
-      const body = [
-        `--${boundary}`,
-        "Content-Type: application/json; charset=UTF-8",
-        "",
-        JSON.stringify({ name: fileName, parents: [folderId] }),
-        `--${boundary}`,
-        "Content-Type: application/json",
-        "",
-        jsonStr,
-        `--${boundary}--`,
-      ].join("\r\n");
-
-      const uploadRes = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
-          body,
-        }
-      );
-      if (!uploadRes.ok) {
-        if (uploadRes.status === 401) { setTokenExpired(true); setStatus(null); return; }
-        const err = await uploadRes.json().catch(() => ({}));
-        throw new Error(err?.error?.message || `Upload failed (${uploadRes.status})`);
-      }
-      flashMsg("success", `✅ Backup saved → FinTracker/${fileName}`);
-    } catch (e) {
-      handleDriveError(e);
-    } finally {
-      setStatus(null);
-    }
-  }
-
-  // ── Browse backups ────────────────────────────────────────────────────────────
+  // ── Browse backups (lists from FinTracker/Backup/) ────────────────────────────
   async function handleListFiles() {
     setLoadingFiles(true);
     setShowFiles(true);
     try {
-      const folderId = gdrive.folderId;
+      const folderId       = gdrive.folderId;
+      const backupFolderId = gdrive.backupFolderId;
       if (!folderId) { flashMsg("error", "Folder ID missing — try reconnecting."); return; }
+
+      // Resolve backup folder id if not stored yet
+      let bfid = backupFolderId;
+      if (!bfid) {
+        const search = await driveRequest(
+          `https://www.googleapis.com/drive/v3/files?q=name%3D'${BACKUP_FOLDER}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20'${folderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id,name)`
+        );
+        bfid = search.files?.[0]?.id || null;
+      }
+      if (!bfid) { setDriveFiles([]); return; }
+
       const res = await driveRequest(
-        `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&orderBy=createdTime+desc&fields=files(id,name,size,createdTime)&pageSize=20`
+        `https://www.googleapis.com/drive/v3/files?q='${bfid}'+in+parents+and+trashed=false&orderBy=createdTime+desc&fields=files(id,name,size,createdTime)&pageSize=20`
       );
       setDriveFiles(res.files || []);
     } catch (e) {
@@ -4092,7 +4217,6 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     try {
       const token = getStoredToken();
       if (!token) { setStatus(null); return; }
-
       const resp = await fetch(
         `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -4121,6 +4245,10 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     padding: "10px 18px", borderRadius: 8, fontSize: 14, fontWeight: 600,
     cursor: "pointer", border: "none", transition: "opacity 0.15s",
   };
+
+  const lastBackupStr = lastAutoBackup
+    ? new Date(lastAutoBackup).toLocaleString()
+    : "Never";
 
   return (
     <div style={{ marginTop: 16 }}>
@@ -4159,7 +4287,10 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
                   Connected · {gdrive.email}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
-                  📁 All backups saved inside <strong>FinTracker/</strong>
+                  📁 All backups saved inside <strong>FinTracker/Backup/</strong>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                  🕐 Auto-backup every 6 hrs · Last: {lastBackupStr}
                 </div>
               </>
             ) : (
@@ -4216,7 +4347,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
             {showFiles && (
               <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, overflow: "hidden" }}>
                 <div style={{ background: "var(--color-background-secondary)", padding: "10px 14px", fontSize: 13, fontWeight: 600, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>📁 FinTracker / backups</span>
+                  <span>📁 FinTracker / Backup</span>
                   <button onClick={() => setShowFiles(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1 }}>✕</button>
                 </div>
                 {loadingFiles ? (
