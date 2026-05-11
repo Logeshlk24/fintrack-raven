@@ -48,59 +48,35 @@ export const signInWithGoogle = async () => {
 };
 
 // ── getFreshDriveToken ─────────────────────────────────────────────────────────
-// Uses Firebase's own refresh_token via securetoken endpoint to get a fresh
-// Google access_token (with Drive scope) — zero popup, zero GIS, zero Client ID.
-// Works as long as the user is signed into Google via Firebase.
+// Returns the stored Google OAuth access token (with drive.file scope) that was
+// captured at sign-in via GoogleAuthProvider.credentialFromResult().
+// If expired or missing, triggers a re-auth popup to get a fresh token.
+// NOTE: The securetoken endpoint only issues Firebase ID tokens — NOT Google OAuth
+// access tokens — so it cannot be used to call Google Drive APIs.
 export async function getFreshDriveToken() {
+  const saved  = localStorage.getItem("ft_drv_tok");
+  const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
+
+  // Token still valid — return immediately, no popup needed
+  if (saved && Date.now() < expiry) return saved;
+
+  // Token expired or missing — re-auth with same provider+scope to get fresh token
   try {
     const user = auth.currentUser;
     if (!user) return null;
 
-    // Force Firebase to refresh its internal session
-    await user.getIdToken(true);
+    const result     = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token      = credential?.accessToken;
 
-    // Access Firebase's stored refresh_token
-    const refreshToken = user.stsTokenManager?.refreshToken
-      || user._delegate?.stsTokenManager?.refreshToken;
-
-    if (!refreshToken) {
-      // Fallback: return saved token if still valid
-      const saved  = localStorage.getItem("ft_drv_tok");
-      const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-      return (saved && Date.now() < expiry) ? saved : null;
+    if (token) {
+      localStorage.setItem("ft_drv_tok", token);
+      localStorage.setItem("ft_drv_exp", String(Date.now() + (3600 - 120) * 1000));
     }
-
-    // Exchange Firebase refresh_token for a fresh Google access_token
-    const res = await fetch(
-      `https://securetoken.googleapis.com/v1/token?key=${firebaseConfig.apiKey}`,
-      {
-        method:  "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body:    `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
-      }
-    );
-
-    if (!res.ok) {
-      const saved  = localStorage.getItem("ft_drv_tok");
-      const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-      return (saved && Date.now() < expiry) ? saved : null;
-    }
-
-    const json        = await res.json();
-    const accessToken = json.access_token;
-    const expiresIn   = parseInt(json.expires_in || "3600");
-
-    if (accessToken) {
-      localStorage.setItem("ft_drv_tok", accessToken);
-      localStorage.setItem("ft_drv_exp", String(Date.now() + (expiresIn - 120) * 1000));
-    }
-
-    return accessToken || null;
+    return token || null;
   } catch (e) {
-    console.warn("getFreshDriveToken:", e);
-    const saved  = localStorage.getItem("ft_drv_tok");
-    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    return (saved && Date.now() < expiry) ? saved : null;
+    console.warn("getFreshDriveToken re-auth failed:", e);
+    return null;
   }
 }
 
