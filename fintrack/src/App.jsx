@@ -7131,15 +7131,27 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
 function GoalsPage({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
+  // selectedGoal: { id } — which goal folder is open; null = show grid
+  const [selectedGoal, setSelectedGoal] = useState(null);
+  // goalInnerTab: "overview" | "transactions" | "plan"
+  const [goalInnerTab, setGoalInnerTab] = useState("overview");
   const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  // plan inputs
+  const [planMonths, setPlanMonths] = useState("");
 
   const PRIORITIES = [["high","🔴 High"],["medium","🟡 Medium"],["low","🟢 Low"]];
 
   const needs = items.filter(i => i.kind === "need");
   const wants = items.filter(i => i.kind === "want");
   const displayed = activeTab === "needs" ? needs : wants;
+
+  // When switching tab, close any open folder
+  function switchTab(t) { setActiveTab(t); setSelectedGoal(null); setGoalInnerTab("overview"); }
+
+  function openGoal(item) { setSelectedGoal(item); setGoalInnerTab("overview"); }
+  function closeGoal() { setSelectedGoal(null); setGoalInnerTab("overview"); }
 
   function addItem() {
     if (!form.name.trim()) return;
@@ -7179,11 +7191,16 @@ function GoalsPage({ data, update }) {
         excludeFromNetWorth: editItem.excludeFromNetWorth || false,
       } : x)
     }));
+    // Refresh selectedGoal if it's the one being edited
+    if (selectedGoal && selectedGoal.id === editItem.id) {
+      setSelectedGoal(prev => ({ ...prev, ...editItem, targetAmount: parseFloat(editItem.targetAmount), savedAmount: parseFloat(editItem.savedAmount) || 0 }));
+    }
     setEditItem(null);
   }
 
   function deleteItem(id) {
     update(p => ({ needsWants: (p.needsWants || []).filter(x => x.id !== id) }));
+    if (selectedGoal && selectedGoal.id === id) closeGoal();
   }
 
   function toggleComplete(id) {
@@ -7313,14 +7330,14 @@ function GoalsPage({ data, update }) {
     );
   }
 
-  function renderItemCard(item) {
+  // ── renderItemCard — the card shown in the grid AND inside a goal folder ─────
+  function renderItemCard(item, { isInsideFolder = false } = {}) {
     const pct = item.targetAmount > 0 ? Math.min((item.savedAmount / item.targetAmount) * 100, 100) : 0;
     const remaining = item.targetAmount - item.savedAmount;
     const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
     const accounts = data.banks || [];
     const isTask = item.goalType === "task";
 
-    // For task goals: show due date and completion status
     const dueDateEl = isTask && item.dueDate ? (() => {
       const diff = Math.round((new Date(item.dueDate) - new Date()) / 86400000);
       const color = diff < 0 ? "#d44" : diff <= 3 ? "#f0a020" : "#1a6b3c";
@@ -7334,11 +7351,15 @@ function GoalsPage({ data, update }) {
         padding: "1rem 1.1rem", opacity: item.completed ? 0.7 : 1,
         borderTop: item.completed ? undefined : `3px solid ${cardAccent}`,
         display: "flex", flexDirection: "column", height: "100%",
-      }}>
+        cursor: isInsideFolder ? "default" : "pointer",
+      }}
+        onClick={isInsideFolder ? undefined : () => openGoal(item)}
+      >
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {!isInsideFolder && <span style={{ fontSize: 13, marginRight: 2 }}>📁</span>}
               <span style={{ fontWeight: 600, fontSize: 14 }}>
                 {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
                 {item.name}
@@ -7351,6 +7372,7 @@ function GoalsPage({ data, update }) {
             {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
             {(item.urls && item.urls.length > 0 ? item.urls : item.url ? [item.url] : []).map((u, i) => u ? (
               <a key={i} href={u} target="_blank" rel="noreferrer"
+                onClick={e => e.stopPropagation()}
                 style={{ fontSize: 11, color: "#4da6ff", marginTop: 2, display: "flex", alignItems: "center", gap: 3, overflow: "hidden", maxWidth: "100%" }}
                 title={u}>
                 <span style={{ flexShrink: 0 }}>🔗</span>
@@ -7359,7 +7381,7 @@ function GoalsPage({ data, update }) {
             ) : null)}
             {dueDateEl && <div style={{ marginTop: 4 }}>{dueDateEl}</div>}
           </div>
-          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
             <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {item.completed ? "↩" : "✓"}
             </button>
@@ -7390,18 +7412,249 @@ function GoalsPage({ data, update }) {
         )}
 
         {/* Task goal completion indicator */}
-        {isTask && !item.completed && (
-          <div style={{ marginTop: "auto", paddingTop: 8 }}>
+        {isTask && !item.completed && isInsideFolder && (
+          <div style={{ marginTop: "auto", paddingTop: 8 }} onClick={e => e.stopPropagation()}>
             <button onClick={() => toggleComplete(item.id)} style={{ width: "100%", background: "#e8f5ee", border: "1px solid #1a6b3c", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 }}>
               ✓ Mark as Done
             </button>
           </div>
         )}
 
-        {/* Add savings — only for money goals */}
-        <div style={{ marginTop: "auto", paddingTop: 8 }}>
-          {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
+        {/* Add savings — only inside folder's overview */}
+        {isInsideFolder && (
+          <div style={{ marginTop: "auto", paddingTop: 8 }} onClick={e => e.stopPropagation()}>
+            {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
+          </div>
+        )}
+
+        {/* "Open" hint on grid cards */}
+        {!isInsideFolder && (
+          <div style={{ marginTop: "auto", paddingTop: 8, fontSize: 11, color: cardAccent, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
+            <span>Open folder</span><span style={{ fontSize: 13 }}>›</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Goal Folder View (inner) ──────────────────────────────────────────────────
+  function renderGoalFolder(rawItem) {
+    // Always read fresh from data so updates reflect
+    const item = (data.needsWants || []).find(x => x.id === rawItem.id) || rawItem;
+    const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
+    const accounts = data.banks || [];
+    const isTask = item.goalType === "task";
+    const remaining = item.targetAmount - item.savedAmount;
+
+    // Transactions for this goal
+    const goalTxs = (data.transactions || [])
+      .filter(t => t.note && t.note === `Goal: ${item.name}`)
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    // Plan calculation
+    const monthsNum = parseInt(planMonths) || 0;
+    const perMonth = monthsNum > 0 && remaining > 0 ? Math.ceil(remaining / monthsNum) : 0;
+
+    const INNER_TABS = [
+      { id: "overview", label: "📌 Overview" },
+      { id: "transactions", label: "💳 Transactions" },
+      { id: "plan", label: "📅 Plan" },
+    ];
+
+    return (
+      <div>
+        {/* Breadcrumb */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+          <button onClick={closeGoal} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#1a6b3c", fontWeight: 500, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
+            ← Goals
+          </button>
+          <span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>/</span>
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{activeTab === "needs" ? "🏠 Needs" : "✨ Wants"}</span>
+          <span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>/</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>📁 {item.name}</span>
         </div>
+
+        {/* Inner tabs */}
+        <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20, gap: 0 }}>
+          {INNER_TABS.map(t => (
+            <button key={t.id} onClick={() => setGoalInnerTab(t.id)}
+              style={{ padding: "8px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 13,
+                color: goalInnerTab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                fontWeight: goalInnerTab === t.id ? 600 : 400,
+                borderBottom: goalInnerTab === t.id ? `2px solid ${cardAccent}` : "2px solid transparent",
+                marginBottom: -1, whiteSpace: "nowrap" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Overview tab ── */}
+        {goalInnerTab === "overview" && (
+          <div style={{ maxWidth: 480 }}>
+            {renderItemCard(item, { isInsideFolder: true })}
+          </div>
+        )}
+
+        {/* ── Transactions tab ── */}
+        {goalInnerTab === "transactions" && (
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>💳 Savings Transactions — {item.name}</div>
+            {goalTxs.length === 0 ? (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                No savings logged yet. Open the Overview tab and click "+ Add Savings" to log one.
+              </div>
+            ) : (
+              <div>
+                {/* Summary */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px,100%),1fr))", gap: 10, marginBottom: 16 }}>
+                  {[
+                    { label: "Total Logged", val: fmtCur(goalTxs.reduce((s,t)=>s+Number(t.amount||0),0)), color: "#1a6b3c" },
+                    { label: "# of Entries", val: goalTxs.length, color: cardAccent },
+                    { label: "Remaining", val: fmtCur(Math.max(0, remaining)), color: remaining <= 0 ? "#1a6b3c" : "#f59e0b" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
+                      <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Table */}
+                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: "var(--color-background-secondary)" }}>
+                        {["Date","Type","Amount","Account","Note"].map(h => (
+                          <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {goalTxs.map((t, i) => {
+                        const bank = (data.banks || []).find(b => String(b.id) === String(t.bankId));
+                        const typeColor = t.type === "income" ? "#1a6b3c" : t.type === "expense" ? "#d44" : "#7c3aed";
+                        const typeLabel = t.type === "income" ? "📥 Income" : t.type === "expense" ? "📤 Expense" : "💰 Savings";
+                        return (
+                          <tr key={t.id || i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                            onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                            <td style={{ padding: "9px 12px", color: "var(--color-text-secondary)", fontSize: 12 }}>{t.date || "—"}</td>
+                            <td style={{ padding: "9px 12px" }}><span style={{ fontSize: 11, color: typeColor, fontWeight: 500 }}>{typeLabel}</span></td>
+                            <td style={{ padding: "9px 12px", fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(t.amount)}</td>
+                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>{bank ? bank.name : "—"}</td>
+                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>{t.note || "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Plan tab ── */}
+        {goalInnerTab === "plan" && (
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>📅 Savings Plan — {item.name}</div>
+
+            {isTask ? (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                Planning is available for money goals only.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Current status */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px,100%),1fr))", gap: 10 }}>
+                  {[
+                    { label: "Target", val: fmtCur(item.targetAmount), color: cardAccent },
+                    { label: "Saved", val: fmtCur(item.savedAmount), color: "#1a6b3c" },
+                    { label: "Remaining", val: fmtCur(Math.max(0, remaining)), color: remaining <= 0 ? "#1a6b3c" : "#f59e0b" },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
+                      <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {remaining <= 0 ? (
+                  <div style={{ background: "#e8f5ee", borderRadius: 12, padding: "1.2rem 1.4rem", border: "0.5px solid #bbf7d0", textAlign: "center", fontWeight: 600, color: "#1a6b3c", fontSize: 15 }}>
+                    🎉 Goal reached! No more planning needed.
+                  </div>
+                ) : (
+                  <>
+                    {/* Plan input */}
+                    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Calculate Monthly Savings Needed</div>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Months to complete</label>
+                          <input type="number" inputMode="numeric" min="1" placeholder="e.g. 12"
+                            value={planMonths} onChange={e => setPlanMonths(e.target.value)}
+                            style={{ width: "100%", boxSizing: "border-box", fontSize: 14, padding: "8px 10px" }} />
+                        </div>
+                        {perMonth > 0 && (
+                          <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "10px 18px", border: "0.5px solid #bbf7d0", minWidth: 160 }}>
+                            <div style={{ fontSize: 11, color: "#1a6b3c", marginBottom: 2 }}>Monthly target</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(perMonth)}</div>
+                            <div style={{ fontSize: 11, color: "#1a6b3c", marginTop: 2 }}>for {planMonths} month{parseInt(planMonths)!==1?"s":""}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Monthly breakdown */}
+                    {perMonth > 0 && (
+                      <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>📆 Month-by-Month Breakdown</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: "var(--color-background-secondary)" }}>
+                                {["Month","Save","Cumulative","Remaining","Progress"].map(h => (
+                                  <th key={h} style={{ padding: "7px 10px", textAlign: h === "Progress" ? "center" : "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap" }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array.from({ length: parseInt(planMonths) }, (_, i) => {
+                                const cumulative = item.savedAmount + perMonth * (i + 1);
+                                const capped = Math.min(cumulative, item.targetAmount);
+                                const rem = Math.max(0, item.targetAmount - capped);
+                                const pctM = item.targetAmount > 0 ? Math.min((capped / item.targetAmount) * 100, 100) : 0;
+                                const d = new Date(); d.setMonth(d.getMonth() + i + 1);
+                                const label = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+                                return (
+                                  <tr key={i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                                    onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                    <td style={{ padding: "7px 10px", fontWeight: 500 }}>{label}</td>
+                                    <td style={{ padding: "7px 10px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(Math.min(perMonth, item.targetAmount - item.savedAmount - perMonth * i))}</td>
+                                    <td style={{ padding: "7px 10px" }}>{fmtCur(capped)}</td>
+                                    <td style={{ padding: "7px 10px", color: rem === 0 ? "#1a6b3c" : "var(--color-text-secondary)" }}>{rem === 0 ? "🎉 Done!" : fmtCur(rem)}</td>
+                                    <td style={{ padding: "7px 10px" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                        <div style={{ flex: 1, height: 5, borderRadius: 3, background: "var(--color-border-tertiary)", overflow: "hidden", minWidth: 60 }}>
+                                          <div style={{ width: pctM + "%", height: "100%", background: pctM >= 100 ? "#1a6b3c" : cardAccent, borderRadius: 3 }} />
+                                        </div>
+                                        <span style={{ fontSize: 10, color: "var(--color-text-secondary)", minWidth: 34 }}>{pctM.toFixed(0)}%</span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -7411,7 +7664,7 @@ function GoalsPage({ data, update }) {
       {/* Edit modal */}
       {editItem && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(460px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(460px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Goal</div>
             { renderFormFields(editItem, setEditItem) }
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
@@ -7422,75 +7675,88 @@ function GoalsPage({ data, update }) {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
-        <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-          {showAdd ? "✕ Cancel" : "+ Add Goal"}
-        </button>
-      </div>
-
-      {/* Summary strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
-        {[
-          { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
-          { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
-          { label: "Wants Goals", val: wants.length, sub: `${wants.filter(i => i.completed).length} completed`, color: "#9b59b6" },
-          { label: "Wants Progress", val: fmtCur(totalWantsSaved), sub: `of ${fmtCur(totalWantsTarget)}`, color: "#f5a623" },
-        ].map(c => (
-          <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{c.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: showAdd ? "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" : "1fr", gap: 16, alignItems: "start" }}>
-        {/* Add form */}
-        {showAdd && (
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-            <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Goal</div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
-              <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
-                {[["needs","🏠 Need","#4da6ff","#e8f0ff"],["wants","✨ Want","#9b59b6","#f3e8ff"]].map(([v, lbl, color, bg]) => (
-                  <button key={v} onClick={() => setActiveTab(v)}
-                    style={{ flex: 1, padding: "7px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: activeTab === v ? 600 : 400, background: activeTab === v ? bg : "transparent", color: activeTab === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
-                    {lbl}
-                  </button>
-                ))}
-              </div>
-            </div>
-            { renderFormFields(form, setForm) }
-            <button onClick={addItem} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, width: "100%" }}>+ Add Goal</button>
-          </div>
-        )}
-
-        {/* Goals list */}
+      {/* ── If a goal folder is open, show it ── */}
+      {selectedGoal ? (
         <div>
-          <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
-            {[["needs","🏠 Needs"],["wants","✨ Wants"]].map(([v, lbl]) => (
-              <button key={v} onClick={() => setActiveTab(v)} style={{ padding: "8px 20px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: activeTab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: activeTab === v ? 500 : 400, borderBottom: activeTab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
-                {lbl} <span style={{ fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: 4, color: "var(--color-text-secondary)" }}>{v === "needs" ? needs.length : wants.length}</span>
-              </button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
+          </div>
+          {renderGoalFolder(selectedGoal)}
+        </div>
+      ) : (
+        /* ── Normal Goals grid view ── */
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
+            <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {showAdd ? "✕ Cancel" : "+ Add Goal"}
+            </button>
+          </div>
+
+          {/* Summary strip */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
+            {[
+              { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
+              { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
+              { label: "Wants Goals", val: wants.length, sub: `${wants.filter(i => i.completed).length} completed`, color: "#9b59b6" },
+              { label: "Wants Progress", val: fmtCur(totalWantsSaved), sub: `of ${fmtCur(totalWantsTarget)}`, color: "#f5a623" },
+            ].map(c => (
+              <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{c.sub}</div>
+              </div>
             ))}
           </div>
 
-          {displayed.length === 0 ? (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-              No {activeTab} goals yet. Click "+ Add Goal" to create one.
+          <div style={{ display: "grid", gridTemplateColumns: showAdd ? "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" : "1fr", gap: 16, alignItems: "start" }}>
+            {/* Add form */}
+            {showAdd && (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
+                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Goal</div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
+                  <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
+                    {[["needs","🏠 Need","#4da6ff","#e8f0ff"],["wants","✨ Want","#9b59b6","#f3e8ff"]].map(([v, lbl, color, bg]) => (
+                      <button key={v} onClick={() => switchTab(v)}
+                        style={{ flex: 1, padding: "7px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: activeTab === v ? 600 : 400, background: activeTab === v ? bg : "transparent", color: activeTab === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                { renderFormFields(form, setForm) }
+                <button onClick={addItem} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, width: "100%" }}>+ Add Goal</button>
+              </div>
+            )}
+
+            {/* Goals list */}
+            <div>
+              <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+                {[["needs","🏠 Needs"],["wants","✨ Wants"]].map(([v, lbl]) => (
+                  <button key={v} onClick={() => switchTab(v)} style={{ padding: "8px 20px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: activeTab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: activeTab === v ? 500 : 400, borderBottom: activeTab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
+                    {lbl} <span style={{ fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: 4, color: "var(--color-text-secondary)" }}>{v === "needs" ? needs.length : wants.length}</span>
+                  </button>
+                ))}
+              </div>
+
+              {displayed.length === 0 ? (
+                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                  No {activeTab} goals yet. Click "+ Add Goal" to create one.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
+                  {displayed.sort((a, b) => {
+                    const pOrder = { high: 0, medium: 1, low: 2 };
+                    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+                    return pOrder[a.priority] - pOrder[b.priority];
+                  }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
+                </div>
+              )}
             </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
-              {displayed.sort((a, b) => {
-                const pOrder = { high: 0, medium: 1, low: 2 };
-                if (a.completed !== b.completed) return a.completed ? 1 : -1;
-                return pOrder[a.priority] - pOrder[b.priority];
-              }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
