@@ -7,7 +7,6 @@ import {
   loadFromFirestore,
   saveToFirestore,
 } from "./firebase";
-import { getFreshDriveToken } from "./firebase";
 
 // ── Force Light Mode CSS Variables ──────────────────────────────────────────
 const LIGHT_MODE_STYLE = `
@@ -90,7 +89,6 @@ const defaultData = {
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
-  billAttachments: [], // { monthId, fileName, fileUrl, fileId, uploadDate }
 };
 
 
@@ -154,104 +152,6 @@ function fmtRate(r) {
 }
 
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// GOOGLE DRIVE CONTEXT
-// ═══════════════════════════════════════════════════════════════════════════════
-const DriveContext = React.createContext(null);
-
-/*
-  Drive is connected for exactly as long as the user's Gmail/Google session
-  is alive in Firebase. No GIS, no Client ID, no popups, no timers.
-
-  How it works:
-  - At sign-in: firebase.js saves the Drive access_token to localStorage.
-  - On tab reopen: DriveProvider sees firebaseUser is present (Firebase
-    restored the session), calls getFreshDriveToken() which uses Firebase's
-    own internal refresh_token via securetoken.googleapis.com to get a fresh
-    Google access_token — completely silent, no UI at all.
-  - If Gmail session is alive → Drive is connected. If not → both are gone.
-    Exactly what you asked for.
-*/
-function DriveProvider({ children, firebaseUser }) {
-  const [token,  setToken]  = useState(() => {
-    const t = localStorage.getItem("ft_drv_tok");
-    const e = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    return (t && Date.now() < e) ? t : null;
-  });
-  const [email,   setEmail]   = useState(() => localStorage.getItem("ft_drv_email") || null);
-  const [loading, setLoading] = useState(false);
-
-  // When Firebase confirms user is signed in → silently get fresh Drive token
-  useEffect(() => {
-    if (!firebaseUser) return;
-    // Already have a valid token — nothing to do
-    const saved  = localStorage.getItem("ft_drv_tok");
-    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    if (saved && Date.now() < expiry) {
-      setToken(saved);
-      setEmail(localStorage.getItem("ft_drv_email") || firebaseUser.email);
-      return;
-    }
-    // Token expired or missing — get a fresh one using Firebase's refresh token
-    setLoading(true);
-    getFreshDriveToken().then(tok => {
-      setLoading(false);
-      if (tok) {
-        setToken(tok);
-        setEmail(firebaseUser.email || localStorage.getItem("ft_drv_email"));
-      }
-    });
-  }, [firebaseUser?.uid]); // eslint-disable-line
-
-  function clearDrive() {
-    ["ft_drv_tok", "ft_drv_exp", "ft_drv_email"].forEach(k => localStorage.removeItem(k));
-    setToken(null); setEmail(null);
-  }
-
-  async function uploadToDrive(file, driveFolderId) {
-    // Always get the freshest token before uploading
-    let tok = localStorage.getItem("ft_drv_tok");
-    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    if (!tok || Date.now() >= expiry) {
-      tok = await getFreshDriveToken();
-      if (tok) setToken(tok);
-    }
-    if (!tok) return null;
-    try {
-      const ab   = await file.arrayBuffer();
-      const meta = JSON.stringify({ name: file.name, ...(driveFolderId ? { parents: [driveFolderId] } : {}) });
-      const form = new FormData();
-      form.append("metadata", new Blob([meta], { type: "application/json" }));
-      form.append("file",     new Blob([ab],   { type: file.type || "application/octet-stream" }), file.name);
-      const res = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink,size",
-        { method: "POST", headers: { Authorization: "Bearer " + tok }, body: form }
-      );
-      if (!res.ok) return null;
-      const d = await res.json();
-      await fetch(`https://www.googleapis.com/drive/v3/files/${d.id}/permissions`, {
-        method: "POST",
-        headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "reader", type: "anyone" }),
-      }).catch(() => {});
-      return {
-        id: d.id, name: d.name, mimeType: d.mimeType,
-        webViewLink: d.webViewLink,
-        downloadUrl: `https://drive.google.com/uc?export=download&id=${d.id}`,
-        previewUrl:  `https://drive.google.com/file/d/${d.id}/preview`,
-        size: file.size, source: "gdrive",
-      };
-    } catch (e) { return null; }
-  }
-
-  return (
-    <DriveContext.Provider value={{ connected: !!token, token, email, loading, clearDrive, uploadToDrive }}>
-      {children}
-    </DriveContext.Provider>
-  );
-}
-
-function useDrive() { return React.useContext(DriveContext); }
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function App() {
@@ -478,7 +378,6 @@ export default function App() {
   const moreItems = navItems.filter(n => !["money","goals","portfolio"].includes(n.id));
 
   return (
-    <DriveProvider firebaseUser={firebaseUser}>
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" }}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
@@ -720,7 +619,6 @@ export default function App() {
         </>
       )}
     </div>
-    </DriveProvider>
   );
 }
 
@@ -3904,8 +3802,8 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   // Redirect legacy tab values to new names
   const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
 
-  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "documents", "backup"];
-  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Documents", "Backup"];
+  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "backup"];
+  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Backup"];
 
   return (
     <div>
@@ -3937,9 +3835,6 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
       {/* ── Projects ── */}
       {effectiveTab === "projects" && <ProjectSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
-
-      {/* ── Documents ── */}
-      {effectiveTab === "documents" && <DocumentsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
       {/* ── Backup ── */}
       {effectiveTab === "backup" && <BackupSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
@@ -3980,45 +3875,8 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
     { key: "month", label: "This Month", icon: "🗓" },
   ];
 
-  const drive = useDrive();
-
   return (
     <div style={{ marginTop: 16 }}>
-
-      {/* Google Drive — auto-connected via Gmail login */}
-      <div style={{ ...cardStyle, marginBottom: 16,
-        background: drive?.connected ? "#f0fdf4" : "var(--color-background-primary)",
-        border:     drive?.connected ? "1px solid #bbf7d0" : "0.5px solid var(--color-border-tertiary)" }}>
-        {sectionTitle("☁", "Google Drive", "Connected automatically using your Google sign-in — same session as Gmail.")}
-        <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, flexWrap:"wrap" }}>
-          <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt=""
-            style={{ width:40, height:40, flexShrink:0 }} onError={e=>e.target.style.display="none"} />
-          <div style={{ flex:1, minWidth:0 }}>
-            {drive?.connected ? (
-              <>
-                <div style={{ fontWeight:600, fontSize:14, color:"#166534", marginBottom:3 }}>✅ Connected as {drive.email}</div>
-                <div style={{ fontSize:12, color:"#4a9a6a" }}>Drive is connected as long as you're signed in with Google. Files upload directly to your Drive.</div>
-              </>
-            ) : drive?.loading ? (
-              <>
-                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>⏳ Connecting…</div>
-                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Getting Drive access from your Google session…</div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-secondary)", marginBottom:3 }}>Not connected</div>
-                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>Sign in with Google to connect Drive automatically.</div>
-              </>
-            )}
-          </div>
-          {drive?.connected && (
-            <button onClick={drive?.clearDrive}
-              style={{ background:"none", border:"0.5px solid #ccc", borderRadius:8, padding:"7px 16px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)", flexShrink:0 }}>
-              Disconnect
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* Default Period preference */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
@@ -4181,7 +4039,7 @@ function BackupSettings({ data, update, cardStyle, sectionTitle }) {
         {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
         <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 }}>
           Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, commute logs, and all settings.
-          Store this file somewhere safe (e.g. Google Drive, email to yourself).
+          Store this file somewhere safe (email to yourself, cloud storage, or external drive).
         </p>
         <button style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }} onClick={handleExport}>
           <span style={{ fontSize: 18 }}>⬇️</span> Export All Data
@@ -4327,458 +4185,6 @@ function ProjectSettings({ data, update, cardStyle, sectionTitle }) {
 }
 
 
-// ── BillUploadBtn — used in Business monthly table ────────────────────────────
-function BillUploadBtn({ onUploaded }) {
-  const drive = useDrive();
-  const [busy, setBusy] = useState(false);
-  async function handleFile(ev) {
-    const file = ev.target.files[0]; if (!file) return;
-    setBusy(true);
-    if (drive?.connected) {
-      const result = await drive.uploadToDrive(file, null);
-      if (result) { onUploaded(result); setBusy(false); return; }
-    }
-    // fallback local
-    const reader = new FileReader();
-    reader.onload = re => { onUploaded({ url: re.target.result, previewUrl: re.target.result }); setBusy(false); };
-    reader.readAsDataURL(file);
-  }
-  return (
-    <label title={drive?.connected ? "Upload bill to Google Drive" : "Upload bill"} style={{ cursor: busy?"not-allowed":"pointer", display:"flex", alignItems:"center", justifyContent:"center", width:36, height:36, borderRadius:6, border: drive?.connected?"1px dashed #1a6b3c":"1px dashed #ccc", color: drive?.connected?"#1a6b3c":"#aaa", fontSize:16, opacity: busy?0.5:1 }}>
-      {busy ? "⏳" : drive?.connected ? "☁" : "📎"}
-      <input type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={handleFile} disabled={busy} />
-    </label>
-  );
-}
-
-// ── DocumentsSettings — full rewrite with Drive, nested folders, preview ──────
-function DocumentsSettings({ data, update, cardStyle, sectionTitle }) {
-  const drive = useDrive();
-  const [folders,      setFoldersState] = useState(data.documentFolders || []);
-  const [newName,      setNewName]      = useState("");
-  const [openId,       setOpenId]       = useState(null);
-  const [preview,      setPreview]      = useState(null);
-  const [uploading,    setUploading]    = useState({});
-  const [newSubName,   setNewSubName]   = useState({});
-  const [renamingId,   setRenamingId]   = useState(null); // { id, parentId, value }
-
-  function setFolders(fn) {
-    setFoldersState(prev => {
-      const next = typeof fn === "function" ? fn(prev) : fn;
-      update(p => ({ documentFolders: next }));
-      return next;
-    });
-  }
-
-  function addFolder(parentId = null) {
-    const name = parentId ? (newSubName[parentId]||"").trim() : newName.trim();
-    if (!name) return;
-    const folder = { id:"f"+Date.now(), name, files:[], subFolders:[], driveFolderId:"" };
-    if (!parentId) {
-      setFolders(p => [...p, folder]);
-      setNewName("");
-    } else {
-      setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:[...(f.subFolders||[]),folder] } : f));
-      setNewSubName(p => ({ ...p, [parentId]:"" }));
-    }
-  }
-  function deleteFolder(id, parentId=null) {
-    if (!parentId) { setFolders(p => p.filter(f => f.id!==id)); if (openId===id) setOpenId(null); }
-    else setFolders(p => p.map(f => f.id===parentId ? { ...f, subFolders:(f.subFolders||[]).filter(s=>s.id!==id) } : f));
-  }
-  function deleteFile(folderId, fileId, parentId=null) {
-    setFolders(p => p.map(f => {
-      if (!parentId && f.id===folderId) return { ...f, files:(f.files||[]).filter(d=>d.id!==fileId) };
-      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, files:(s.files||[]).filter(d=>d.id!==fileId) } : s) };
-      return f;
-    }));
-  }
-  function renameFolder(id, newFolderName, parentId=null) {
-    const n = newFolderName.trim();
-    if (!n) return;
-    setFolders(p => p.map(f => {
-      if (!parentId && f.id===id) return { ...f, name: n };
-      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===id ? { ...s, name: n } : s) };
-      return f;
-    }));
-  }
-  function setDriveFId(folderId, val, parentId=null) {
-    setFolders(p => p.map(f => {
-      if (!parentId && f.id===folderId) return { ...f, driveFolderId:val };
-      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, driveFolderId:val } : s) };
-      return f;
-    }));
-  }
-  async function uploadFile(folderId, file, driveFId, parentId=null) {
-    setUploading(p => ({ ...p, [folderId]:true }));
-    let rec;
-    if (drive?.connected) {
-      const r = await drive.uploadToDrive(file, driveFId||null);
-      if (r) rec = { id:r.id, name:r.name, type:r.mimeType, size:r.size, previewUrl:r.previewUrl, webViewLink:r.webViewLink, downloadUrl:r.downloadUrl, source:"gdrive", uploadedAt:new Date().toISOString() };
-    }
-    if (!rec) {
-      const dataUrl = await new Promise(res => { const rd=new FileReader(); rd.onload=e=>res(e.target.result); rd.readAsDataURL(file); });
-      rec = { id:"d"+Date.now(), name:file.name, type:file.type, size:file.size, dataUrl, source:"local", uploadedAt:new Date().toISOString() };
-    }
-    setFolders(p => p.map(f => {
-      if (!parentId && f.id===folderId) return { ...f, files:[...(f.files||[]),rec] };
-      if (parentId && f.id===parentId) return { ...f, subFolders:(f.subFolders||[]).map(s => s.id===folderId ? { ...s, files:[...(s.files||[]),rec] } : s) };
-      return f;
-    }));
-    setUploading(p => ({ ...p, [folderId]:false }));
-  }
-
-  function fmtSize(b){if(!b)return"";if(b<1024)return b+" B";if(b<1048576)return(b/1024).toFixed(1)+" KB";return(b/1048576).toFixed(1)+" MB";}
-  function fileIcon(t){if(!t)return"📄";if(t.startsWith("image/"))return"🖼";if(t==="application/pdf")return"📕";if(t.includes("word"))return"📝";if(t.includes("sheet")||t.includes("excel")||t.includes("csv"))return"📊";return"📄";}
-
-  function FileRow({ file, folderId, parentId }) {
-    const [expanded, setExpanded] = useState(false);
-    const canPreview = file.dataUrl || file.previewUrl || file.webViewLink;
-    const isImage = file.type?.startsWith("image/") || file.dataUrl?.startsWith("data:image");
-    const isPdf   = file.type === "application/pdf" || file.dataUrl?.startsWith("data:application/pdf");
-
-    return (
-      <div style={{ borderRadius:10, border:"0.5px solid var(--color-border-tertiary)", overflow:"hidden", background:"var(--color-background-secondary)" }}>
-        {/* File row */}
-        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px" }}>
-          {/* Thumbnail / icon — click to expand inline */}
-          <div onClick={() => canPreview && setExpanded(p => !p)}
-            style={{ width:40, height:40, borderRadius:7, overflow:"hidden", border:"0.5px solid var(--color-border-secondary)", cursor: canPreview ? "pointer" : "default", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"#f9fafb", fontSize:22, position:"relative" }}>
-            {file.source === "gdrive"
-              ? <span style={{ fontSize:20 }}>☁</span>
-              : isImage && file.dataUrl
-                ? <img src={file.dataUrl} alt={file.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                : <span>{fileIcon(file.type)}</span>
-            }
-            {canPreview && (
-              <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0)", display:"flex", alignItems:"center", justifyContent:"center", transition:"background 0.15s" }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.18)"}
-                onMouseLeave={e => e.currentTarget.style.background = "rgba(0,0,0,0)"}
-              >
-                <span style={{ fontSize:13, color:"#fff", opacity:0, transition:"opacity 0.15s" }}
-                  onMouseEnter={e => e.currentTarget.style.opacity = "1"}
-                  onMouseLeave={e => e.currentTarget.style.opacity = "0"}
-                >{expanded ? "▲" : "▼"}</span>
-              </div>
-            )}
-          </div>
-          {/* Name + meta */}
-          <div style={{ flex:1, minWidth:0 }}>
-            <div onClick={() => canPreview && setExpanded(p => !p)}
-              style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor: canPreview ? "pointer" : "default" }}
-              title={file.name}>{file.name}</div>
-            <div style={{ fontSize:10, color:"var(--color-text-secondary)", display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
-              {fmtSize(file.size)}
-              <span style={{ background:file.source==="gdrive"?"#dbeafe":"#f1f5f9", color:file.source==="gdrive"?"#1d4ed8":"#64748b", borderRadius:3, padding:"0 4px", fontSize:9 }}>
-                {file.source==="gdrive"?"☁ Drive":"💾 Local"}
-              </span>
-              {new Date(file.uploadedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
-            </div>
-          </div>
-          {/* Actions */}
-          <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
-            {canPreview && (
-              <button onClick={() => setExpanded(p => !p)}
-                style={{ fontSize:11, color: expanded ? "#1a6b3c" : "var(--color-text-secondary)", padding:"3px 9px", border:`0.5px solid ${expanded ? "#1a6b3c" : "var(--color-border-secondary)"}`, borderRadius:6, background: expanded ? "#e8f5ee" : "none", cursor:"pointer", whiteSpace:"nowrap" }}>
-                {expanded ? "▲ Hide" : "▼ Preview"}
-              </button>
-            )}
-            {file.webViewLink
-              ? <>
-                  <a href={file.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", padding:"3px 9px", border:"0.5px solid #1a6b3c", borderRadius:6, whiteSpace:"nowrap" }}>☁ Open</a>
-                  {file.downloadUrl && <a href={file.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1d4ed8", textDecoration:"none", padding:"3px 9px", border:"0.5px solid #1d4ed8", borderRadius:6 }}>⬇ Download</a>}
-                </>
-              : file.dataUrl && <a href={file.dataUrl} download={file.name} style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", padding:"3px 9px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇</a>
-            }
-            <button onClick={() => setPreview(file)} style={{ fontSize:11, color:"var(--color-text-secondary)", padding:"3px 7px", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, background:"none", cursor:"pointer", whiteSpace:"nowrap" }} title="Open fullscreen">⛶</button>
-            <button onClick={() => deleteFile(folderId, file.id, parentId)} style={{ background:"none", border:"0.5px solid #d44", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, color:"#d44", flexShrink:0 }}>🗑</button>
-          </div>
-        </div>
-        {/* ── Inline preview panel ── */}
-        {expanded && (
-          <div style={{ borderTop:"0.5px solid var(--color-border-tertiary)", background:"var(--color-background-primary)", padding:12 }}>
-            {isImage && file.dataUrl ? (
-              <img src={file.dataUrl} alt={file.name} style={{ maxWidth:"100%", maxHeight:420, objectFit:"contain", borderRadius:8, display:"block", margin:"0 auto" }} />
-            ) : isPdf && file.dataUrl ? (
-              <object data={file.dataUrl} type="application/pdf" style={{ width:"100%", height:480, border:"none", borderRadius:6 }}>
-                <div style={{ textAlign:"center", padding:32, color:"var(--color-text-secondary)" }}>
-                  <div style={{ fontSize:40, marginBottom:8 }}>📕</div>
-                  <div style={{ marginBottom:10 }}>PDF preview unavailable in this browser.</div>
-                  <a href={file.dataUrl} download={file.name} style={{ color:"#1a6b3c", fontWeight:500 }}>⬇ Download PDF</a>
-                </div>
-              </object>
-            ) : file.previewUrl ? (
-              <iframe src={file.previewUrl} style={{ width:"100%", height:480, border:"none", borderRadius:6 }} title={file.name} allow="autoplay" />
-            ) : file.dataUrl ? (
-              <iframe src={file.dataUrl} style={{ width:"100%", height:480, border:"none", borderRadius:6 }} title={file.name} />
-            ) : file.webViewLink ? (
-              <div style={{ textAlign:"center", padding:24, color:"var(--color-text-secondary)" }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>☁</div>
-                <a href={file.webViewLink} target="_blank" rel="noreferrer" style={{ color:"#1a6b3c", fontWeight:500 }}>Open in Google Drive ↗</a>
-              </div>
-            ) : (
-              <div style={{ textAlign:"center", padding:24, color:"var(--color-text-secondary)", fontSize:13 }}>No preview available</div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function FolderBody({ folder, parentId=null }) {
-    const isUp = uploading[folder.id];
-    const files = folder.files || [];
-    const subs  = folder.subFolders || [];
-    const [openSubId, setOpenSubId] = useState(null); // independent from parent openId
-    return (
-      <div style={{ padding:"12px 14px" }}>
-        {/* Drive folder ID */}
-        {drive?.connected && (
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-            <span style={{ fontSize:11, color:"var(--color-text-secondary)", whiteSpace:"nowrap", flexShrink:0 }}>Drive Folder ID:</span>
-            <input 
-              defaultValue={folder.driveFolderId||""}
-              onBlur={e => setDriveFId(folder.id, e.target.value.trim(), parentId)}
-              onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } }}
-              placeholder="Paste folder ID here (press Enter or click away to save)"
-              style={{ flex:1, minWidth:160, border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"4px 9px", fontSize:11, outline:"none", fontFamily:"inherit", color:"var(--color-text-primary)" }} />
-            <a href="https://drive.google.com" target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#1a6b3c", textDecoration:"none", whiteSpace:"nowrap" }}>Open Drive ↗</a>
-          </div>
-        )}
-        {/* Toolbar: upload + add sub-folder */}
-        <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
-          <label style={{ display:"inline-flex", alignItems:"center", gap:5, background:drive?.connected?"#f0fdf4":"#f9fafb", border:drive?.connected?"1px dashed #1a6b3c":"1px dashed #ccc", borderRadius:7, padding:"6px 12px", cursor:isUp?"not-allowed":"pointer", fontSize:12, color:drive?.connected?"#1a6b3c":"var(--color-text-secondary)", fontWeight:500, opacity:isUp?0.6:1, whiteSpace:"nowrap" }}>
-            {isUp?"⏳ Uploading…": drive?.connected?"☁ Upload to Drive":"📎 Upload File"}
-            <input type="file" multiple style={{ display:"none" }} disabled={isUp} onChange={e=>Array.from(e.target.files).forEach(f=>uploadFile(folder.id,f,folder.driveFolderId,parentId))} />
-          </label>
-          {/* Add sub-folder (only top-level folders can have sub-folders) */}
-          {!parentId && (
-            <div style={{ display:"flex", gap:5, alignItems:"center" }}>
-              <input value={newSubName[folder.id]||""} onChange={e=>setNewSubName(p=>({...p,[folder.id]:e.target.value}))}
-                onKeyDown={e=>e.key==="Enter"&&addFolder(folder.id)}
-                placeholder="Sub-folder name…"
-                style={{ border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"5px 9px", fontSize:12, outline:"none", fontFamily:"inherit", width:140 }} />
-              <button onClick={()=>addFolder(folder.id)} style={{ background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:11, fontWeight:500, whiteSpace:"nowrap" }}>+ Sub-folder</button>
-            </div>
-          )}
-        </div>
-        {/* Sub-folders — card grid like main folders */}
-        {subs.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Sub-folders</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginBottom: openSubId ? 12 : 0 }}>
-              {subs.map(sub => {
-                const fcount = (sub.files || []).length;
-                const isOpen = openSubId === sub.id;
-                return (
-                  <div key={sub.id}
-                    onClick={() => { if (!renamingId) setOpenSubId(isOpen ? null : sub.id); }}
-                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
-                    onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
-                    style={{ background: "var(--color-background-primary)", borderRadius: 12, border: isOpen ? "2px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", borderTop: "3px solid #1a6b3c", padding: "0.9rem 1rem 0.75rem", cursor: renamingId?.id === sub.id ? "default" : "pointer", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", transition: "box-shadow 0.15s" }}>
-                    <button onClick={e => { e.stopPropagation(); deleteFolder(sub.id, folder.id); }}
-                      style={{ position: "absolute", top: 7, right: 30, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#d44", opacity: 0.5, padding: "2px 4px" }}>🗑</button>
-                    <button onClick={e => { e.stopPropagation(); setRenamingId({ id: sub.id, parentId: folder.id, value: sub.name }); }}
-                      style={{ position: "absolute", top: 7, right: 7, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", opacity: 0.6, padding: "2px 4px" }} title="Rename">✏️</button>
-                    <div style={{ fontSize: 26, marginBottom: 5 }}>{isOpen ? "📂" : "📁"}</div>
-                    {renamingId?.id === sub.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{ marginBottom:3 }}>
-                        <input
-                          autoFocus
-                          value={renamingId.value}
-                          onChange={e => setRenamingId(p => ({ ...p, value: e.target.value }))}
-                          onKeyDown={e => { if (e.key==="Enter") { renameFolder(sub.id, renamingId.value, folder.id); setRenamingId(null); } if (e.key==="Escape") setRenamingId(null); }}
-                          onBlur={() => { renameFolder(sub.id, renamingId.value, folder.id); setRenamingId(null); }}
-                          style={{ width:"100%", boxSizing:"border-box", fontSize:13, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:5, padding:"2px 6px", outline:"none", fontFamily:"inherit", background:"var(--color-background-secondary)" }}
-                        />
-                      </div>
-                    ) : (
-                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, paddingRight: 16, wordBreak: "break-word" }}>{sub.name}</div>
-                    )}
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-                      {fcount} file{fcount !== 1 ? "s" : ""}
-                      {fcount === 0 && <span style={{ marginLeft: 4, fontSize: 10, background: "#f1f5f9", color: "#94a3b8", borderRadius: 4, padding: "1px 5px" }}>Empty</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {/* Expanded sub-folder content inline */}
-            {openSubId && (() => {
-              const sub = subs.find(s => s.id === openSubId);
-              if (!sub) return null;
-              return (
-                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, border: "0.5px solid var(--color-border-secondary)", overflow: "hidden" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)" }}>
-                    <span style={{ fontSize: 18 }}>📂</span>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{sub.name}</span>
-                    <button onClick={() => setOpenSubId(null)} style={{ marginLeft: "auto", background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 10px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✕ Close</button>
-                  </div>
-                  <FolderBody folder={sub} parentId={folder.id} uploading={uploading} drive={drive} setDriveFId={setDriveFId} addFolder={addFolder} deleteFolder={deleteFolder} deleteFile={deleteFile} uploadFile={uploadFile} setPreview={setPreview} newSubName={newSubName} setNewSubName={setNewSubName} />
-                </div>
-              );
-            })()}
-          </div>
-        )}
-        {/* Files */}
-        {files.length===0 && subs.length===0 && <div style={{ fontSize:12, color:"var(--color-text-secondary)", padding:"4px 0" }}>Empty folder.</div>}
-        {files.length>0 && (
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {files.map(file => <FileRow key={file.id} file={file} folderId={folder.id} parentId={parentId} />)}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {sectionTitle("🗂", "Documents", "Organise files into folders. Connect Google Drive to store all uploads directly in your Drive.")}
-
-      {/* Add root folder */}
-      <div style={cardStyle}>
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addFolder()}
-            placeholder="New folder name…"
-            style={{ flex:1, border:"0.5px solid var(--color-border-secondary)", borderRadius:8, padding:"8px 12px", fontSize:13, outline:"none", fontFamily:"inherit", background:"var(--color-background-primary)", color:"var(--color-text-primary)" }} />
-          <button onClick={()=>addFolder()} style={{ background:"#1a6b3c", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:"pointer", fontSize:13, fontWeight:500, whiteSpace:"nowrap" }}>+ New Folder</button>
-        </div>
-      </div>
-
-      {/* ── Folder grid — like Business year folders ── */}
-      {folders.length === 0
-        ? <div style={{ textAlign:"center", color:"var(--color-text-secondary)", fontSize:13, padding:"3rem 1rem" }}>
-            <div style={{ fontSize:40, marginBottom:8 }}>🗂</div>
-            <div>No folders yet. Create one above.</div>
-          </div>
-        : <>
-          {/* Grid of folder cards */}
-          {!openId && (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))", gap:12, marginTop:4 }}>
-              {folders.map(folder => {
-                const fcount = (folder.files||[]).length + (folder.subFolders||[]).reduce((s,sf)=>s+(sf.files||[]).length,0);
-                const sfCount = (folder.subFolders||[]).length;
-                return (
-                  <div key={folder.id}
-                    onClick={() => { if (!renamingId) setOpenId(folder.id); }}
-                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.10)"}
-                    onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)"}
-                    style={{ background:"var(--color-background-primary)", borderRadius:14, border:"0.5px solid var(--color-border-secondary)", borderTop:"3px solid #1a6b3c", padding:"1.1rem 1.1rem 0.9rem", cursor: renamingId?.id === folder.id ? "default" : "pointer", position:"relative", boxShadow:"0 1px 4px rgba(0,0,0,0.05)", transition:"box-shadow 0.15s" }}>
-                    {/* Delete button */}
-                    <button onClick={e=>{e.stopPropagation(); deleteFolder(folder.id);}}
-                      style={{ position:"absolute", top:8, right:32, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"#d44", opacity:0.5, padding:"2px 4px" }}
-                      title="Delete folder">🗑</button>
-                    {/* Rename button */}
-                    <button onClick={e=>{e.stopPropagation(); setRenamingId({ id:folder.id, parentId:null, value:folder.name }); }}
-                      style={{ position:"absolute", top:8, right:8, background:"none", border:"none", cursor:"pointer", fontSize:13, color:"var(--color-text-secondary)", opacity:0.6, padding:"2px 4px" }}
-                      title="Rename folder">✏️</button>
-                    <div style={{ fontSize:32, marginBottom:6 }}>📁</div>
-                    {/* Inline rename vs name display */}
-                    {renamingId?.id === folder.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{ marginBottom:4 }}>
-                        <input
-                          autoFocus
-                          value={renamingId.value}
-                          onChange={e => setRenamingId(p => ({ ...p, value: e.target.value }))}
-                          onKeyDown={e => {
-                            if (e.key === "Enter") { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); }
-                            if (e.key === "Escape") setRenamingId(null);
-                          }}
-                          onBlur={() => { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); }}
-                          style={{ width:"100%", boxSizing:"border-box", fontSize:15, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:6, padding:"3px 7px", outline:"none", fontFamily:"inherit", background:"var(--color-background-secondary)" }}
-                        />
-                        <div style={{ fontSize:10, color:"var(--color-text-secondary)", marginTop:2 }}>Enter to save · Esc to cancel</div>
-                      </div>
-                    ) : (
-                      <div style={{ fontWeight:700, fontSize:17, marginBottom:4, paddingRight:20, wordBreak:"break-word" }}>{folder.name}</div>
-                    )}
-                    <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:6 }}>
-                      {fcount} file{fcount!==1?"s":""}
-                      {sfCount>0 && ` · ${sfCount} sub-folder${sfCount!==1?"s":""}`}
-                    </div>
-                    <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-                      {folder.driveFolderId && <span style={{ fontSize:10, background:"#dbeafe", color:"#1d4ed8", borderRadius:4, padding:"1px 6px" }}>☁ Drive</span>}
-                      {fcount === 0 && <span style={{ fontSize:10, background:"#f1f5f9", color:"#94a3b8", borderRadius:4, padding:"1px 6px" }}>Empty</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Expanded folder detail view */}
-          {openId && (() => {
-            const folder = folders.find(f => f.id === openId);
-            if (!folder) { setOpenId(null); return null; }
-            return (
-              <div style={{ marginTop:4 }}>
-                {/* Back + header */}
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-                  <button onClick={()=>setOpenId(null)} style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontSize:12, color:"var(--color-text-secondary)", display:"flex", alignItems:"center", gap:5 }}>
-                    ← Back
-                  </button>
-                  <span style={{ fontSize:22 }}>📂</span>
-                  {renamingId?.id === folder.id ? (
-                    <input
-                      autoFocus
-                      value={renamingId.value}
-                      onChange={e => setRenamingId(p => ({ ...p, value: e.target.value }))}
-                      onKeyDown={e => { if (e.key==="Enter") { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); } if (e.key==="Escape") setRenamingId(null); }}
-                      onBlur={() => { renameFolder(folder.id, renamingId.value, null); setRenamingId(null); }}
-                      style={{ fontSize:16, fontWeight:700, border:"0.5px solid #1a6b3c", borderRadius:7, padding:"4px 10px", outline:"none", fontFamily:"inherit", background:"var(--color-background-secondary)", minWidth:160 }}
-                    />
-                  ) : (
-                    <>
-                      <span style={{ fontWeight:700, fontSize:18 }}>{folder.name}</span>
-                      <button onClick={() => setRenamingId({ id:folder.id, parentId:null, value:folder.name })}
-                        style={{ background:"none", border:"0.5px solid var(--color-border-secondary)", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, color:"var(--color-text-secondary)" }} title="Rename">✏️ Rename</button>
-                    </>
-                  )}
-                  {folder.driveFolderId && <span style={{ fontSize:11, background:"#dbeafe", color:"#1d4ed8", borderRadius:5, padding:"2px 8px" }}>☁ Drive</span>}
-                </div>
-                <FolderBody folder={folder} />
-              </div>
-            );
-          })()}
-        </>
-      }
-
-      {/* Preview modal */}
-      {preview && (
-        <div onClick={()=>setPreview(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.78)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, overflow:"hidden", maxWidth:"92vw", maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.4)", minWidth:340 }}>
-            <div style={{ padding:"10px 16px", borderBottom:"0.5px solid #e5e7eb", display:"flex", alignItems:"center", justifyContent:"space-between", background:"#f9fafb" }}>
-              <span style={{ fontWeight:600, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>{preview.name}</span>
-              <div style={{ display:"flex", gap:8, flexShrink:0, marginLeft:12 }}>
-                {preview.webViewLink && <a href={preview.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>☁ Open in Drive</a>}
-                {preview.dataUrl && <a href={preview.dataUrl} download={preview.name} style={{ fontSize:12, color:"#1a6b3c", textDecoration:"none", padding:"3px 10px", border:"0.5px solid #1a6b3c", borderRadius:6 }}>⬇</a>}
-                <button onClick={()=>setPreview(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#6b7280", lineHeight:1 }}>✕</button>
-              </div>
-            </div>
-            <div style={{ overflow:"auto", flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:8 }}>
-              {preview.previewUrl
-                ? <iframe src={preview.previewUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" allow="autoplay" />
-                : preview.dataUrl?.startsWith("data:image")
-                  ? <img src={preview.dataUrl} alt={preview.name} style={{ maxWidth:"82vw", maxHeight:"78vh", objectFit:"contain", borderRadius:6 }} />
-                  : (preview.dataUrl?.startsWith("data:application/pdf") || preview.type === "application/pdf") && preview.dataUrl
-                    ? <object data={preview.dataUrl} type="application/pdf" style={{ width:"82vw", height:"78vh", border:"none" }}>
-                        <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}>
-                          <div style={{ fontSize:48, marginBottom:12 }}>📕</div>
-                          <div style={{ marginBottom:12 }}>PDF preview not supported in this browser.</div>
-                          <a href={preview.dataUrl} download={preview.name} style={{ color:"#1a6b3c", fontWeight:500 }}>⬇ Download PDF</a>
-                        </div>
-                      </object>
-                  : preview.dataUrl
-                    ? <iframe src={preview.dataUrl} style={{ width:"82vw", height:"78vh", border:"none" }} title="Preview" />
-                    : <div style={{ padding:40, textAlign:"center", color:"#6b7280" }}><div style={{ fontSize:48, marginBottom:12 }}>📄</div><div>No preview available</div></div>
-              }
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function TradingSettings({ data, update, cardStyle, sectionTitle }) {
   const lotSizes = { ...DEFAULT_LOT_SIZES, ...(data.lotSizes || {}) };
@@ -8233,7 +7639,6 @@ function PriceEditor({ monthEntry, onSave }) {
 function BusinessPage({ data, update }) {
   // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
   // Migrate legacy flat businessData into first business if needed
-  const drive = useDrive(); // Add Drive hook at component level
   const businesses = data.businesses || [];
   const legacyData = data.businessData || [];
 
@@ -9270,84 +8675,6 @@ function BusinessPage({ data, update }) {
                             onFocus={ev=>{ev.target.style.border="1.5px solid #e55";ev.target.style.background="#fff";}}
                             onBlurCapture={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
                         </div>
-                        {/* Bill Attachment Section */}
-                        <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
-                          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
-                            <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
-                          </div>
-                          {(() => {
-                            const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
-                            return (
-                              <>
-                                {bills.length > 0 && (
-                                  <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
-                                    {bills.map((bill,idx) => (
-                                      <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
-                                        <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
-                                          <span>📄</span>
-                                          <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
-                                        </div>
-                                        <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                                          <button onClick={() => window.open(bill.fileUrl, '_blank')}
-                                            style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
-                                            View
-                                          </button>
-                                          <button onClick={() => {
-                                            setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
-                                          }}
-                                            style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
-                                            ×
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                <input
-                                  type="file"
-                                  id={`bill-upload-${entry.id}`}
-                                  accept=".pdf,.jpg,.jpeg,.png,.webp"
-                                  style={{ display:"none" }}
-                                  onChange={async (ev) => {
-                                    const file = ev.target.files?.[0];
-                                    if (!file) return;
-                                    
-                                    if (!drive?.connected) {
-                                      alert("Google Drive not connected. Please connect Google Drive in Settings to upload bills.");
-                                      return;
-                                    }
-
-                                    try {
-                                      const result = await drive.uploadToDrive(file, null);
-                                      if (result?.id && result?.webViewLink) {
-                                        const newBill = {
-                                          monthId: entry.id,
-                                          fileName: file.name,
-                                          fileUrl: result.webViewLink,
-                                          fileId: result.id,
-                                          uploadDate: new Date().toISOString()
-                                        };
-                                        setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                        alert("Bill uploaded successfully to Google Drive!");
-                                      } else {
-                                        alert("Failed to upload bill. Please try again.");
-                                      }
-                                    } catch (err) {
-                                      console.error("Upload failed:", err);
-                                      alert("Failed to upload bill. Please try again.");
-                                    }
-                                    ev.target.value = "";
-                                  }}
-                                />
-                                <label htmlFor={`bill-upload-${entry.id}`}
-                                  style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
-                                  <span>📎</span>
-                                  <span>Attach Bill</span>
-                                </label>
-                              </>
-                            );
-                          })()}
-                        </div>
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 }}>
                           <span style={{color:"#4da6ff",fontWeight:600}}>Net Income</span>
                           <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
@@ -9632,84 +8959,6 @@ function BusinessPage({ data, update }) {
                     onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
                   />
                 </div>
-                {/* Bill Attachment Section */}
-                <div style={{ padding:"10px 12px",borderTop:"0.5px solid var(--color-border-tertiary)",marginTop:6 }}>
-                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
-                    <span style={{color:"var(--color-text-secondary)",fontSize:12,fontWeight:500}}>📎 Bill Attachment</span>
-                  </div>
-                  {(() => {
-                    const bills = (data.billAttachments || []).filter(b => b.monthId === entry.id);
-                    return (
-                      <>
-                        {bills.length > 0 && (
-                          <div style={{ display:"flex",flexDirection:"column",gap:6,marginBottom:8 }}>
-                            {bills.map((bill,idx) => (
-                              <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"6px 10px",borderRadius:6,fontSize:11 }}>
-                                <div style={{ display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0 }}>
-                                  <span>📄</span>
-                                  <span style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</span>
-                                </div>
-                                <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                                  <button onClick={() => window.open(bill.fileUrl, '_blank')}
-                                    style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:500 }}>
-                                    View
-                                  </button>
-                                  <button onClick={() => {
-                                    setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
-                                  }}
-                                    style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:10,fontWeight:600 }}>
-                                    ×
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <input
-                          type="file"
-                          id={`bill-upload-detail-${entry.id}`}
-                          accept=".pdf,.jpg,.jpeg,.png,.webp"
-                          style={{ display:"none" }}
-                          onChange={async (ev) => {
-                            const file = ev.target.files?.[0];
-                            if (!file) return;
-                            
-                            if (!drive?.connected) {
-                              alert("Google Drive not connected. Please connect Google Drive in Settings to upload bills.");
-                              return;
-                            }
-
-                            try {
-                              const result = await drive.uploadToDrive(file, null);
-                              if (result?.id && result?.webViewLink) {
-                                const newBill = {
-                                  monthId: entry.id,
-                                  fileName: file.name,
-                                  fileUrl: result.webViewLink,
-                                  fileId: result.id,
-                                  uploadDate: new Date().toISOString()
-                                };
-                                setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                                alert("Bill uploaded successfully to Google Drive!");
-                              } else {
-                                alert("Failed to upload bill. Please try again.");
-                              }
-                            } catch (err) {
-                              console.error("Upload failed:", err);
-                              alert("Failed to upload bill. Please try again.");
-                            }
-                            ev.target.value = "";
-                          }}
-                        />
-                        <label htmlFor={`bill-upload-detail-${entry.id}`}
-                          style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500 }}>
-                          <span>📎</span>
-                          <span>Attach Bill</span>
-                        </label>
-                      </>
-                    );
-                  })()}
-                </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
                   <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
                   <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
@@ -9856,90 +9105,6 @@ function BusinessPage({ data, update }) {
                 </div>
               );
             })()}
-
-            {/* Bill Attachment Section for Day-wise Mode */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
-                <span style={{fontWeight:500,fontSize:14}}>📎 Bill Attachments</span>
-              </div>
-              {(() => {
-                const bills = (data.billAttachments || []).filter(b => b.monthId === activeMonthEntry.id);
-                return (
-                  <>
-                    {bills.length > 0 && (
-                      <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:10 }}>
-                        {bills.map((bill,idx) => (
-                          <div key={idx} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",padding:"8px 12px",borderRadius:8,fontSize:12 }}>
-                            <div style={{ display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0 }}>
-                              <span style={{fontSize:16}}>📄</span>
-                              <div style={{flex:1,minWidth:0}}>
-                                <div style={{ fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{bill.fileName}</div>
-                                <div style={{ fontSize:10,color:"var(--color-text-secondary)",marginTop:2 }}>
-                                  {new Date(bill.uploadDate).toLocaleDateString()}
-                                </div>
-                              </div>
-                            </div>
-                            <div style={{ display:"flex",gap:6,flexShrink:0 }}>
-                              <button onClick={() => window.open(bill.fileUrl, '_blank')}
-                                style={{ background:"#4da6ff",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:500 }}>
-                                View
-                              </button>
-                              <button onClick={() => {
-                                setData(d => ({ ...d, billAttachments: (d.billAttachments || []).filter(b => b.fileId !== bill.fileId) }));
-                              }}
-                                style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:600 }}>
-                                ×
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      id={`bill-upload-daywise-${activeMonthEntry.id}`}
-                      accept=".pdf,.jpg,.jpeg,.png,.webp"
-                      style={{ display:"none" }}
-                      onChange={async (ev) => {
-                        const file = ev.target.files?.[0];
-                        if (!file) return;
-                        
-                        if (!drive?.connected) {
-                          alert("Google Drive not connected. Please connect Google Drive in Settings to upload bills.");
-                          return;
-                        }
-
-                        try {
-                          const result = await drive.uploadToDrive(file, null);
-                          if (result?.id && result?.webViewLink) {
-                            const newBill = {
-                              monthId: activeMonthEntry.id,
-                              fileName: file.name,
-                              fileUrl: result.webViewLink,
-                              fileId: result.id,
-                              uploadDate: new Date().toISOString()
-                            };
-                            setData(d => ({ ...d, billAttachments: [...(d.billAttachments || []), newBill] }));
-                            alert("Bill uploaded successfully to Google Drive!");
-                          } else {
-                            alert("Failed to upload bill. Please try again.");
-                          }
-                        } catch (err) {
-                          console.error("Upload failed:", err);
-                          alert("Failed to upload bill. Please try again.");
-                        }
-                        ev.target.value = "";
-                      }}
-                    />
-                    <label htmlFor={`bill-upload-daywise-${activeMonthEntry.id}`}
-                      style={{ display:"inline-flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500 }}>
-                      <span>📎</span>
-                      <span>Attach Bill</span>
-                    </label>
-                  </>
-                );
-              })()}
-            </div>
 
             {/* Inline editable daily table */}
             <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
@@ -10188,38 +9353,6 @@ function ProjectsPage({ data, update }) {
     )}));
   }
 
-  const drive = useDrive();
-  async function handleFileUpload(e) {
-    const fileList = Array.from(e.target.files);
-    if (!fileList.length || !project) return;
-    for (const file of fileList) {
-      let fileEntry;
-      if (drive?.connected) {
-        const result = await drive.uploadToDrive(file, null);
-        fileEntry = result
-          ? { id: result.id, name: result.name, type: result.mimeType, size: result.size, previewUrl: result.previewUrl, webViewLink: result.webViewLink, downloadUrl: result.downloadUrl, source: "gdrive", uploadedAt: new Date().toISOString() }
-          : null;
-      }
-      if (!fileEntry) {
-        // fallback local
-        const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
-        fileEntry = { id: Date.now() + Math.random(), name: file.name, type: file.type, size: file.size, dataUrl, source: "local", uploadedAt: new Date().toISOString() };
-      }
-      update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
-        ? { ...pr, files: [...(pr.files || []), fileEntry] }
-        : pr
-      )}));
-    }
-    e.target.value = "";
-  }
-
-  function deleteFile(fileId) {
-    update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id
-      ? { ...pr, files: (pr.files || []).filter(f => f.id !== fileId) }
-      : pr
-    )}));
-  }
-
   function addDayEntry() {
     if (!newDayEntry.trim() || !project) return;
     const entry = { id: Date.now(), text: newDayEntry.trim(), date: dayTrackDate, done: false, createdAt: new Date().toISOString() };
@@ -10431,9 +9564,6 @@ function ProjectsPage({ data, update }) {
               </button>
               <button style={tabStyle(leftTab === "completed")} onClick={() => setLeftTab("completed")}>
                 ☑️ Completed {completedTodos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({completedTodos.length})</span>}
-              </button>
-              <button style={tabStyle(leftTab === "files")} onClick={() => setLeftTab("files")}>
-                📎 Files {files.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({files.length})</span>}
               </button>
               <button style={tabStyle(leftTab === "notes")} onClick={() => setLeftTab("notes")}>
                 📝 Notes {notes.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({notes.length})</span>}
@@ -10692,102 +9822,6 @@ function ProjectsPage({ data, update }) {
               </div>
             )}
 
-            {/* ── FILES TAB ── */}
-            {leftTab === "files" && (() => {
-              function fileIcon2(t) { if (!t) return "📄"; if (t.startsWith("image/")) return "🖼"; if (t === "application/pdf") return "📕"; if (t.includes("word")) return "📝"; if (t.includes("sheet") || t.includes("excel") || t.includes("csv")) return "📊"; return "📄"; }
-              function fmtSz(b) { if (!b) return ""; if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; return (b / 1048576).toFixed(1) + " MB"; }
-
-              function ProjectFileRow({ f }) {
-                const [expanded, setExpanded] = React.useState(false);
-                const canPreview = f.dataUrl || f.previewUrl || f.webViewLink;
-                const isImg = f.type?.startsWith("image/") || f.dataUrl?.startsWith("data:image");
-                const isPdf = f.type === "application/pdf" || f.dataUrl?.startsWith("data:application/pdf");
-                return (
-                  <div style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px" }}>
-                      {/* Thumbnail */}
-                      <div onClick={() => canPreview && setExpanded(p => !p)}
-                        style={{ width: 40, height: 40, borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", cursor: canPreview ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", fontSize: 22 }}>
-                        {isImg && f.dataUrl
-                          ? <img src={f.dataUrl} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : <span>{fileIcon2(f.type)}</span>}
-                      </div>
-                      {/* Name + size */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div onClick={() => canPreview && setExpanded(p => !p)} style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: canPreview ? "pointer" : "default" }}>{f.name}</div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "flex", gap: 6, alignItems: "center" }}>
-                          {fmtSz(f.size)}
-                          {f.source === "gdrive" && <span style={{ background: "#dbeafe", color: "#1d4ed8", borderRadius: 3, padding: "0 4px", fontSize: 9 }}>☁ Drive</span>}
-                        </div>
-                      </div>
-                      {/* Actions */}
-                      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
-                        {canPreview && (
-                          <button onClick={() => setExpanded(p => !p)}
-                            style={{ fontSize: 11, color: expanded ? "#1a6b3c" : "var(--color-text-secondary)", padding: "3px 9px", border: `0.5px solid ${expanded ? "#1a6b3c" : "var(--color-border-secondary)"}`, borderRadius: 6, background: expanded ? "#e8f5ee" : "none", cursor: "pointer", whiteSpace: "nowrap" }}>
-                            {expanded ? "▲ Hide" : "▼ Preview"}
-                          </button>
-                        )}
-                        {f.webViewLink
-                          ? <>
-                              <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6, whiteSpace: "nowrap" }}>☁ Open</a>
-                              {f.downloadUrl && <a href={f.downloadUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#1d4ed8", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1d4ed8", borderRadius: 6 }}>⬇ Download</a>}
-                            </>
-                          : f.dataUrl && <a href={f.dataUrl} download={f.name} style={{ fontSize: 11, color: "#1a6b3c", textDecoration: "none", padding: "3px 9px", border: "0.5px solid #1a6b3c", borderRadius: 6 }}>⬇</a>}
-                        <button onClick={() => deleteFile(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, flexShrink: 0, opacity: 0.6, padding: "2px 4px" }}>🗑</button>
-                      </div>
-                    </div>
-                    {/* Inline preview panel */}
-                    {expanded && (
-                      <div style={{ background: "var(--color-background-secondary)", padding: 12, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                        {isImg && f.dataUrl
-                          ? <img src={f.dataUrl} alt={f.name} style={{ maxWidth: "100%", maxHeight: 400, objectFit: "contain", borderRadius: 8, display: "block", margin: "0 auto" }} />
-                          : isPdf && f.dataUrl
-                            ? <object data={f.dataUrl} type="application/pdf" style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }}>
-                                <div style={{ textAlign: "center", padding: 28, color: "var(--color-text-secondary)" }}>
-                                  <div style={{ fontSize: 36, marginBottom: 8 }}>📕</div>
-                                  <a href={f.dataUrl} download={f.name} style={{ color: "#1a6b3c", fontWeight: 500 }}>⬇ Download PDF</a>
-                                </div>
-                              </object>
-                            : f.previewUrl
-                              ? <iframe src={f.previewUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} allow="autoplay" />
-                              : f.dataUrl
-                                ? <iframe src={f.dataUrl} style={{ width: "100%", height: 460, border: "none", borderRadius: 6 }} title={f.name} />
-                                : f.webViewLink
-                                  ? <div style={{ textAlign: "center", padding: 24 }}>
-                                      <a href={f.webViewLink} target="_blank" rel="noreferrer" style={{ color: "#1a6b3c", fontWeight: 500 }}>Open in Google Drive ↗</a>
-                                    </div>
-                                  : <div style={{ textAlign: "center", padding: 24, color: "var(--color-text-secondary)", fontSize: 13 }}>No preview available</div>}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              return (
-                <div>
-                  <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "flex-end" }}>
-                    <label style={{ background: "#1a6b3c", color: "#fff", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-                      + Upload
-                      <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
-                    </label>
-                  </div>
-                  {files.length === 0 ? (
-                    <label style={{ display: "block", cursor: "pointer" }}>
-                      <input type="file" multiple onChange={handleFileUpload} style={{ display: "none" }} />
-                      <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                        <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
-                        Drop files here or click to upload
-                      </div>
-                    </label>
-                  ) : (
-                    <div>
-                      {files.map(f => <ProjectFileRow key={f.id} f={f} />)}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
             {/* ── NOTES TAB — Merged Note + MindMap + Undo/Redo ── */}
             {leftTab === "notes" && (() => {
               function makeDefaultMindmap() {
