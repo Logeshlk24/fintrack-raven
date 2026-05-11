@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   loadFromFirestore,
   saveToFirestore,
+  getFreshDriveToken,
 } from "./firebase";
 
 // ── Force Light Mode CSS Variables ──────────────────────────────────────────
@@ -221,6 +222,62 @@ export default function App() {
 
       // If we just migrated local data, persist it to Firestore immediately
       if (migrated) saveToFirestore(firebaseUser.uid, loaded);
+
+      // ── Auto-connect Google Drive silently (token already held from sign-in) ──
+      // Only runs if not already connected — zero popups, uses stored token.
+      const alreadyConnected = loaded?.gdriveIntegration?.connected;
+      if (!alreadyConnected) {
+        try {
+          const token = await getFreshDriveToken();
+          if (token) {
+            // Find or create FinTracker folder
+            const FOLDER_NAME = "FinTracker";
+            const searchRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=name%3D'${FOLDER_NAME}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20trashed%3Dfalse&fields=files(id,name)`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            let folderId = null;
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              if (searchData.files?.length > 0) {
+                folderId = searchData.files[0].id;
+              } else {
+                // Create folder
+                const createRes = await fetch(
+                  "https://www.googleapis.com/drive/v3/files",
+                  {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" }),
+                  }
+                );
+                if (createRes.ok) {
+                  const created = await createRes.json();
+                  folderId = created.id;
+                }
+              }
+            }
+            if (folderId && !cancelled) {
+              setData(prev => {
+                const next = {
+                  ...prev,
+                  gdriveIntegration: {
+                    connected: true,
+                    email: firebaseUser.email || "",
+                    folderId,
+                    connectedAt: new Date().toISOString(),
+                  },
+                };
+                saveToFirestore(firebaseUser.uid, next);
+                return next;
+              });
+            }
+          }
+        } catch (e) {
+          // Silent fail — user can manually connect from Settings → Integrations
+          console.warn("Drive auto-connect:", e);
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3847,17 +3904,349 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
 // ─── IntegrationsSettings (Google Drive) ──────────────────────────────────────
 function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseUser }) {
-  const gdrive = data.gdriveIntegration || {};
+  const gdrive      = data.gdriveIntegration || {};
   const isConnected = !!gdrive.connected;
-  const [status, setStatus] = useState(null); // null | "connecting" | "disconnecting" | "saving" | "loading"
-  const [msg, setMsg] = useState({ type: null, text: "" });
-  const [driveFiles, setDriveFiles] = useState([]);
-  const [showFiles, setShowFiles] = useState(false);
+  const FOLDER_NAME = "FinTracker";
+
+  const [status, setStatus]             = useState(null); // null | "connecting" | "saving" | "loading"
+  const [msg, setMsg]                   = useState({ type: null, text: "" });
+  const [driveFiles, setDriveFiles]     = useState([]);
+  const [showFiles, setShowFiles]       = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [restoreConfirm, setRestoreConfirm] = useState(null);
 
-  const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-  const FOLDER_NAME  = "FinTracker";
+  function flashMsg(type, text, dur = 5000) {
+    setMsg({ type, text });
+    if (dur) setTimeout(() => setMsg({ type: null, text: "" }), dur);
+  }
+
+  // ── Drive API wrapper — always uses getFreshDriveToken, zero popup ────────────
+  async function driveRequest(url, opts = {}) {
+    const token = await getFreshDriveToken();
+    if (!token) throw new Error("No Drive token — please sign out and sign back in.");
+    const resp = await fetch(url, {
+      ...opts,
+      headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Drive API error ${resp.status}`);
+    }
+    return resp.json();
+  }
+
+  async function ensureFinTrackerFolder() {
+    const token = await getFreshDriveToken();
+    if (!token) throw new Error("No Drive token.");
+    // Search
+    const search = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${FOLDER_NAME}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20trashed%3Dfalse&fields=files(id,name)`
+    );
+    if (search.files?.length > 0) return search.files[0].id;
+    // Create
+    const created = await driveRequest(
+      "https://www.googleapis.com/drive/v3/files",
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" }) }
+    );
+    return created.id;
+  }
+
+  // ── Manual connect (fallback if auto-connect failed) ─────────────────────────
+  async function handleConnect() {
+    setStatus("connecting");
+    setMsg({ type: null, text: "" });
+    try {
+      const token = await getFreshDriveToken();
+      if (!token) throw new Error("Could not get Drive token — try signing out and back in.");
+      const folderId = await ensureFinTrackerFolder();
+      update(() => ({
+        gdriveIntegration: {
+          connected: true,
+          email: firebaseUser?.email || "",
+          folderId,
+          connectedAt: new Date().toISOString(),
+        }
+      }));
+      flashMsg("success", "✅ Google Drive connected! FinTracker folder is ready.");
+    } catch (e) {
+      flashMsg("error", `❌ ${e.message}`);
+    } finally {
+      setStatus(null);
+    }
+  }
+
+  // ── Disconnect ────────────────────────────────────────────────────────────────
+  function handleDisconnect() {
+    update(() => ({ gdriveIntegration: { connected: false } }));
+    setShowFiles(false);
+    setDriveFiles([]);
+    flashMsg("success", "Google Drive disconnected.", 3000);
+  }
+
+  // ── Save backup to Drive — no popup ──────────────────────────────────────────
+  async function handleSaveToDrive() {
+    setStatus("saving");
+    setMsg({ type: null, text: "" });
+    try {
+      const token = await getFreshDriveToken();
+      if (!token) throw new Error("No Drive token — please sign out and sign back in.");
+      const folderId = gdrive.folderId || await ensureFinTrackerFolder();
+
+      const { user, ...exportable } = data;
+      const payload  = { _meta: { exportedAt: new Date().toISOString(), appVersion: "fintrack_v2" }, ...exportable };
+      const jsonStr  = JSON.stringify(payload, null, 2);
+      const ts       = new Date().toISOString().slice(0, 10);
+      const fileName = `fintrack_backup_${ts}.json`;
+
+      const boundary = "fintrack_boundary_xyz";
+      const body = [
+        `--${boundary}`,
+        "Content-Type: application/json; charset=UTF-8",
+        "",
+        JSON.stringify({ name: fileName, parents: [folderId] }),
+        `--${boundary}`,
+        "Content-Type: application/json",
+        "",
+        jsonStr,
+        `--${boundary}--`,
+      ].join("\r\n");
+
+      const uploadRes = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+          body,
+        }
+      );
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `Upload failed (${uploadRes.status})`);
+      }
+      flashMsg("success", `✅ Backup saved → FinTracker/${fileName}`);
+    } catch (e) {
+      flashMsg("error", `❌ Save failed: ${e.message}`);
+    } finally {
+      setStatus(null);
+    }
+  }
+
+  // ── List Drive backups — no popup ─────────────────────────────────────────────
+  async function handleListFiles() {
+    setLoadingFiles(true);
+    setShowFiles(true);
+    try {
+      const folderId = gdrive.folderId;
+      if (!folderId) { flashMsg("error", "Folder ID missing — try reconnecting."); return; }
+      const res = await driveRequest(
+        `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&orderBy=createdTime+desc&fields=files(id,name,size,createdTime)&pageSize=20`
+      );
+      setDriveFiles(res.files || []);
+    } catch (e) {
+      flashMsg("error", `❌ ${e.message}`);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }
+
+  // ── Restore from Drive — no popup ─────────────────────────────────────────────
+  async function handleRestore(file) {
+    setStatus("loading");
+    setMsg({ type: null, text: "" });
+    try {
+      const token = await getFreshDriveToken();
+      if (!token) throw new Error("No Drive token — please sign out and sign back in.");
+      const resp = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
+      const parsed = await resp.json();
+      if (!parsed._meta || parsed._meta.appVersion !== "fintrack_v2")
+        throw new Error("This file doesn't look like a FinTrack backup.");
+      const { _meta, ...restored } = parsed;
+      update(prev => ({ ...restored, user: prev.user, gdriveIntegration: prev.gdriveIntegration }));
+      setRestoreConfirm(null);
+      setShowFiles(false);
+      flashMsg("success", `✅ Restored from ${file.name}`);
+    } catch (e) {
+      flashMsg("error", `❌ Restore failed: ${e.message}`);
+    } finally {
+      setStatus(null);
+    }
+  }
+
+  const btnBase = {
+    display: "inline-flex", alignItems: "center", gap: 8,
+    padding: "10px 18px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+    cursor: "pointer", border: "none", transition: "opacity 0.15s",
+  };
+
+  return (
+    <div style={{ marginTop: 16 }}>
+
+      {/* ── Google Drive Card ─────────────────────────────────────────────── */}
+      <div style={cardStyle}>
+        {sectionTitle("🗂️", "Google Drive", "Back up and restore FinTrack data directly in your Google Drive.")}
+
+        {/* Connection status row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20, padding: "14px 16px", borderRadius: 10, background: isConnected ? "#f0faf4" : "var(--color-background-secondary)", border: `0.5px solid ${isConnected ? "#b7dfc8" : "var(--color-border-tertiary)"}` }}>
+          {/* Drive icon */}
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: isConnected ? "#1a6b3c" : "var(--color-border-primary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
+            🗂️
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Google Drive</div>
+            {isConnected ? (
+              <>
+                <div style={{ fontSize: 12, color: "#1a6b3c", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
+                  Connected · {gdrive.email}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                  📁 All backups saved inside <strong>FinTracker/</strong>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                Not connected — sign out and sign back in, or click Connect below.
+              </div>
+            )}
+          </div>
+          {/* Action button */}
+          <div style={{ flexShrink: 0 }}>
+            {isConnected ? (
+              <button
+                style={{ ...btnBase, background: "#fee2e2", color: "#991b1b", padding: "7px 14px", fontSize: 12 }}
+                onClick={handleDisconnect} disabled={!!status}>
+                Disconnect
+              </button>
+            ) : (
+              <button
+                style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "connecting" ? 0.6 : 1, padding: "8px 14px", fontSize: 13 }}
+                onClick={handleConnect}
+                disabled={status === "connecting"}
+              >
+                {status === "connecting" ? "Connecting…" : "Connect"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* How it works — shown when not yet connected */}
+        {!isConnected && (
+          <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12, color: "#0369a1", lineHeight: 1.6 }}>
+            💡 <strong>Automatic:</strong> Google Drive connects automatically when you sign in with Gmail.
+            If it didn't connect, click <strong>Connect</strong> above — no extra popup needed.
+          </div>
+        )}
+
+        {/* Connected actions */}
+        {isConnected && (
+          <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: showFiles ? 16 : 0 }}>
+              <button
+                style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "saving" ? 0.6 : 1 }}
+                onClick={handleSaveToDrive}
+                disabled={!!status}
+              >
+                <span style={{ fontSize: 16 }}>☁️</span>
+                {status === "saving" ? "Saving…" : "Save Backup to Drive"}
+              </button>
+              <button
+                style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-secondary)", opacity: loadingFiles ? 0.6 : 1 }}
+                onClick={handleListFiles}
+                disabled={loadingFiles || !!status}
+              >
+                <span style={{ fontSize: 16 }}>📂</span>
+                {loadingFiles ? "Loading…" : "Browse Backups"}
+              </button>
+            </div>
+
+            {/* File list */}
+            {showFiles && (
+              <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ background: "var(--color-background-secondary)", padding: "10px 14px", fontSize: 13, fontWeight: 600, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>📁 FinTracker / backups</span>
+                  <button onClick={() => setShowFiles(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1 }}>✕</button>
+                </div>
+                {loadingFiles ? (
+                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>Loading…</div>
+                ) : driveFiles.length === 0 ? (
+                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>No backups found. Save your first backup above.</div>
+                ) : (
+                  driveFiles.map(f => (
+                    <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", fontSize: 13 }}>
+                      <span style={{ fontSize: 18 }}>📄</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                          {f.createdTime ? new Date(f.createdTime).toLocaleString() : ""}
+                          {f.size ? ` · ${(f.size / 1024).toFixed(1)} KB` : ""}
+                        </div>
+                      </div>
+                      <button
+                        style={{ ...btnBase, padding: "5px 12px", fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "0.5px solid #b7dfc8" }}
+                        onClick={() => setRestoreConfirm(f)}
+                        disabled={!!status}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Feedback message */}
+        {msg.type && (
+          <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 8, fontSize: 13,
+            background: msg.type === "success" ? "#d1fae5" : "#fee2e2",
+            border: `0.5px solid ${msg.type === "success" ? "#6ee7b7" : "#fca5a5"}`,
+            color: msg.type === "success" ? "#065f46" : "#991b1b",
+          }}>
+            {msg.text}
+          </div>
+        )}
+
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          🔒 FinTrack only accesses files it creates (<code>drive.file</code> scope). It cannot read or modify any other files in your Drive.
+        </p>
+      </div>
+
+      {/* ── Restore confirm dialog ─────────────────────────────────────────── */}
+      {restoreConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.6rem", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>Restore from Drive?</div>
+            <p style={{ fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
+              This will <strong>replace all current data</strong> with:
+            </p>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 500, marginBottom: 16 }}>
+              📄 {restoreConfirm.name}
+            </div>
+            <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#92400e" }}>
+              ⚠️ Export your current data first if you want to keep it.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setRestoreConfirm(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+              <button
+                onClick={() => handleRestore(restoreConfirm)}
+                disabled={status === "loading"}
+                style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "loading" ? 0.6 : 1 }}
+              >
+                {status === "loading" ? "Restoring…" : "Yes, Restore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function flashMsg(type, text, dur = 4000) {
