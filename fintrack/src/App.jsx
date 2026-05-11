@@ -8478,8 +8478,9 @@ function PriceEditor({ monthEntry, onSave }) {
   );
 }
 
-// ── BillAttachment: upload bill to G-Drive with organized folder path ────────
-// Path: FinTracker/Business/{bizName}/{year}/bill_{month}{year}.ext
+// ── BillAttachment: upload bill to G-Drive (or store locally as base64 fallback) ─
+// Drive path: FinTracker/Business/{bizName}/{year}/bill_{month}{year}.ext
+// Local fallback: bill stored as { localData, localName, localType, uploadedAt }
 function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, onUpdate }) {
   const [uploading, setUploading] = React.useState(false);
   const [deleting, setDeleting]   = React.useState(false);
@@ -8487,7 +8488,8 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
   const [statusMsg, setStatusMsg] = React.useState("");
   const fileInputRef = React.useRef(null);
 
-  const bill = entry.bill || null; // { driveFileId, driveFileName, driveViewLink, uploadedAt }
+  const bill = entry.bill || null; // { driveFileId?, driveFileName?, driveViewLink?, localData?, localName?, localType?, uploadedAt }
+  const isConnected = !!driveIntegration?.connected;
 
   // ── Helper: find or create a folder under a parent ────────────────────────
   async function getOrCreateFolder(token, name, parentId) {
@@ -8528,17 +8530,49 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
   async function handleUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!driveIntegration?.connected) {
-      setStatusMsg("⚠ Connect Google Drive first in Settings → Integrations.");
+
+    setUploading(true);
+
+    if (!isConnected) {
+      // ── Local fallback: store as base64 in Firestore ──────────────────────
+      setStatusMsg("Saving locally…");
+      try {
+        const reader = new FileReader();
+        reader.onload = () => {
+          onUpdate({
+            bill: {
+              localData: reader.result,        // data:<mime>;base64,...
+              localName: file.name,
+              localType: file.type,
+              uploadedAt: new Date().toISOString(),
+            }
+          });
+          setStatusMsg("✓ Saved locally");
+          setTimeout(() => setStatusMsg(""), 3000);
+          setUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        };
+        reader.onerror = () => {
+          setStatusMsg("✗ Could not read file");
+          setUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        setStatusMsg("✗ " + (err.message || "Save failed"));
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
       return;
     }
-    setUploading(true);
-    setStatusMsg("Uploading…");
+
+    // ── Google Drive upload ────────────────────────────────────────────────
+    setStatusMsg("Uploading to Drive…");
     try {
       const token = await getFreshDriveToken();
       if (!token) throw new Error("No Drive token — please reconnect Google Drive in Settings.");
 
-      // Delete old bill file if exists
+      // Delete old Drive bill file if exists
       if (bill?.driveFileId) {
         await fetch(`https://www.googleapis.com/drive/v3/files/${bill.driveFileId}`, {
           method: "DELETE", headers: { Authorization: `Bearer ${token}` },
@@ -8583,7 +8617,7 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
           uploadedAt: new Date().toISOString(),
         }
       });
-      setStatusMsg("✓ Uploaded");
+      setStatusMsg("✓ Uploaded to Drive");
       setTimeout(() => setStatusMsg(""), 3000);
     } catch (err) {
       console.error("Bill upload error:", err);
@@ -8595,16 +8629,19 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
   }
 
   async function handleDelete() {
-    if (!bill?.driveFileId) return;
-    if (!confirm("Delete this bill from Google Drive?")) return;
+    if (!bill) return;
+    if (!confirm("Delete this bill attachment?")) return;
     setDeleting(true);
     setStatusMsg("Deleting…");
     try {
-      const token = await getFreshDriveToken();
-      if (token) {
-        await fetch(`https://www.googleapis.com/drive/v3/files/${bill.driveFileId}`, {
-          method: "DELETE", headers: { Authorization: `Bearer ${token}` },
-        });
+      // If it's a Drive file, delete from Drive too
+      if (bill.driveFileId) {
+        const token = await getFreshDriveToken().catch(() => null);
+        if (token) {
+          await fetch(`https://www.googleapis.com/drive/v3/files/${bill.driveFileId}`, {
+            method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => {});
+        }
       }
       onUpdate({ bill: null });
       setStatusMsg("✓ Deleted");
@@ -8616,13 +8653,18 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
     }
   }
 
-  const isImage = bill?.driveFileName && /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(bill.driveFileName);
-  const isPdf   = bill?.driveFileName && /\.pdf$/i.test(bill.driveFileName);
-  const previewUrl = bill?.driveFileId
-    ? (isPdf
-      ? `https://drive.google.com/file/d/${bill.driveFileId}/preview`
-      : `https://lh3.googleusercontent.com/d/${bill.driveFileId}`)
-    : null;
+  // Determine if it's a local bill or Drive bill
+  const isLocalBill = bill && !!bill.localData;
+  const billName = bill?.driveFileName || bill?.localName || "";
+  const isImage = billName && /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(billName);
+  const isPdf   = billName && /\.pdf$/i.test(billName);
+  const previewUrl = isLocalBill
+    ? bill.localData  // data URL, works directly
+    : bill?.driveFileId
+      ? (isPdf
+        ? `https://drive.google.com/file/d/${bill.driveFileId}/preview`
+        : `https://lh3.googleusercontent.com/d/${bill.driveFileId}`)
+      : null;
 
   return (
     <div style={{ marginTop: 14, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
@@ -8648,18 +8690,21 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text-primary)" }}>📄 {bill.driveFileName}</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text-primary)" }}>📄 {billName}</div>
               {bill.uploadedAt && (
                 <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                  Uploaded {new Date(bill.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  {isLocalBill ? "Stored locally · " : "Drive · "}
+                  {new Date(bill.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                 </div>
               )}
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-              <a href={bill.driveViewLink} target="_blank" rel="noreferrer"
-                style={{ padding: "5px 12px", borderRadius: 7, border: "0.5px solid #4da6ff", background: "#eaf4ff", color: "#4da6ff", fontSize: 12, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}>
-                ↗ Open
-              </a>
+              {!isLocalBill && bill.driveViewLink && (
+                <a href={bill.driveViewLink} target="_blank" rel="noreferrer"
+                  style={{ padding: "5px 12px", borderRadius: 7, border: "0.5px solid #4da6ff", background: "#eaf4ff", color: "#4da6ff", fontSize: 12, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}>
+                  ↗ Open
+                </a>
+              )}
               <label style={{ padding: "5px 12px", borderRadius: 7, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                 ↑ Replace
                 <input ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleUpload} style={{ display: "none" }} />
@@ -8675,12 +8720,14 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
       ) : (
         <div>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: "1.5px dashed var(--color-border-primary)", background: "var(--color-background-secondary)", cursor: uploading ? "wait" : "pointer", fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500, opacity: uploading ? 0.7 : 1 }}>
-            {uploading ? "⏳ Uploading to Drive…" : "📁 Attach Bill (image / PDF)"}
+            {uploading ? "⏳ Saving…" : "📁 Attach Bill (image / PDF)"}
             <input ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
           </label>
           {statusMsg && <div style={{ marginTop: 8, fontSize: 12, color: statusMsg.startsWith("✓") ? "#1a6b3c" : statusMsg.startsWith("✗") ? "#ef4444" : "var(--color-text-secondary)" }}>{statusMsg}</div>}
           <div style={{ marginTop: 6, fontSize: 11, color: "var(--color-text-secondary)" }}>
-            Saved to: FinTracker/Business/{bizName || "…"}/{entry.year || "…"}/bill_{(entry.month || "").slice(0,3).toLowerCase()}{entry.year || "…"}.*
+            {isConnected
+              ? `Saved to Drive: FinTracker/Business/${bizName || "…"}/${entry.year || "…"}/`
+              : "Stored locally in your account (connect Google Drive in Settings for cloud storage)"}
           </div>
         </div>
       )}
