@@ -8479,7 +8479,7 @@ function PriceEditor({ monthEntry, onSave }) {
 }
 
 // ── BillAttachment: upload bill to G-Drive with organized folder path ────────
-// Path: FinTracker/Business/{bizName}/{year}/{month}/bill_{month}{year}.ext
+// Path: FinTracker/Business/{bizName}/{year}/bill_{month}{year}.ext
 function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, onUpdate }) {
   const [uploading, setUploading] = React.useState(false);
   const [deleting, setDeleting]   = React.useState(false);
@@ -8522,9 +8522,7 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
     const bizNameId = await getOrCreateFolder(token, bizName || "Unknown", bizSubId);
     // {Year}
     const yearId = await getOrCreateFolder(token, String(entry.year || ""), bizNameId);
-    // {Month}
-    const monthId = await getOrCreateFolder(token, entry.month || "Unknown", yearId);
-    return monthId;
+    return yearId;
   }
 
   async function handleUpload(e) {
@@ -8682,7 +8680,7 @@ function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, 
           </label>
           {statusMsg && <div style={{ marginTop: 8, fontSize: 12, color: statusMsg.startsWith("✓") ? "#1a6b3c" : statusMsg.startsWith("✗") ? "#ef4444" : "var(--color-text-secondary)" }}>{statusMsg}</div>}
           <div style={{ marginTop: 6, fontSize: 11, color: "var(--color-text-secondary)" }}>
-            Saved to: FinTracker/Business/{bizName || "…"}/{entry.year || "…"}/{entry.month || "…"}/bill_{(entry.month || "").slice(0,3).toLowerCase()}{entry.year || "…"}.*
+            Saved to: FinTracker/Business/{bizName || "…"}/{entry.year || "…"}/bill_{(entry.month || "").slice(0,3).toLowerCase()}{entry.year || "…"}.*
           </div>
         </div>
       )}
