@@ -7148,10 +7148,10 @@ function GoalsPage({ data, update }) {
   const displayed = activeTab === "needs" ? needs : wants;
 
   // When switching tab, close any open folder
-  function switchTab(t) { setActiveTab(t); setSelectedGoal(null); setGoalInnerTab("overview"); }
+  function switchTab(t) { setActiveTab(t); setSelectedGoal(null); setGoalInnerTab("transactions"); }
 
-  function openGoal(item) { setSelectedGoal(item); setGoalInnerTab("overview"); }
-  function closeGoal() { setSelectedGoal(null); setGoalInnerTab("overview"); }
+  function openGoal(item) { setSelectedGoal(item); setGoalInnerTab("transactions"); }
+  function closeGoal() { setSelectedGoal(null); setGoalInnerTab("transactions"); }
 
   function addItem() {
     if (!form.name.trim()) return;
@@ -7420,8 +7420,8 @@ function GoalsPage({ data, update }) {
           </div>
         )}
 
-        {/* Add savings — only inside folder's overview */}
-        {isInsideFolder && (
+        {/* Add savings — on grid card (outside folder) */}
+        {!isInsideFolder && (
           <div style={{ marginTop: "auto", paddingTop: 8 }} onClick={e => e.stopPropagation()}>
             {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
           </div>
@@ -7429,7 +7429,7 @@ function GoalsPage({ data, update }) {
 
         {/* "Open" hint on grid cards */}
         {!isInsideFolder && (
-          <div style={{ marginTop: "auto", paddingTop: 8, fontSize: 11, color: cardAccent, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
+          <div style={{ paddingTop: (!isTask && !item.completed && remaining > 0) ? 6 : 8, fontSize: 11, color: cardAccent, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
             <span>Open folder</span><span style={{ fontSize: 13 }}>›</span>
           </div>
         )}
@@ -7456,7 +7456,6 @@ function GoalsPage({ data, update }) {
     const perMonth = monthsNum > 0 && remaining > 0 ? Math.ceil(remaining / monthsNum) : 0;
 
     const INNER_TABS = [
-      { id: "overview", label: "📌 Overview" },
       { id: "transactions", label: "💳 Transactions" },
       { id: "plan", label: "📅 Plan" },
     ];
@@ -7488,20 +7487,13 @@ function GoalsPage({ data, update }) {
           ))}
         </div>
 
-        {/* ── Overview tab ── */}
-        {goalInnerTab === "overview" && (
-          <div style={{ maxWidth: 480 }}>
-            {renderItemCard(item, { isInsideFolder: true })}
-          </div>
-        )}
-
         {/* ── Transactions tab ── */}
         {goalInnerTab === "transactions" && (
           <div>
             <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>💳 Savings Transactions — {item.name}</div>
             {goalTxs.length === 0 ? (
               <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                No savings logged yet. Open the Overview tab and click "+ Add Savings" to log one.
+                No savings logged yet. Use "+ Add Savings" on the goal card to log one.
               </div>
             ) : (
               <div>
