@@ -3995,25 +3995,25 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     if (dur) setTimeout(() => setMsg({ type: null, text: "" }), dur);
   }
 
-  // ── Get stored OAuth token ────────────────────────────────────────────────────
-  function getStoredToken() {
-    const token  = localStorage.getItem("ft_drv_tok");
-    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    if (!token)              { setTokenExpired(true); return null; }
-    if (Date.now() > expiry) { setTokenExpired(true); return null; }
-    setTokenExpired(false);
-    return token;
+  // ── Get OAuth token — silent auto-refresh if expired ─────────────────────────
+  // Calls getFreshDriveToken which tries prompt:none silent refresh first.
+  // Only sets tokenExpired=true if user has also logged out of Google entirely.
+  async function getStoredToken() {
+    const token = await getFreshDriveToken();
+    if (token) { setTokenExpired(false); return token; }
+    setTokenExpired(true);
+    return null;
   }
 
-  // ── Re-authenticate ───────────────────────────────────────────────────────────
+  // ── Re-authenticate (fallback — only if silent refresh fails) ────────────────
   async function reAuth() {
     setStatus("reauth");
     try {
       await signInWithGoogle();
       setTokenExpired(false);
-      flashMsg("success", "✅ Re-authenticated! Try your action again.");
+      flashMsg("success", "✅ Connected! Drive is ready.");
     } catch (e) {
-      flashMsg("error", `❌ Re-auth failed: ${e.message}`);
+      flashMsg("error", `❌ Sign-in failed: ${e.message}`);
     } finally {
       setStatus(null);
     }
@@ -4021,7 +4021,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
 
   // ── Drive API wrapper ─────────────────────────────────────────────────────────
   async function driveRequest(url, opts = {}) {
-    const token = getStoredToken();
+    const token = await getStoredToken();
     if (!token) throw new Error("TOKEN_EXPIRED");
     const resp = await fetch(url, {
       ...opts,
@@ -4330,15 +4330,15 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
           <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 20 }}>🔑</span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e" }}>Drive session expired</div>
-              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>Your Google OAuth token has expired. Click Re-authenticate to continue — takes 2 seconds.</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e" }}>Drive sign-in needed</div>
+              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>Looks like you signed out of Google. Click Sign in to reconnect Drive — takes 2 seconds.</div>
             </div>
             <button
               onClick={reAuth}
               disabled={status === "reauth"}
               style={{ ...btnBase, background: "#f59e0b", color: "#fff", padding: "8px 14px", fontSize: 13, opacity: status === "reauth" ? 0.6 : 1, flexShrink: 0 }}
             >
-              {status === "reauth" ? "Opening…" : "Re-authenticate"}
+              {status === "reauth" ? "Opening…" : "Sign in"}
             </button>
           </div>
         )}
