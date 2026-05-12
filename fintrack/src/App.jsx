@@ -9,6 +9,76 @@ import {
   getFreshDriveToken,
 } from "./firebase";
 
+// ══════════════════════════════════════════════════════════════════════════════
+// GOOGLE DRIVE API HELPERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function ensureDriveFolder(token, folderName, parentFolderId = null) {
+  // Check if folder exists
+  const searchQuery = parentFolderId 
+    ? `name='${folderName}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+    : `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  
+  const searchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQuery)}&fields=files(id,name)`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const searchData = await searchRes.json();
+  
+  if (searchData.files && searchData.files.length > 0) {
+    return searchData.files[0].id;
+  }
+  
+  // Create folder
+  const metadata = {
+    name: folderName,
+    mimeType: 'application/vnd.google-apps.folder',
+    ...(parentFolderId && { parents: [parentFolderId] })
+  };
+  
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(metadata)
+  });
+  
+  const createData = await createRes.json();
+  return createData.id;
+}
+
+async function uploadFileToDrive(token, file, fileName, parentFolderId) {
+  const metadata = {
+    name: fileName,
+    parents: [parentFolderId]
+  };
+  
+  const formData = new FormData();
+  formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  formData.append('file', file);
+  
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,webContentLink', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: formData
+  });
+  
+  return await response.json();
+}
+
+async function deleteFileFromDrive(token, fileId) {
+  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
+
 // ── Force Light Mode CSS Variables ──────────────────────────────────────────
 const LIGHT_MODE_STYLE = `
   :root, [data-theme], * {
@@ -8478,234 +8548,6 @@ function PriceEditor({ monthEntry, onSave }) {
   );
 }
 
-// ── BillAttachment: upload bill to G-Drive with organized folder path ────────
-// Path: FinTracker/Business/{bizName}/{year}/{month}/bill_{month}{year}.ext
-function BillAttachment({ entry, bizName, driveIntegration, getFreshDriveToken, onUpdate }) {
-  const [uploading, setUploading] = React.useState(false);
-  const [deleting, setDeleting]   = React.useState(false);
-  const [previewOpen, setPreviewOpen] = React.useState(false);
-  const [statusMsg, setStatusMsg] = React.useState("");
-  const fileInputRef = React.useRef(null);
-
-  const bill = entry.bill || null; // { driveFileId, driveFileName, driveViewLink, uploadedAt }
-
-  // ── Helper: find or create a folder under a parent ────────────────────────
-  async function getOrCreateFolder(token, name, parentId) {
-    const parentClause = parentId ? ` and '${parentId}' in parents` : "";
-    const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`);
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Drive search failed");
-    const json = await res.json();
-    if (json.files && json.files.length > 0) return json.files[0].id;
-    // Create
-    const body = { name, mimeType: "application/vnd.google-apps.folder" };
-    if (parentId) body.parents = [parentId];
-    const cRes = await fetch("https://www.googleapis.com/drive/v3/files", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!cRes.ok) throw new Error("Drive folder creation failed");
-    const created = await cRes.json();
-    return created.id;
-  }
-
-  // ── Build the organized folder path and return the leaf folder ID ─────────
-  async function getTargetFolder(token) {
-    // FinTracker (root)
-    const rootId = driveIntegration?.folderId || await getOrCreateFolder(token, "FinTracker", null);
-    // Business sub-folder
-    const bizSubId = await getOrCreateFolder(token, "Business", rootId);
-    // {BizName}
-    const bizNameId = await getOrCreateFolder(token, bizName || "Unknown", bizSubId);
-    // {Year}
-    const yearId = await getOrCreateFolder(token, String(entry.year || ""), bizNameId);
-    // {Month}
-    const monthId = await getOrCreateFolder(token, entry.month || "Unknown", yearId);
-    return monthId;
-  }
-
-  async function handleUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!driveIntegration?.connected) {
-      setStatusMsg("⚠ Connect Google Drive first in Settings → Integrations.");
-      return;
-    }
-    setUploading(true);
-    setStatusMsg("Uploading…");
-    try {
-      const token = await getFreshDriveToken();
-      if (!token) throw new Error("No Drive token — please reconnect Google Drive in Settings.");
-
-      // Delete old bill file if exists
-      if (bill?.driveFileId) {
-        await fetch(`https://www.googleapis.com/drive/v3/files/${bill.driveFileId}`, {
-          method: "DELETE", headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-      }
-
-      const folderId = await getTargetFolder(token);
-
-      // Build file name: bill_{month}{year}.ext
-      const ext  = file.name.includes(".") ? file.name.split(".").pop() : "";
-      const monthShort = (entry.month || "").slice(0, 3).toLowerCase();
-      const fileName = `bill_${monthShort}${entry.year || ""}${ext ? "." + ext : ""}`;
-
-      // Upload via multipart
-      const metadata = { name: fileName, parents: [folderId] };
-      const form = new FormData();
-      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
-      form.append("file", file);
-
-      const upRes = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink",
-        { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form }
-      );
-      if (!upRes.ok) {
-        const err = await upRes.json().catch(() => ({}));
-        throw new Error(err?.error?.message || "Upload failed");
-      }
-      const uploaded = await upRes.json();
-
-      // Make file readable via link (so preview works)
-      await fetch(`https://www.googleapis.com/drive/v3/files/${uploaded.id}/permissions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "reader", type: "anyone" }),
-      }).catch(() => {});
-
-      onUpdate({
-        bill: {
-          driveFileId: uploaded.id,
-          driveFileName: uploaded.name,
-          driveViewLink: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
-          uploadedAt: new Date().toISOString(),
-        }
-      });
-      setStatusMsg("✓ Uploaded");
-      setTimeout(() => setStatusMsg(""), 3000);
-    } catch (err) {
-      console.error("Bill upload error:", err);
-      setStatusMsg("✗ " + (err.message || "Upload failed"));
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
-
-  async function handleDelete() {
-    if (!bill?.driveFileId) return;
-    if (!confirm("Delete this bill from Google Drive?")) return;
-    setDeleting(true);
-    setStatusMsg("Deleting…");
-    try {
-      const token = await getFreshDriveToken();
-      if (token) {
-        await fetch(`https://www.googleapis.com/drive/v3/files/${bill.driveFileId}`, {
-          method: "DELETE", headers: { Authorization: `Bearer ${token}` },
-        });
-      }
-      onUpdate({ bill: null });
-      setStatusMsg("✓ Deleted");
-      setTimeout(() => setStatusMsg(""), 2500);
-    } catch (err) {
-      setStatusMsg("✗ Delete failed");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  const isImage = bill?.driveFileName && /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(bill.driveFileName);
-  const isPdf   = bill?.driveFileName && /\.pdf$/i.test(bill.driveFileName);
-  const previewUrl = bill?.driveFileId
-    ? (isPdf
-      ? `https://drive.google.com/file/d/${bill.driveFileId}/preview`
-      : `https://lh3.googleusercontent.com/d/${bill.driveFileId}`)
-    : null;
-
-  return (
-    <div style={{ marginTop: 14, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
-      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-        📎 Bill Attachment
-      </div>
-
-      {bill ? (
-        <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
-          {/* Preview area */}
-          {previewUrl && (
-            <div
-              onClick={() => setPreviewOpen(true)}
-              style={{ width: "100%", height: 180, borderRadius: 8, overflow: "hidden", background: "#f0f0f0", marginBottom: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: "0.5px solid var(--color-border-secondary)", position: "relative" }}>
-              {isImage
-                ? <img src={previewUrl} alt="bill" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                : <iframe src={previewUrl} title="bill-preview" style={{ width: "100%", height: "100%", border: "none" }} />
-              }
-              <div style={{ position: "absolute", bottom: 6, right: 8, background: "rgba(0,0,0,0.5)", color: "#fff", fontSize: 10, borderRadius: 4, padding: "2px 6px" }}>
-                🔍 Click to enlarge
-              </div>
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text-primary)" }}>📄 {bill.driveFileName}</div>
-              {bill.uploadedAt && (
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                  Uploaded {new Date(bill.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                </div>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-              <a href={bill.driveViewLink} target="_blank" rel="noreferrer"
-                style={{ padding: "5px 12px", borderRadius: 7, border: "0.5px solid #4da6ff", background: "#eaf4ff", color: "#4da6ff", fontSize: 12, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}>
-                ↗ Open
-              </a>
-              <label style={{ padding: "5px 12px", borderRadius: 7, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                ↑ Replace
-                <input ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleUpload} style={{ display: "none" }} />
-              </label>
-              <button onClick={handleDelete} disabled={deleting}
-                style={{ padding: "5px 10px", borderRadius: 7, border: "0.5px solid #fca5a5", background: "#fff0f0", color: "#ef4444", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                {deleting ? "…" : "🗑"}
-              </button>
-            </div>
-          </div>
-          {statusMsg && <div style={{ marginTop: 8, fontSize: 12, color: statusMsg.startsWith("✓") ? "#1a6b3c" : statusMsg.startsWith("✗") ? "#ef4444" : "var(--color-text-secondary)" }}>{statusMsg}</div>}
-        </div>
-      ) : (
-        <div>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: "1.5px dashed var(--color-border-primary)", background: "var(--color-background-secondary)", cursor: uploading ? "wait" : "pointer", fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500, opacity: uploading ? 0.7 : 1 }}>
-            {uploading ? "⏳ Uploading to Drive…" : "📁 Attach Bill (image / PDF)"}
-            <input ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
-          </label>
-          {statusMsg && <div style={{ marginTop: 8, fontSize: 12, color: statusMsg.startsWith("✓") ? "#1a6b3c" : statusMsg.startsWith("✗") ? "#ef4444" : "var(--color-text-secondary)" }}>{statusMsg}</div>}
-          <div style={{ marginTop: 6, fontSize: 11, color: "var(--color-text-secondary)" }}>
-            Saved to: FinTracker/Business/{bizName || "…"}/{entry.year || "…"}/{entry.month || "…"}/bill_{(entry.month || "").slice(0,3).toLowerCase()}{entry.year || "…"}.*
-          </div>
-        </div>
-      )}
-
-      {/* Full-screen preview modal */}
-      {previewOpen && previewUrl && (
-        <div
-          onClick={() => setPreviewOpen(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh", borderRadius: 12, overflow: "hidden", background: "#fff" }}>
-            <button onClick={() => setPreviewOpen(false)}
-              style={{ position: "absolute", top: 10, right: 10, background: "rgba(0,0,0,0.5)", color: "#fff", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontSize: 18, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-            {isImage
-              ? <img src={previewUrl} alt="bill" style={{ maxWidth: "90vw", maxHeight: "90vh", display: "block" }} />
-              : <iframe src={previewUrl} title="bill-full" style={{ width: "80vw", height: "85vh", border: "none" }} />
-            }
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function BusinessPage({ data, update }) {
   // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
   // Migrate legacy flat businessData into first business if needed
@@ -8733,6 +8575,10 @@ function BusinessPage({ data, update }) {
   const [dayForm,      setDayForm]      = useState({ date: new Date().toISOString().split("T")[0], quantity: "", netIncome: "", note: "" });
   const [showLiabilitiesSection, setShowLiabilitiesSection] = useState(false);
   const [bizLiabForm, setBizLiabForm] = useState({ name: "", amount: "" });
+  
+  // Bill attachment state
+  const [uploadingBill, setUploadingBill] = useState(false);
+  const [billToDelete, setBillToDelete] = useState(null);
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -8925,6 +8771,95 @@ function BusinessPage({ data, update }) {
     if (!editEntry) return;
     updateBizData(d => d.map(e => e.id === editEntry.id ? { ...e, grossIncome: parseFloat(editEntry.grossIncome), netIncome: parseFloat(editEntry.netIncome) } : e));
     setEditEntry(null);
+  }
+
+  // ── Bill Attachment Functions ──────────────────────────────────────────────
+  async function uploadBill(entryId, file) {
+    if (!activeBiz || !file) return;
+    setUploadingBill(true);
+    
+    try {
+      const token = await getFreshDriveToken();
+      if (!token) {
+        alert("Please sign in with Google to upload bills.");
+        setUploadingBill(false);
+        return;
+      }
+
+      // Get the entry details
+      const entry = bizData.find(e => e.id === entryId);
+      if (!entry) return;
+
+      // Build folder structure: FinTracker/Business/BusinessName/Year
+      const finTrackerFolderId = await ensureDriveFolder(token, "FinTracker");
+      const businessRootId = await ensureDriveFolder(token, "Business", finTrackerFolderId);
+      const businessFolderId = await ensureDriveFolder(token, activeBiz.name, businessRootId);
+      const yearFolderId = await ensureDriveFolder(token, String(entry.year), businessFolderId);
+
+      // Count existing bills for this month to number them
+      const existingBills = (entry.bills || []);
+      const billNumber = existingBills.length + 1;
+      
+      // Generate filename: bill_feb_1.pdf, bill_feb_2.pdf, etc.
+      const monthName = entry.month.toLowerCase().substring(0, 3); // jan, feb, mar, etc.
+      const fileExtension = file.name.split('.').pop();
+      const fileName = billNumber === 1 
+        ? `bill_${monthName}.${fileExtension}`
+        : `bill_${monthName}_${billNumber}.${fileExtension}`;
+
+      // Upload to Drive
+      const driveFile = await uploadFileToDrive(token, file, fileName, yearFolderId);
+
+      // Save bill info to entry
+      const newBill = {
+        id: driveFile.id,
+        name: fileName,
+        originalName: file.name,
+        url: driveFile.webViewLink,
+        downloadUrl: driveFile.webContentLink,
+        size: driveFile.size,
+        mimeType: driveFile.mimeType,
+        uploadedAt: new Date().toISOString()
+      };
+
+      updateBizData(d => d.map(e => 
+        e.id === entryId ? { ...e, bills: [...(e.bills || []), newBill] } : e
+      ));
+
+      alert("Bill uploaded successfully!");
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Failed to upload bill. Please try again.");
+    } finally {
+      setUploadingBill(false);
+    }
+  }
+
+  async function deleteBill(entryId, bill) {
+    if (!confirm(`Delete ${bill.name}?`)) return;
+    setBillToDelete(bill.id);
+    
+    try {
+      const token = await getFreshDriveToken();
+      if (token && bill.id) {
+        await deleteFileFromDrive(token, bill.id);
+      }
+      
+      updateBizData(d => d.map(e => 
+        e.id === entryId ? { ...e, bills: (e.bills || []).filter(b => b.id !== bill.id) } : e
+      ));
+      
+      alert("Bill deleted successfully!");
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Failed to delete bill from Google Drive, but removed from app.");
+      // Still remove from app even if Drive delete fails
+      updateBizData(d => d.map(e => 
+        e.id === entryId ? { ...e, bills: (e.bills || []).filter(b => b.id !== bill.id) } : e
+      ));
+    } finally {
+      setBillToDelete(null);
+    }
   }
 
   // Minimal SVG line chart (replaces bar chart)
@@ -9750,6 +9685,115 @@ function BusinessPage({ data, update }) {
                           <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
                         </div>
                       </div>
+
+                      {/* Bill Attachments Section */}
+                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)" }}>📎 Bill Attachments</span>
+                          <label style={{ cursor: uploadingBill ? "not-allowed" : "pointer" }}>
+                            <input
+                              type="file"
+                              accept="*/*"
+                              style={{ display: "none" }}
+                              disabled={uploadingBill}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) await uploadBill(entry.id, file);
+                                e.target.value = "";
+                              }}
+                            />
+                            <span style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "5px 12px",
+                              background: uploadingBill ? "#ccc" : "#e8f5ee",
+                              color: uploadingBill ? "#999" : "#1a6b3c",
+                              border: "none",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 500
+                            }}>
+                              {uploadingBill ? "⏳ Uploading..." : "+ Upload Bill"}
+                            </span>
+                          </label>
+                        </div>
+
+                        {/* Bills list */}
+                        {(entry.bills || []).length === 0 ? (
+                          <div style={{ textAlign: "center", padding: "1.5rem", color: "var(--color-text-secondary)", fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 8 }}>
+                            No bills attached yet
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {(entry.bills || []).map((bill, idx) => (
+                              <div
+                                key={bill.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "8px 12px",
+                                  background: "var(--color-background-secondary)",
+                                  borderRadius: 6,
+                                  border: "0.5px solid var(--color-border-tertiary)"
+                                }}
+                              >
+                                <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 16 }}>📄</span>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      {bill.name}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                                      {bill.size ? `${(bill.size / 1024).toFixed(1)} KB` : ""}
+                                      {bill.uploadedAt && ` · ${new Date(bill.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                  <a
+                                    href={bill.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      background: "#4da6ff",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: 4,
+                                      padding: "4px 10px",
+                                      fontSize: 11,
+                                      fontWeight: 500,
+                                      textDecoration: "none",
+                                      display: "inline-flex",
+                                      alignItems: "center"
+                                    }}
+                                  >
+                                    👁 View
+                                  </a>
+                                  <button
+                                    onClick={() => deleteBill(entry.id, bill)}
+                                    disabled={billToDelete === bill.id}
+                                    style={{
+                                      background: "#fee2e2",
+                                      color: "#ef4444",
+                                      border: "none",
+                                      borderRadius: 4,
+                                      padding: "4px 10px",
+                                      cursor: billToDelete === bill.id ? "not-allowed" : "pointer",
+                                      fontSize: 11,
+                                      fontWeight: 600,
+                                      opacity: billToDelete === bill.id ? 0.5 : 1
+                                    }}
+                                  >
+                                    {billToDelete === bill.id ? "..." : "×"}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 }
@@ -10034,15 +10078,6 @@ function BusinessPage({ data, update }) {
                   <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
                 </div>
               </div>
-
-              {/* ── Bill Attachment ── */}
-              <BillAttachment
-                entry={entry}
-                bizName={activeBiz?.name || ""}
-                driveIntegration={data.gdriveIntegration}
-                getFreshDriveToken={getFreshDriveToken}
-                onUpdate={(changes) => updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, ...changes }))}
-              />
             </div>
           );
         }
