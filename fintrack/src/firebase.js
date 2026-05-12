@@ -52,17 +52,40 @@ export const signInWithGoogle = async () => {
 };
 
 // ── getFreshDriveToken ────────────────────────────────────────────────────────
-// Returns the stored Google OAuth token captured at sign-in.
-// NEVER shows a popup. NEVER does a network call.
-// Returns null silently if token is expired or missing —
-// App.jsx will simply skip Drive auto-connect until next sign-in.
+// 1. If stored token is still valid → return it instantly (no network call).
+// 2. If token is expired BUT user is still signed into Google in browser →
+//    silently refresh using signInWithPopup(prompt:none). Zero UI, zero clicks.
+// 3. If silent refresh fails (user signed out of Google) → return null silently.
+//    App.jsx will show the normal Connect button; no error banner.
 export async function getFreshDriveToken() {
   const saved  = localStorage.getItem("ft_drv_tok");
   const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
 
+  // ✅ Token still valid — return immediately
   if (saved && Date.now() < expiry) return saved;
 
-  // Token expired or missing — return null silently, no popup, no retry
+  // 🔄 Token expired — try silent refresh (no popup shown to user)
+  try {
+    const silentProvider = new GoogleAuthProvider();
+    silentProvider.addScope("https://www.googleapis.com/auth/drive.file");
+    // prompt: none = use existing Google session silently, never show UI
+    silentProvider.setCustomParameters({ prompt: "none" });
+
+    const result      = await signInWithPopup(auth, silentProvider);
+    const credential  = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken;
+
+    if (accessToken) {
+      const newExpiry = Date.now() + (3600 - 120) * 1000;
+      localStorage.setItem("ft_drv_tok",   accessToken);
+      localStorage.setItem("ft_drv_exp",   String(newExpiry));
+      localStorage.setItem("ft_drv_email", result.user.email || "");
+      return accessToken;
+    }
+  } catch (_) {
+    // Silent refresh failed (user signed out of Google browser session) — no UI
+  }
+
   return null;
 }
 
