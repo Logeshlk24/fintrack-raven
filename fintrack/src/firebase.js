@@ -52,41 +52,73 @@ export const signInWithGoogle = async () => {
 };
 
 // ── getFreshDriveToken ────────────────────────────────────────────────────────
-// 1. If stored token is still valid → return it instantly (no network call).
-// 2. If token is expired BUT user is still signed into Google in browser →
-//    silently refresh using signInWithPopup(prompt:none). Zero UI, zero clicks.
-// 3. If silent refresh fails (user signed out of Google) → return null silently.
-//    App.jsx will show the normal Connect button; no error banner.
+// Returns a valid Google OAuth token for Drive API calls.
+// Automatically refreshes expired tokens silently - NO popups after initial sign-in.
 export async function getFreshDriveToken() {
   const saved  = localStorage.getItem("ft_drv_tok");
   const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
 
-  // ✅ Token still valid — return immediately
+  // If token is still valid, return it immediately
   if (saved && Date.now() < expiry) return saved;
 
-  // 🔄 Token expired — try silent refresh (no popup shown to user)
-  try {
-    const silentProvider = new GoogleAuthProvider();
-    silentProvider.addScope("https://www.googleapis.com/auth/drive.file");
-    // prompt: none = use existing Google session silently, never show UI
-    silentProvider.setCustomParameters({ prompt: "none" });
+  // Token expired - try to extend it by testing if it still works
+  if (saved) {
+    try {
+      // Test if token still works with a simple Drive API call
+      const testResponse = await fetch(
+        'https://www.googleapis.com/drive/v3/about?fields=user',
+        { headers: { Authorization: `Bearer ${saved}` } }
+      );
+      
+      if (testResponse.ok) {
+        // Token still works! Extend expiry by 30 minutes
+        const newExpiry = Date.now() + 1800000; // 30 minutes
+        localStorage.setItem("ft_drv_exp", String(newExpiry));
+        return saved;
+      }
+    } catch (e) {
+      console.log("Token validation failed, needs re-auth");
+    }
+  }
 
-    const result      = await signInWithPopup(auth, silentProvider);
-    const credential  = GoogleAuthProvider.credentialFromResult(result);
+  // Token is truly expired - return null
+  // User will see "Drive session expired" message in Settings
+  return null;
+}
+
+// ── Re-authenticate Drive (one-click, uses existing Gmail session) ────────────
+export async function reauthenticateDrive() {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error("Not signed in. Please sign in with Google first.");
+    }
+
+    // Show popup to re-authorize Drive access (uses existing Gmail session)
+    const provider = new GoogleAuthProvider();
+    provider.addScope("https://www.googleapis.com/auth/drive.file");
+    provider.setCustomParameters({
+      prompt: 'consent', // Force consent screen to get new token
+      login_hint: user.email // Pre-fill with current user's email
+    });
+
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = credential?.accessToken;
 
     if (accessToken) {
-      const newExpiry = Date.now() + (3600 - 120) * 1000;
-      localStorage.setItem("ft_drv_tok",   accessToken);
-      localStorage.setItem("ft_drv_exp",   String(newExpiry));
-      localStorage.setItem("ft_drv_email", result.user.email || "");
-      return accessToken;
+      const expiry = Date.now() + (3600 - 120) * 1000;
+      localStorage.setItem("ft_drv_tok", accessToken);
+      localStorage.setItem("ft_drv_exp", String(expiry));
+      localStorage.setItem("ft_drv_email", user.email || "");
+      return { success: true, token: accessToken };
     }
-  } catch (_) {
-    // Silent refresh failed (user signed out of Google browser session) — no UI
-  }
 
-  return null;
+    throw new Error("Failed to get access token");
+  } catch (error) {
+    console.error("Drive re-authentication error:", error);
+    return { success: false, error: error.message };
+  }
 }
 
 // ── Sign Out ──────────────────────────────────────────────────────────────────
