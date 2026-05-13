@@ -129,7 +129,7 @@ export const signOutUser = () => {
   return signOut(auth);
 };
 
-export { onAuthStateChanged, reauthenticateDrive };
+export { onAuthStateChanged };
 
 // ── Firestore helpers ─────────────────────────────────────────────────────────
 const userRef = (uid) => doc(db, "users", uid, "fintrack", "data");
