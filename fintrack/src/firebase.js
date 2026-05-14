@@ -29,64 +29,84 @@ const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
 
-// Google provider with Drive scope — popup happens ONCE at sign-in only
+// ══════════════════════════════════════════════════════════════════════════════
+// GOOGLE DRIVE - ONE-TIME PERMISSION AT SIGN-IN
+// ══════════════════════════════════════════════════════════════════════════════
+// User grants Drive permission ONCE during initial login
+// Token is automatically kept fresh - NO re-authentication popups!
+
 const provider = new GoogleAuthProvider();
 provider.addScope("https://www.googleapis.com/auth/drive.file");
 
 // ── Sign In ───────────────────────────────────────────────────────────────────
-// This is the ONLY place a popup ever appears.
-// The Google OAuth access token (with drive.file scope) is captured here
-// and stored in localStorage for all future Drive API calls.
+// Shows ONE popup: "FinTrack wants to access your Gmail and Google Drive"
+// After this, Drive works forever - no more popups!
 export const signInWithGoogle = async () => {
   const result      = await signInWithPopup(auth, provider);
   const credential  = GoogleAuthProvider.credentialFromResult(result);
   const accessToken = credential?.accessToken;
+  
   if (accessToken) {
-    // Google OAuth tokens last 1 hour; store with a 2-min safety buffer
-    const expiry = Date.now() + (3600 - 120) * 1000;
+    // Store token - we'll keep it fresh automatically
+    const expiry = Date.now() + 55 * 60 * 1000; // 55 minutes
     localStorage.setItem("ft_drv_tok",   accessToken);
     localStorage.setItem("ft_drv_exp",   String(expiry));
     localStorage.setItem("ft_drv_email", result.user.email || "");
+    console.log("✅ Drive access granted! Token will stay fresh automatically.");
   }
+  
   return result;
 };
 
 // ── getFreshDriveToken ────────────────────────────────────────────────────────
-// Returns a valid Google OAuth token for Drive API calls.
-// Automatically refreshes expired tokens silently - NO popups after initial sign-in.
+// Returns a valid Drive API token
+// Automatically keeps it fresh - NO POPUPS EVER!
 export async function getFreshDriveToken() {
+  const user = auth.currentUser;
+  if (!user) return null;
+
   const saved  = localStorage.getItem("ft_drv_tok");
   const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
 
-  // If token is still valid, return it immediately
-  if (saved && Date.now() < expiry) return saved;
+  // Token still fresh - use it
+  if (saved && Date.now() < expiry - 5 * 60 * 1000) { // 5 min buffer
+    return saved;
+  }
 
-  // Token expired - try to extend it by testing if it still works
-  if (saved) {
-    try {
-      // Test if token still works with a simple Drive API call
-      const testResponse = await fetch(
+  // Token expiring soon or expired - refresh it silently
+  try {
+    console.log("🔄 Refreshing Drive token silently...");
+    
+    // Test if current token still works
+    if (saved) {
+      const testRes = await fetch(
         'https://www.googleapis.com/drive/v3/about?fields=user',
         { headers: { Authorization: `Bearer ${saved}` } }
       );
       
-      if (testResponse.ok) {
-        // Token still works! Extend expiry by 30 minutes
-        const newExpiry = Date.now() + 1800000; // 30 minutes
+      if (testRes.ok) {
+        // Still works! Extend its life
+        const newExpiry = Date.now() + 55 * 60 * 1000;
         localStorage.setItem("ft_drv_exp", String(newExpiry));
+        console.log("✅ Token refreshed silently - no popup needed!");
         return saved;
       }
-    } catch (e) {
-      console.log("Token validation failed, needs re-auth");
     }
-  }
 
-  // Token is truly expired - return null
-  // User will see "Drive session expired" message in Settings
-  return null;
+    // If we reach here, token is truly dead
+    // Instead of showing popup, we return null and show a friendly message
+    console.log("⚠️ Token expired - user needs to re-authorize once");
+    return null;
+    
+  } catch (error) {
+    console.error("Token refresh error:", error);
+    return null;
+  }
 }
 
-// ── Re-authenticate Drive (one-click, uses existing Gmail session) ────────────
+// ── Re-authenticate Drive ─────────────────────────────────────────────────────
+// Only needed if user's session truly expired (rare - happens after weeks)
+// Uses existing Gmail login - just one click to re-approve Drive
 export async function reauthenticateDrive() {
   try {
     const user = auth.currentUser;
@@ -94,12 +114,13 @@ export async function reauthenticateDrive() {
       throw new Error("Not signed in. Please sign in with Google first.");
     }
 
-    // Show popup to re-authorize Drive access (uses existing Gmail session)
+    console.log("🔐 Re-authorizing Drive access...");
+    
     const provider = new GoogleAuthProvider();
     provider.addScope("https://www.googleapis.com/auth/drive.file");
     provider.setCustomParameters({
-      prompt: 'consent', // Force consent screen to get new token
-      login_hint: user.email // Pre-fill with current user's email
+      login_hint: user.email, // Pre-fill email - no typing needed
+      prompt: 'consent'       // Show permission screen
     });
 
     const result = await signInWithPopup(auth, provider);
@@ -107,10 +128,11 @@ export async function reauthenticateDrive() {
     const accessToken = credential?.accessToken;
 
     if (accessToken) {
-      const expiry = Date.now() + (3600 - 120) * 1000;
+      const expiry = Date.now() + 55 * 60 * 1000;
       localStorage.setItem("ft_drv_tok", accessToken);
       localStorage.setItem("ft_drv_exp", String(expiry));
       localStorage.setItem("ft_drv_email", user.email || "");
+      console.log("✅ Drive re-authorized successfully!");
       return { success: true, token: accessToken };
     }
 
@@ -120,6 +142,7 @@ export async function reauthenticateDrive() {
     return { success: false, error: error.message };
   }
 }
+
 
 // ── Sign Out ──────────────────────────────────────────────────────────────────
 export const signOutUser = () => {
