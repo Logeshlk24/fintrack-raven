@@ -14971,11 +14971,11 @@ function PortfolioAnalysisView({ data }) {
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
                       color:h.pe==null?"var(--color-text-secondary)":h.pe>60?"#ef4444":h.pe>35?"#f59e0b":"#1a6b3c"}}>
-                      {h.pe??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                      {h.pe ?? <span style={{color:"var(--color-text-secondary)"}}>—</span>}
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
                       color:h.beta==null?"var(--color-text-secondary)":h.beta>1.3?"#ef4444":h.beta<0.8?"#1a6b3c":"#f59e0b"}}>
-                      {h.beta??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                      {h.beta ?? <span style={{color:"var(--color-text-secondary)"}}>—</span>}
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right"}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
