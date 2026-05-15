@@ -8174,8 +8174,8 @@ function GoalsPage({ data, update }) {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: "var(--color-background-secondary)" }}>
-                        {["Date","Type","Amount","Account","Note"].map(h => (
-                          <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>{h}</th>
+                        {["Date","Type","Amount","Account","Note","Actions"].map(h => (
+                          <th key={h} style={{ padding: "9px 12px", textAlign: h === "Actions" ? "center" : "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -8193,6 +8193,28 @@ function GoalsPage({ data, update }) {
                             <td style={{ padding: "9px 12px", fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(t.amount)}</td>
                             <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>{bank ? bank.name : "—"}</td>
                             <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>{t.note || "—"}</td>
+                            <td style={{ padding: "9px 12px", textAlign: "center" }}>
+                              <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                                <button onClick={() => {
+                                  setEditingTx(t);
+                                  setTxModal(true);
+                                }}
+                                  style={{ padding: "5px 10px", fontSize: 11, borderRadius: 6, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer", fontWeight: 500 }}>
+                                  Edit
+                                </button>
+                                <button onClick={() => {
+                                  if (confirm(`Delete this ₹${t.amount} savings entry?`)) {
+                                    setData(prev => ({
+                                      ...prev,
+                                      transactions: prev.transactions.filter(tx => tx.id !== t.id)
+                                    }));
+                                  }
+                                }}
+                                  style={{ padding: "5px 10px", fontSize: 11, borderRadius: 6, background: "#dc2626", color: "#fff", border: "none", cursor: "pointer", fontWeight: 500 }}>
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
