@@ -7,7 +7,6 @@ import {
   loadFromFirestore,
   saveToFirestore,
   getFreshDriveToken,
-  reauthenticateDrive,
 } from "./firebase";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -299,8 +298,12 @@ export default function App() {
       const alreadyConnected = loaded?.gdriveIntegration?.connected;
       if (!alreadyConnected) {
         try {
+          // Wait a bit for token to be saved from Gmail login
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
           const token = await getFreshDriveToken();
           if (token) {
+            console.log("✅ Drive token found - auto-connecting Google Drive...");
             // Find or create FinTracker folder
             const FOLDER_NAME = "FinTracker";
             const searchRes = await fetch(
@@ -312,6 +315,7 @@ export default function App() {
               const searchData = await searchRes.json();
               if (searchData.files?.length > 0) {
                 folderId = searchData.files[0].id;
+                console.log("✅ Found existing FinTracker folder");
               } else {
                 // Create folder
                 const createRes = await fetch(
@@ -325,6 +329,7 @@ export default function App() {
                 if (createRes.ok) {
                   const created = await createRes.json();
                   folderId = created.id;
+                  console.log("✅ Created new FinTracker folder");
                 }
               }
             }
@@ -342,12 +347,17 @@ export default function App() {
                 saveToFirestore(firebaseUser.uid, next);
                 return next;
               });
+              console.log("✅ Google Drive auto-connected successfully!");
             }
+          } else {
+            console.log("ℹ️ No Drive token available yet - Drive integration will be available in Settings");
           }
         } catch (e) {
           // Silent fail — user can manually connect from Settings → Integrations
           console.warn("Drive auto-connect:", e);
         }
+      } else {
+        console.log("✅ Google Drive already connected - email:", loaded?.gdriveIntegration?.email);
       }
     })();
     return () => { cancelled = true; };
@@ -3996,29 +4006,25 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     if (dur) setTimeout(() => setMsg({ type: null, text: "" }), dur);
   }
 
-  // ── Get stored OAuth token ────────────────────────────────────────────────────
-  function getStoredToken() {
-    const token  = localStorage.getItem("ft_drv_tok");
-    const expiry = parseInt(localStorage.getItem("ft_drv_exp") || "0");
-    if (!token)              { setTokenExpired(true); return null; }
-    if (Date.now() > expiry) { setTokenExpired(true); return null; }
-    setTokenExpired(false);
-    return token;
+  // ── Get OAuth token — silent auto-refresh if expired ─────────────────────────
+  // Calls getFreshDriveToken which tries prompt:none silent refresh first.
+  // Only sets tokenExpired=true if user has also logged out of Google entirely.
+  async function getStoredToken() {
+    const token = await getFreshDriveToken();
+    if (token) { setTokenExpired(false); return token; }
+    setTokenExpired(true);
+    return null;
   }
 
-  // ── Re-authenticate ───────────────────────────────────────────────────────────
+  // ── Re-authenticate (fallback — only if silent refresh fails) ────────────────
   async function reAuth() {
     setStatus("reauth");
     try {
-      const result = await reauthenticateDrive();
-      if (result.success) {
-        setTokenExpired(false);
-        flashMsg("success", "✅ Re-authenticated! Drive is connected.");
-      } else {
-        throw new Error(result.error || "Re-authentication failed");
-      }
+      await signInWithGoogle();
+      setTokenExpired(false);
+      flashMsg("success", "✅ Connected! Drive is ready.");
     } catch (e) {
-      flashMsg("error", `❌ Re-auth failed: ${e.message}`);
+      flashMsg("error", `❌ Sign-in failed: ${e.message}`);
     } finally {
       setStatus(null);
     }
@@ -4026,7 +4032,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
 
   // ── Drive API wrapper ─────────────────────────────────────────────────────────
   async function driveRequest(url, opts = {}) {
-    const token = getStoredToken();
+    const token = await getStoredToken();
     if (!token) throw new Error("TOKEN_EXPIRED");
     const resp = await fetch(url, {
       ...opts,
@@ -4335,15 +4341,15 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
           <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 20 }}>🔑</span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e" }}>Drive session expired</div>
-              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>Your Google OAuth token has expired. Click Re-authenticate to continue — takes 2 seconds.</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e" }}>Drive sign-in needed</div>
+              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>Looks like you signed out of Google. Click Sign in to reconnect Drive — takes 2 seconds.</div>
             </div>
             <button
               onClick={reAuth}
               disabled={status === "reauth"}
               style={{ ...btnBase, background: "#f59e0b", color: "#fff", padding: "8px 14px", fontSize: 13, opacity: status === "reauth" ? 0.6 : 1, flexShrink: 0 }}
             >
-              {status === "reauth" ? "Opening…" : "Re-authenticate"}
+              {status === "reauth" ? "Opening…" : "Sign in"}
             </button>
           </div>
         )}
@@ -7799,6 +7805,10 @@ function GoalsPage({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
   // plan inputs
   const [planMonths, setPlanMonths] = useState("");
+  
+  // Transaction editing state
+  const [editingTx, setEditingTx] = useState(null);
+  const [txEditForm, setTxEditForm] = useState({ amount: "", date: "", bankId: "", type: "", note: "" });
 
   const PRIORITIES = [["high","🔴 High"],["medium","🟡 Medium"],["low","🟢 Low"]];
 
@@ -7885,6 +7895,89 @@ function GoalsPage({ data, update }) {
       };
       return { needsWants: updatedNeeds, transactions: [...(p.transactions || []), newTx] };
     });
+  }
+
+  // ── Edit Transaction ──
+  function startEditTransaction(tx) {
+    setEditingTx(tx);
+    setTxEditForm({
+      amount: String(tx.amount || ""),
+      date: tx.date || today(),
+      bankId: tx.bankId || "",
+      type: tx.type || "income",
+      note: tx.note || "",
+    });
+  }
+
+  function saveTransactionEdit(goalId, oldAmount) {
+    if (!editingTx) return;
+    const newAmount = parseFloat(txEditForm.amount);
+    if (!newAmount || newAmount <= 0) return;
+    
+    const amountDiff = newAmount - oldAmount;
+    
+    update(p => {
+      // Update the transaction
+      const updatedTxs = (p.transactions || []).map(t => 
+        t.id === editingTx.id ? {
+          ...t,
+          amount: newAmount,
+          date: txEditForm.date,
+          bankId: txEditForm.bankId,
+          type: txEditForm.type,
+          note: txEditForm.note,
+        } : t
+      );
+      
+      // Update goal's saved amount
+      const updatedGoals = (p.needsWants || []).map(g =>
+        g.id === goalId ? { 
+          ...g, 
+          savedAmount: Math.min(Math.max(0, g.savedAmount + amountDiff), g.targetAmount) 
+        } : g
+      );
+      
+      return { transactions: updatedTxs, needsWants: updatedGoals };
+    });
+    
+    // Update selectedGoal state to reflect changes immediately
+    if (selectedGoal && selectedGoal.id === goalId) {
+      setSelectedGoal(prev => ({
+        ...prev,
+        savedAmount: Math.min(Math.max(0, prev.savedAmount + amountDiff), prev.targetAmount)
+      }));
+    }
+    
+    setEditingTx(null);
+    setTxEditForm({ amount: "", date: "", bankId: "", type: "", note: "" });
+  }
+
+  // ── Delete Transaction ──
+  function deleteTransaction(txId, goalId, txAmount) {
+    if (!confirm("Delete this savings entry? This will reduce your saved amount.")) return;
+    
+    update(p => {
+      // Remove the transaction
+      const updatedTxs = (p.transactions || []).filter(t => t.id !== txId);
+      
+      // Reduce goal's saved amount
+      const updatedGoals = (p.needsWants || []).map(g =>
+        g.id === goalId ? { 
+          ...g, 
+          savedAmount: Math.max(0, g.savedAmount - txAmount) 
+        } : g
+      );
+      
+      return { transactions: updatedTxs, needsWants: updatedGoals };
+    });
+    
+    // Update selectedGoal state to reflect changes immediately
+    if (selectedGoal && selectedGoal.id === goalId) {
+      setSelectedGoal(prev => ({
+        ...prev,
+        savedAmount: Math.max(0, prev.savedAmount - txAmount)
+      }));
+    }
   }
 
   const totalNeedsTarget = needs.reduce((s, i) => s + i.targetAmount, 0);
@@ -8175,7 +8268,7 @@ function GoalsPage({ data, update }) {
                     <thead>
                       <tr style={{ background: "var(--color-background-secondary)" }}>
                         {["Date","Type","Amount","Account","Note","Actions"].map(h => (
-                          <th key={h} style={{ padding: "9px 12px", textAlign: h === "Actions" ? "center" : "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>{h}</th>
+                          <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -8184,36 +8277,75 @@ function GoalsPage({ data, update }) {
                         const bank = (data.banks || []).find(b => String(b.id) === String(t.bankId));
                         const typeColor = t.type === "income" ? "#1a6b3c" : t.type === "expense" ? "#d44" : "#7c3aed";
                         const typeLabel = t.type === "income" ? "📥 Income" : t.type === "expense" ? "📤 Expense" : "💰 Savings";
+                        const isEditing = editingTx && editingTx.id === t.id;
+                        
                         return (
                           <tr key={t.id || i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
                             onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
                             onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                            <td style={{ padding: "9px 12px", color: "var(--color-text-secondary)", fontSize: 12 }}>{t.date || "—"}</td>
-                            <td style={{ padding: "9px 12px" }}><span style={{ fontSize: 11, color: typeColor, fontWeight: 500 }}>{typeLabel}</span></td>
-                            <td style={{ padding: "9px 12px", fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(t.amount)}</td>
-                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>{bank ? bank.name : "—"}</td>
-                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>{t.note || "—"}</td>
-                            <td style={{ padding: "9px 12px", textAlign: "center" }}>
-                              <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                                <button onClick={() => {
-                                  setEditingTx(t);
-                                  setTxModal(true);
-                                }}
-                                  style={{ padding: "5px 10px", fontSize: 11, borderRadius: 6, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer", fontWeight: 500 }}>
-                                  Edit
-                                </button>
-                                <button onClick={() => {
-                                  if (confirm(`Delete this ₹${t.amount} savings entry?`)) {
-                                    setData(prev => ({
-                                      ...prev,
-                                      transactions: prev.transactions.filter(tx => tx.id !== t.id)
-                                    }));
-                                  }
-                                }}
-                                  style={{ padding: "5px 10px", fontSize: 11, borderRadius: 6, background: "#dc2626", color: "#fff", border: "none", cursor: "pointer", fontWeight: 500 }}>
-                                  Delete
-                                </button>
-                              </div>
+                            <td style={{ padding: "9px 12px", color: "var(--color-text-secondary)", fontSize: 12 }}>
+                              {isEditing ? (
+                                <input type="date" value={txEditForm.date} onChange={e => setTxEditForm({...txEditForm, date: e.target.value})}
+                                  style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                              ) : (t.date || "—")}
+                            </td>
+                            <td style={{ padding: "9px 12px" }}>
+                              {isEditing ? (
+                                <select value={txEditForm.type} onChange={e => setTxEditForm({...txEditForm, type: e.target.value})}
+                                  style={{ fontSize: 11, padding: "4px 6px", width: "100%" }}>
+                                  <option value="income">📥 Income</option>
+                                  <option value="expense">📤 Expense</option>
+                                </select>
+                              ) : (
+                                <span style={{ fontSize: 11, color: typeColor, fontWeight: 500 }}>{typeLabel}</span>
+                              )}
+                            </td>
+                            <td style={{ padding: "9px 12px", fontWeight: 600, color: "#1a6b3c" }}>
+                              {isEditing ? (
+                                <input type="text" inputMode="decimal" value={txEditForm.amount} 
+                                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setTxEditForm({...txEditForm, amount: v}); }}
+                                  style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} placeholder="Amount" />
+                              ) : fmtCur(t.amount)}
+                            </td>
+                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                              {isEditing ? (
+                                <select value={txEditForm.bankId} onChange={e => setTxEditForm({...txEditForm, bankId: e.target.value})}
+                                  style={{ fontSize: 11, padding: "4px 6px", width: "100%" }}>
+                                  <option value="">— Select —</option>
+                                  {(data.banks || []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                </select>
+                              ) : (bank ? bank.name : "—")}
+                            </td>
+                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                              {isEditing ? (
+                                <input type="text" value={txEditForm.note} onChange={e => setTxEditForm({...txEditForm, note: e.target.value})}
+                                  style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} placeholder="Note" />
+                              ) : (t.note || "—")}
+                            </td>
+                            <td style={{ padding: "9px 12px" }}>
+                              {isEditing ? (
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <button onClick={() => saveTransactionEdit(item.id, t.amount)}
+                                    style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>
+                                    ✓
+                                  </button>
+                                  <button onClick={() => { setEditingTx(null); setTxEditForm({ amount: "", date: "", bankId: "", type: "", note: "" }); }}
+                                    style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <button onClick={() => startEditTransaction(t)} title="Edit"
+                                    style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                                    ✏️
+                                  </button>
+                                  <button onClick={() => deleteTransaction(t.id, item.id, t.amount)} title="Delete"
+                                    style={{ background: "none", border: "0.5px solid #fecaca", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "#ef4444" }}>
+                                    🗑️
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
@@ -9924,25 +10056,7 @@ function BusinessPage({ data, update }) {
                                 </div>
                                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                                   <button
-                                    onClick={() => {
-                                      const mimeType = bill.mimeType || "";
-                                      const isImage = mimeType.startsWith("image/");
-                                      const isPDF = mimeType === "application/pdf" || bill.name.toLowerCase().endsWith(".pdf");
-                                      
-                                      if (isImage || isPDF) {
-                                        // Show preview modal for images and PDFs
-                                        setPreviewBill(bill);
-                                      } else {
-                                        // Auto-download for other file types
-                                        const link = document.createElement('a');
-                                        link.href = bill.downloadUrl || bill.url;
-                                        link.download = bill.name;
-                                        link.target = '_blank';
-                                        document.body.appendChild(link);
-                                        link.click();
-                                        document.body.removeChild(link);
-                                      }
-                                    }}
+                                    onClick={() => setPreviewBill(bill)}
                                     style={{
                                       background: "#4da6ff",
                                       color: "#fff",
@@ -14993,11 +15107,11 @@ function PortfolioAnalysisView({ data }) {
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
                       color:h.pe==null?"var(--color-text-secondary)":h.pe>60?"#ef4444":h.pe>35?"#f59e0b":"#1a6b3c"}}>
-                      {h.pe ?? <span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                      {h.pe??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
                       color:h.beta==null?"var(--color-text-secondary)":h.beta>1.3?"#ef4444":h.beta<0.8?"#1a6b3c":"#f59e0b"}}>
-                      {h.beta ?? <span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                      {h.beta??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right"}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
