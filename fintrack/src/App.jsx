@@ -4001,6 +4001,18 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     parseInt(localStorage.getItem("ft_last_auto_backup") || "0")
   );
 
+  // ── Check token status on component mount and when Drive connects ──────────────
+  useEffect(() => {
+    // Check if we have a valid token when component mounts or Drive connects
+    if (isConnected) {
+      getFreshDriveToken().then(token => {
+        if (token) {
+          setTokenExpired(false);
+        }
+      });
+    }
+  }, [isConnected]);
+
   function flashMsg(type, text, dur = 5000) {
     setMsg({ type, text });
     if (dur) setTimeout(() => setMsg({ type: null, text: "" }), dur);
@@ -4337,7 +4349,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
         {sectionTitle("🗂️", "Google Drive", "Back up and restore FinTrack data directly in your Google Drive.")}
 
         {/* ── Token expired banner ─────────────────────────────────────── */}
-        {tokenExpired && (
+        {tokenExpired && !isConnected && (
           <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 20 }}>🔑</span>
             <div style={{ flex: 1 }}>
