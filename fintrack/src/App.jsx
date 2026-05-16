@@ -1639,7 +1639,10 @@ function MoneyPage({ data, update, tab, setTab }) {
   };
 
   const filtered = data.transactions.filter(t =>
-    filterPeriod(t) && t.type === (tab === "expenses" ? "expense" : "income") && !t.isTransfer
+    filterPeriod(t) && 
+    t.type === (tab === "expenses" ? "expense" : "income") && 
+    !t.isTransfer &&
+    !t.excludeFromMainTransactions // Hide goal transactions if marked as excluded
   );
 
   function addTx() {
@@ -2260,6 +2263,7 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
   const allTx = React.useMemo(() => {
     return allTransactions
       .filter(t => !t.isTransfer)
+      .filter(t => !t.excludeFromMainTransactions) // Hide goal transactions if marked as excluded
       .filter(t => {
         if (filterDateMode === "range") {
           if (filterDateFrom && t.date < filterDateFrom) return false;
@@ -7893,6 +7897,10 @@ function GoalsPage({ data, update }) {
     if (!amt || amt <= 0) return;
     const actualType = txType === "savings" ? "income" : txType;
     update(p => {
+      // Find the goal to check its excludeFromNetWorth setting
+      const goal = (p.needsWants || []).find(x => x.id === id);
+      const excludeFromMainTx = goal?.excludeFromNetWorth || false;
+      
       const updatedNeeds = (p.needsWants || []).map(x =>
         x.id === id ? { ...x, savedAmount: Math.min(x.savedAmount + amt, x.targetAmount) } : x
       );
@@ -7904,6 +7912,8 @@ function GoalsPage({ data, update }) {
         note: `Goal: ${goalName}`,
         date: today(),
         bankId: bankId || "",
+        isGoalTransaction: true, // Mark as goal transaction
+        excludeFromMainTransactions: excludeFromMainTx, // Hide from Money → Transactions if true
       };
       return { needsWants: updatedNeeds, transactions: [...(p.transactions || []), newTx] };
     });
