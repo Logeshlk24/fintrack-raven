@@ -140,6 +140,7 @@ const defaultData = {
   liabilities: [],
   transactions: [],
   banks: [],
+  goalAccounts: [], // Separate accounts for goals excluded from net worth
   emis: [],
   foTrades: [],
   foCharges: { brokerage: 40, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 },
@@ -7738,11 +7739,14 @@ function LiabilitiesTab({ data, update }) {
 }
 
 // ─── AddSavingsInline — stable component so input focus is never lost ────────
-function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
+function AddSavingsInline({ item, cardAccent, accounts, goalAccounts, addSavings }) {
   const [addAmt, setAddAmt] = useState("");
   const [showAddSave, setShowAddSave] = useState(false);
   const [saveTxType, setSaveTxType] = useState("income");
   const [saveBankId, setSaveBankId] = useState("");
+
+  // Use goalAccounts if excluded from net worth, otherwise use main accounts
+  const availableAccounts = item.excludeFromNetWorth ? goalAccounts : accounts;
 
   function handleAddSavings() {
     if (!addAmt || parseFloat(addAmt) <= 0) return;
@@ -7780,23 +7784,31 @@ function AddSavingsInline({ item, cardAccent, accounts, addSavings }) {
           autoFocus
         />
       </div>
-      {accounts.length > 0 && (
+      {availableAccounts.length > 0 && (
         <select value={saveBankId} onChange={e => setSaveBankId(e.target.value)} style={{ width: "100%", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }}>
           <option value="">— No account —</option>
-          {accounts.filter(a => a.type === "Bank").length > 0 && (
-            <optgroup label="🏦 Bank Accounts">
-              {accounts.filter(a => a.type === "Bank").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </optgroup>
-          )}
-          {accounts.filter(a => a.type === "Credit Card").length > 0 && (
-            <optgroup label="💳 Credit Cards">
-              {accounts.filter(a => a.type === "Credit Card").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </optgroup>
-          )}
-          {accounts.filter(a => a.type === "Cash").length > 0 && (
-            <optgroup label="💵 Cash">
-              {accounts.filter(a => a.type === "Cash").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </optgroup>
+          {item.excludeFromNetWorth ? (
+            /* Goal Accounts - simple list without optgroups */
+            availableAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
+          ) : (
+            /* Main Bank Accounts - with optgroups */
+            <>
+              {availableAccounts.filter(a => a.type === "Bank").length > 0 && (
+                <optgroup label="🏦 Bank Accounts">
+                  {availableAccounts.filter(a => a.type === "Bank").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </optgroup>
+              )}
+              {availableAccounts.filter(a => a.type === "Credit Card").length > 0 && (
+                <optgroup label="💳 Credit Cards">
+                  {availableAccounts.filter(a => a.type === "Credit Card").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </optgroup>
+              )}
+              {availableAccounts.filter(a => a.type === "Cash").length > 0 && (
+                <optgroup label="💵 Cash">
+                  {availableAccounts.filter(a => a.type === "Cash").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </optgroup>
+              )}
+            </>
           )}
         </select>
       )}
@@ -7825,6 +7837,11 @@ function GoalsPage({ data, update }) {
   // Transaction editing state
   const [editingTx, setEditingTx] = useState(null);
   const [txEditForm, setTxEditForm] = useState({ amount: "", date: "", bankId: "", type: "", note: "" });
+
+  // Goal Accounts management
+  const [showGoalAccounts, setShowGoalAccounts] = useState(false);
+  const [goalAccForm, setGoalAccForm] = useState({ name: "", balance: "" });
+  const [editGoalAcc, setEditGoalAcc] = useState(null);
 
   const PRIORITIES = [["high","🔴 High"],["medium","🟡 Medium"],["low","🟢 Low"]];
 
@@ -8000,6 +8017,45 @@ function GoalsPage({ data, update }) {
         savedAmount: Math.max(0, prev.savedAmount - txAmount)
       }));
     }
+  }
+
+  // ── Goal Accounts Management ──
+  function addGoalAccount() {
+    const name = goalAccForm.name.trim();
+    const balance = parseFloat(goalAccForm.balance) || 0;
+    if (!name) return;
+    
+    update(p => ({
+      goalAccounts: [
+        ...(p.goalAccounts || []),
+        { id: Date.now(), name, balance, type: "Goal Account" }
+      ]
+    }));
+    
+    setGoalAccForm({ name: "", balance: "" });
+  }
+
+  function saveGoalAccountEdit() {
+    if (!editGoalAcc) return;
+    const name = goalAccForm.name.trim();
+    const balance = parseFloat(goalAccForm.balance) || 0;
+    if (!name) return;
+    
+    update(p => ({
+      goalAccounts: (p.goalAccounts || []).map(a =>
+        a.id === editGoalAcc.id ? { ...a, name, balance } : a
+      )
+    }));
+    
+    setEditGoalAcc(null);
+    setGoalAccForm({ name: "", balance: "" });
+  }
+
+  function deleteGoalAccount(id) {
+    if (!confirm("Delete this goal account? This won't affect your goal progress.")) return;
+    update(p => ({
+      goalAccounts: (p.goalAccounts || []).filter(a => a.id !== id)
+    }));
   }
 
   const totalNeedsTarget = needs.reduce((s, i) => s + i.targetAmount, 0);
@@ -8197,7 +8253,7 @@ function GoalsPage({ data, update }) {
         {/* Add savings — on grid card (outside folder) */}
         {!isInsideFolder && (
           <div style={{ marginTop: "auto", paddingTop: 8 }} onClick={e => e.stopPropagation()}>
-            {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} addSavings={addSavings} />}
+            {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} goalAccounts={data.goalAccounts || []} addSavings={addSavings} />}
           </div>
         )}
 
@@ -8216,7 +8272,8 @@ function GoalsPage({ data, update }) {
     // Always read fresh from data so updates reflect
     const item = (data.needsWants || []).find(x => x.id === rawItem.id) || rawItem;
     const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
-    const accounts = data.banks || [];
+    // Use appropriate accounts based on excludeFromNetWorth setting
+    const accounts = item.excludeFromNetWorth ? (data.goalAccounts || []) : (data.banks || []);
     const isTask = item.goalType === "task";
     const remaining = item.targetAmount - item.savedAmount;
 
@@ -8296,7 +8353,12 @@ function GoalsPage({ data, update }) {
                     </thead>
                     <tbody>
                       {goalTxs.map((t, i) => {
-                        const bank = (data.banks || []).find(b => String(b.id) === String(t.bankId));
+                        // Look in both main accounts and goal accounts
+                        const allAvailableAccounts = [...(data.banks || []), ...(data.goalAccounts || [])];
+                        const bank = allAvailableAccounts.find(b => String(b.id) === String(t.bankId));
+                        // For editing, show the appropriate account list based on goal's excludeFromNetWorth
+                        const editAccountsList = item.excludeFromNetWorth ? (data.goalAccounts || []) : (data.banks || []);
+                        
                         const typeColor = t.type === "income" ? "#1a6b3c" : t.type === "expense" ? "#d44" : "#7c3aed";
                         const typeLabel = t.type === "income" ? "📥 Income" : t.type === "expense" ? "📤 Expense" : "💰 Savings";
                         const isEditing = editingTx && editingTx.id === t.id;
@@ -8334,7 +8396,7 @@ function GoalsPage({ data, update }) {
                                 <select value={txEditForm.bankId} onChange={e => setTxEditForm({...txEditForm, bankId: e.target.value})}
                                   style={{ fontSize: 11, padding: "4px 6px", width: "100%" }}>
                                   <option value="">— Select —</option>
-                                  {(data.banks || []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                  {editAccountsList.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                                 </select>
                               ) : (bank ? bank.name : "—")}
                             </td>
@@ -8488,6 +8550,87 @@ function GoalsPage({ data, update }) {
 
   return (
     <div>
+      {/* Goal Accounts Management Modal */}
+      {showGoalAccounts && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(520px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 16 }}>⚙️ Goal Accounts</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Separate accounts for goals excluded from Net Worth</div>
+              </div>
+              <button onClick={() => { setShowGoalAccounts(false); setEditGoalAcc(null); setGoalAccForm({ name: "", balance: "" }); }}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--color-text-secondary)" }}>✕</button>
+            </div>
+
+            {/* Add/Edit Form */}
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px", marginBottom: 16, border: "0.5px solid var(--color-border-tertiary)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{editGoalAcc ? "✏️ Edit Account" : "➕ Add Account"}</div>
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account Name</label>
+                <input placeholder="e.g., Land Savings Jar" value={goalAccForm.name}
+                  onChange={e => setGoalAccForm({ ...goalAccForm, name: e.target.value })}
+                  style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "6px 10px" }} />
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Initial Balance (₹)</label>
+                <input type="text" inputMode="decimal" placeholder="0" value={goalAccForm.balance}
+                  onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setGoalAccForm({ ...goalAccForm, balance: v }); }}
+                  style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "6px 10px" }} />
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {editGoalAcc ? (
+                  <>
+                    <button onClick={saveGoalAccountEdit} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Save Changes</button>
+                    <button onClick={() => { setEditGoalAcc(null); setGoalAccForm({ name: "", balance: "" }); }}
+                      style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+                  </>
+                ) : (
+                  <button onClick={addGoalAccount} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>+ Add Account</button>
+                )}
+              </div>
+            </div>
+
+            {/* Accounts List */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8 }}>
+                YOUR GOAL ACCOUNTS ({(data.goalAccounts || []).length})
+              </div>
+              {(data.goalAccounts || []).length === 0 ? (
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12, border: "0.5px dashed var(--color-border-secondary)" }}>
+                  No goal accounts yet. Add one above.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {(data.goalAccounts || []).map(acc => (
+                    <div key={acc.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "12px 14px", border: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text-primary)" }}>{acc.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Balance: {fmtCur(acc.balance || 0)}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => { setEditGoalAcc(acc); setGoalAccForm({ name: acc.name, balance: String(acc.balance || 0) }); }}
+                          style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                          ✏️
+                        </button>
+                        <button onClick={() => deleteGoalAccount(acc.id)}
+                          style={{ background: "none", border: "0.5px solid #fecaca", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "#ef4444" }}>
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 16, padding: "10px 12px", background: "#eff6ff", border: "0.5px solid #bfdbfe", borderRadius: 8, fontSize: 11, color: "#1e40af" }}>
+              💡 <strong>Tip:</strong> Goal accounts are only for goals marked "🚫 Excluded from Net Worth". Regular goals use your main bank accounts.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit modal */}
       {editItem && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -8513,11 +8656,16 @@ function GoalsPage({ data, update }) {
       ) : (
         /* ── Normal Goals grid view ── */
         <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
             <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
-            <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-              {showAdd ? "✕ Cancel" : "+ Add Goal"}
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowGoalAccounts(true)} style={{ background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+                ⚙️ Goal Accounts
+              </button>
+              <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+                {showAdd ? "✕ Cancel" : "+ Add Goal"}
+              </button>
+            </div>
           </div>
 
           {/* Summary strip */}
