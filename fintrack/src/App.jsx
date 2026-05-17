@@ -4222,15 +4222,6 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     return true;
   }
 
-    if (!uploadRes.ok) {
-      if (uploadRes.status === 401) { setTokenExpired(true); return false; }
-      const err = await uploadRes.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `Upload failed (${uploadRes.status})`);
-    }
-    if (!silent) flashMsg("success", `✅ Backup saved → FinTracker/Backup/${FILE_NAME}`);
-    return true;
-  }
-
   // ── Manual save ──────────────────────────────────────────────────────────────
   async function handleSaveToDrive() {
     setStatus("saving");
