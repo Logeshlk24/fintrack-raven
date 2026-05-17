@@ -4113,6 +4113,8 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     const FILE_NAME = "fintrack_backup.json";
     const FILE_NAME_BACKUP = "fintrack_backup-1.json";
 
+    console.log("🔄 Starting backup rotation...");
+
     // ── Step 1: Search for existing main backup (fintrack_backup.json) ────────────
     const searchMainRes = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=name%3D'${FILE_NAME}'%20and%20'${backupFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id)`,
@@ -4125,31 +4127,45 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     const searchMainData = await searchMainRes.json();
     const existingMainId = searchMainData.files?.[0]?.id || null;
 
+    console.log(`📁 Existing main backup: ${existingMainId ? 'Found' : 'Not found'}`);
+
     // ── Step 2: If main backup exists, implement rotation ─────────────────────────
     if (existingMainId) {
+      console.log("🔄 Main backup exists, starting rotation...");
+      
       // Search for existing backup-1 file
       const searchBackup1Res = await fetch(
         `https://www.googleapis.com/drive/v3/files?q=name%3D'${FILE_NAME_BACKUP}'%20and%20'${backupFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id)`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      
       if (searchBackup1Res.ok) {
         const searchBackup1Data = await searchBackup1Res.json();
         const existingBackup1Id = searchBackup1Data.files?.[0]?.id || null;
         
+        console.log(`📁 Existing backup-1: ${existingBackup1Id ? 'Found (will delete)' : 'Not found'}`);
+        
         // Delete old backup-1 if it exists
         if (existingBackup1Id) {
-          await fetch(
+          const deleteRes = await fetch(
             `https://www.googleapis.com/drive/v3/files/${existingBackup1Id}`,
             {
               method: "DELETE",
               headers: { Authorization: `Bearer ${token}` }
             }
           );
+          
+          if (deleteRes.ok) {
+            console.log("✅ Old backup-1 deleted successfully");
+          } else {
+            console.warn("⚠️ Failed to delete old backup-1:", deleteRes.status);
+          }
         }
       }
 
       // Rename current main backup to backup-1
-      await fetch(
+      console.log("📝 Renaming current main backup to backup-1...");
+      const renameRes = await fetch(
         `https://www.googleapis.com/drive/v3/files/${existingMainId}`,
         {
           method: "PATCH",
@@ -4157,9 +4173,19 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
           body: JSON.stringify({ name: FILE_NAME_BACKUP })
         }
       );
+      
+      if (renameRes.ok) {
+        console.log("✅ Main backup renamed to backup-1 successfully");
+      } else {
+        console.error("❌ Failed to rename main backup:", renameRes.status);
+        const errorData = await renameRes.json().catch(() => ({}));
+        console.error("Error details:", errorData);
+        throw new Error(`Rename failed (${renameRes.status})`);
+      }
     }
 
     // ── Step 3: Create new main backup file ───────────────────────────────────────
+    console.log("📤 Creating new main backup file...");
     const boundary = "fintrack_boundary_xyz";
     const body = [
       `--${boundary}`,
@@ -4181,6 +4207,20 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
         body,
       }
     );
+
+    if (!uploadRes.ok) {
+      if (uploadRes.status === 401) { setTokenExpired(true); return false; }
+      const err = await uploadRes.json().catch(() => ({}));
+      console.error("❌ Upload failed:", err);
+      throw new Error(err?.error?.message || `Upload failed (${uploadRes.status})`);
+    }
+    
+    console.log("✅ New main backup created successfully");
+    console.log("🎉 Backup rotation complete!");
+    
+    if (!silent) flashMsg("success", `✅ Backup saved → FinTracker/Backup/${FILE_NAME}`);
+    return true;
+  }
 
     if (!uploadRes.ok) {
       if (uploadRes.status === 401) { setTokenExpired(true); return false; }
