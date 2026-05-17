@@ -435,6 +435,36 @@ export default function App() {
     return () => clearInterval(interval);
   }, [dataReady, autoAddBusFare]);
 
+  // ── Auto Drive Token Refresh: keeps Drive connected without re-auth ───────────
+  useEffect(() => {
+    if (!firebaseUser) return;
+    if (!data.gdriveIntegration?.connected) return;
+
+    console.log("🔄 Drive token auto-refresh enabled (runs every 50 minutes)");
+
+    // Function to refresh Drive token silently
+    const refreshDriveToken = async () => {
+      try {
+        const token = await getFreshDriveToken();
+        if (token) {
+          console.log("✅ Drive token refreshed silently");
+        } else {
+          console.warn("⚠️ Drive token refresh failed - might need re-authentication");
+        }
+      } catch (error) {
+        console.error("❌ Drive token refresh error:", error);
+      }
+    };
+
+    // Refresh immediately on mount (to catch expired tokens)
+    refreshDriveToken();
+
+    // Then refresh every 50 minutes (token expires in ~60 minutes)
+    const refreshInterval = setInterval(refreshDriveToken, 50 * 60 * 1000);
+
+    return () => clearInterval(refreshInterval);
+  }, [firebaseUser, data.gdriveIntegration?.connected]);
+
   const totalIncome = data.transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
   const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
   // Net worth = sum of all bank balances (linked transactions) + unlinked transactions
