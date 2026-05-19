@@ -30,28 +30,41 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GOOGLE DRIVE - MULTI-USER AUTHENTICATION
+// GOOGLE DRIVE - TOKEN MANAGEMENT
 // ══════════════════════════════════════════════════════════════════════════════
-// Each team member connects their own Google Drive
-// Tokens stored per-user in Firestore (secure & persistent)
+// Strategy:
+//   1. On sign-in, save the fresh OAuth access token to Firestore.
+//   2. getFreshDriveToken() checks Firestore; if the token is still valid
+//      (more than 5 min left), return it immediately — no network call.
+//   3. If expired, test the old token directly against Drive.  Google access
+//      tokens often remain valid past the locally-stored expiresAt because
+//      the clock on the client may drift.  If the test passes, reset the
+//      expiry window and return it.
+//   4. If the token is truly dead, return null so the caller can show
+//      "Reconnect Drive" UI instead of making an unauthenticated request.
+//
+// NOTE: "Silent re-auth via prompt:none in a popup" does NOT work in browsers.
+//       It either throws an immediate error or opens a blank popup. The only
+//       reliable silent path is reauthenticateDrive() (user-initiated popup).
 
-const provider = new GoogleAuthProvider();
-provider.addScope("https://www.googleapis.com/auth/drive.file");
+const driveProvider = new GoogleAuthProvider();
+driveProvider.addScope("https://www.googleapis.com/auth/drive.file");
 
 // ── Sign In with Google (Drive permission included) ───────────────────────────
 export const signInWithGoogle = async () => {
   try {
-    const result = await signInWithPopup(auth, provider);
+    const result = await signInWithPopup(auth, driveProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = credential?.accessToken;
-    
+
     if (accessToken) {
-      // Store token in Firestore (per-user, secure, synced across devices)
       const uid = result.user.uid;
       await saveDriveToken(uid, accessToken);
       console.log("✅ Drive access granted for:", result.user.email);
+    } else {
+      console.warn("⚠️ Sign-in succeeded but no Drive access token returned.");
     }
-    
+
     return result;
   } catch (error) {
     console.error("Sign in error:", error);
@@ -59,13 +72,14 @@ export const signInWithGoogle = async () => {
   }
 };
 
-// ── Save Drive Token to Firestore (per-user storage) ──────────────────────────
+// ── Save Drive Token to Firestore ─────────────────────────────────────────────
 async function saveDriveToken(uid, accessToken) {
   try {
     const tokenRef = doc(db, "users", uid, "tokens", "drive");
     await setDoc(tokenRef, {
       accessToken,
-      expiresAt: Date.now() + 55 * 60 * 1000, // 55 minutes
+      // Google access tokens live ~60 min; we record 58 min to be safe.
+      expiresAt: Date.now() + 58 * 60 * 1000,
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -78,125 +92,107 @@ async function loadDriveToken(uid) {
   try {
     const tokenRef = doc(db, "users", uid, "tokens", "drive");
     const snap = await getDoc(tokenRef);
-    if (snap.exists()) {
-      return snap.data();
-    }
+    if (snap.exists()) return snap.data();
   } catch (error) {
     console.error("Error loading Drive token:", error);
   }
   return null;
 }
 
-// ── getFreshDriveToken: Smart multi-layer token refresh ──────────────────────
+// ── Test whether a token is still accepted by Google Drive ────────────────────
+async function isTokenAlive(accessToken) {
+  if (!accessToken) return false;
+  try {
+    const res = await fetch(
+      "https://www.googleapis.com/drive/v3/about?fields=user",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ── getFreshDriveToken ────────────────────────────────────────────────────────
+// Returns a valid access token string, or null if re-auth is required.
 export async function getFreshDriveToken() {
   const user = auth.currentUser;
   if (!user) {
-    console.log("❌ No user signed in");
+    console.log("❌ getFreshDriveToken: no user signed in");
     return null;
   }
 
-  // ── Layer 1: Check Firestore for cached token ─────────────────────────────
   const tokenData = await loadDriveToken(user.uid);
-  if (tokenData?.accessToken && Date.now() < (tokenData.expiresAt - 5 * 60 * 1000)) {
+  const storedToken = tokenData?.accessToken;
+
+  // ── Layer 1: Token exists and is within its validity window ───────────────
+  const BUFFER_MS = 5 * 60 * 1000; // 5-minute safety buffer
+  if (storedToken && Date.now() < (tokenData.expiresAt - BUFFER_MS)) {
     console.log("✅ Using cached Drive token from Firestore");
-    return tokenData.accessToken;
+    return storedToken;
   }
 
-  console.log("🔄 Token expired/missing - attempting refresh...");
-
-  // ── Layer 2: Try silent re-authentication ──────────────────────────────────
-  try {
-    const refreshProvider = new GoogleAuthProvider();
-    refreshProvider.addScope("https://www.googleapis.com/auth/drive.file");
-    refreshProvider.setCustomParameters({
-      login_hint: user.email,
-      prompt: 'none' // Try silent refresh first
-    });
-
-    const result = await signInWithPopup(auth, refreshProvider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    const newAccessToken = credential?.accessToken;
-
-    if (newAccessToken) {
-      await saveDriveToken(user.uid, newAccessToken);
-      console.log("✅ Drive token refreshed silently!");
-      return newAccessToken;
+  // ── Layer 2: Token is past expiry window — test it live anyway ─────────────
+  // Google tokens sometimes survive past our locally-stored expiresAt.
+  if (storedToken) {
+    console.log("🔄 Token window expired — testing if Google still accepts it…");
+    const alive = await isTokenAlive(storedToken);
+    if (alive) {
+      // Still valid: reset the expiry window for another 55 min
+      await saveDriveToken(user.uid, storedToken);
+      console.log("✅ Drive token still valid — expiry window reset");
+      return storedToken;
     }
-  } catch (silentError) {
-    // Silent refresh failed - try with consent prompt
-    console.log("⚠️ Silent refresh unavailable, checking for manual re-auth need...");
+    console.log("❌ Drive token rejected by Google — re-auth required");
+  } else {
+    console.log("❌ No Drive token in Firestore — re-auth required");
   }
 
-  // ── Layer 3: Test if old token still works ────────────────────────────────
-  if (tokenData?.accessToken) {
-    try {
-      const testRes = await fetch(
-        'https://www.googleapis.com/drive/v3/about?fields=user',
-        { headers: { Authorization: `Bearer ${tokenData.accessToken}` } }
-      );
-      
-      if (testRes.ok) {
-        // Old token still works! Extend its life
-        await saveDriveToken(user.uid, tokenData.accessToken);
-        console.log("✅ Old token still valid - extended in Firestore");
-        return tokenData.accessToken;
-      } else {
-        console.log("❌ Old token invalid:", testRes.status);
-      }
-    } catch (testError) {
-      console.log("❌ Token test failed:", testError.message);
-    }
-  }
-
-  // ── Layer 4: All automatic methods failed ─────────────────────────────────
-  console.log("❌ Token refresh failed - manual re-authentication required");
+  // ── Layer 3: Nothing worked — caller must show Reconnect UI ───────────────
   return null;
 }
 
-// ── Re-authenticate Drive (shows popup with consent) ──────────────────────────
+// ── reauthenticateDrive: user-initiated popup to get a fresh token ────────────
+// Call this when getFreshDriveToken() returns null.
+// In App.jsx, show a "Reconnect Google Drive" button that calls this.
 export async function reauthenticateDrive() {
   try {
     const user = auth.currentUser;
-    if (!user) {
-      throw new Error("Not signed in. Please sign in with Google first.");
-    }
+    if (!user) throw new Error("Not signed in.");
 
-    console.log("🔐 Re-authorizing Drive access with consent...");
-    
+    console.log("🔐 Re-authorizing Drive access…");
+
     const provider = new GoogleAuthProvider();
     provider.addScope("https://www.googleapis.com/auth/drive.file");
     provider.setCustomParameters({
       login_hint: user.email,
-      prompt: 'consent' // Force consent screen for fresh token
+      prompt: "consent", // force fresh token
     });
 
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = credential?.accessToken;
 
-    if (accessToken) {
-      await saveDriveToken(user.uid, accessToken);
-      console.log("✅ Drive re-authorized successfully!");
-      return { success: true, token: accessToken };
-    }
+    if (!accessToken) throw new Error("No access token returned.");
 
-    throw new Error("Failed to get access token");
+    await saveDriveToken(user.uid, accessToken);
+    console.log("✅ Drive re-authorized successfully!");
+    return { success: true, token: accessToken };
   } catch (error) {
-    console.error("Drive re-authentication error:", error);
+    console.error("Drive re-auth error:", error);
     return { success: false, error: error.message };
   }
 }
 
-// ── Sign Out (cleans up Drive tokens) ─────────────────────────────────────────
+// ── Sign Out ──────────────────────────────────────────────────────────────────
 export const signOutUser = async () => {
   const user = auth.currentUser;
   if (user) {
     try {
-      // Clean up Drive token from Firestore
       const tokenRef = doc(db, "users", user.uid, "tokens", "drive");
       await setDoc(tokenRef, { accessToken: null, expiresAt: 0 });
     } catch (error) {
-      console.error("Error cleaning Drive token:", error);
+      console.error("Error cleaning Drive token on sign-out:", error);
     }
   }
   return signOut(auth);
