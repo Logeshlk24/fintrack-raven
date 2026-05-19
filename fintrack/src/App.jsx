@@ -37,7 +37,7 @@ import {
   downloadFromDrive,
   listDriveFiles,
   deleteFromDrive,
-} from "./firebase_v2";
+} from "./firebase";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // GOOGLE DRIVE API - NOW HANDLED BY CLOUD FUNCTION
