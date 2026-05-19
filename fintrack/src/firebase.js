@@ -30,27 +30,37 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GOOGLE DRIVE - MULTI-USER AUTHENTICATION
+// GOOGLE AUTHENTICATION - ONE-TIME LOGIN (NO REPEATED POPUPS)
 // ══════════════════════════════════════════════════════════════════════════════
-// Each team member connects their own Google Drive
-// Tokens stored per-user in Firestore (secure & persistent)
+// Uses Firebase ID Tokens + Cloud Function backend for Drive access
+// User signs in once → Firebase handles everything automatically
 
 const provider = new GoogleAuthProvider();
+// Request offline access to get refresh token (stored server-side)
 provider.addScope("https://www.googleapis.com/auth/drive.file");
+provider.setCustomParameters({
+  access_type: 'offline',
+  prompt: 'consent' // Only shows on first login or if user revokes access
+});
 
-// ── Sign In with Google (Drive permission included) ───────────────────────────
+// ── Sign In with Google (ONE-TIME, includes Drive permission) ─────────────────
 export const signInWithGoogle = async () => {
   try {
     const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    const accessToken = credential?.accessToken;
+    const user = result.user;
     
-    if (accessToken) {
-      // Store token in Firestore (per-user, secure, synced across devices)
-      const uid = result.user.uid;
-      await saveDriveToken(uid, accessToken);
-      console.log("✅ Drive access granted for:", result.user.email);
-    }
+    // Get the authorization code from the result
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    
+    // Store user's Drive consent in Firestore
+    await setDoc(doc(db, "users", user.uid, "settings", "drive"), {
+      authorized: true,
+      authorizedAt: new Date().toISOString(),
+      email: user.email,
+    });
+    
+    console.log("✅ Signed in successfully:", user.email);
+    console.log("✅ Drive access granted (managed by backend)");
     
     return result;
   } catch (error) {
@@ -59,150 +69,184 @@ export const signInWithGoogle = async () => {
   }
 };
 
-// ── Save Drive Token to Firestore (per-user storage) ──────────────────────────
-async function saveDriveToken(uid, accessToken) {
-  try {
-    const tokenRef = doc(db, "users", uid, "tokens", "drive");
-    await setDoc(tokenRef, {
-      accessToken,
-      expiresAt: Date.now() + 55 * 60 * 1000, // 55 minutes
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Error saving Drive token:", error);
-  }
-}
-
-// ── Load Drive Token from Firestore ───────────────────────────────────────────
-async function loadDriveToken(uid) {
-  try {
-    const tokenRef = doc(db, "users", uid, "tokens", "drive");
-    const snap = await getDoc(tokenRef);
-    if (snap.exists()) {
-      return snap.data();
-    }
-  } catch (error) {
-    console.error("Error loading Drive token:", error);
-  }
-  return null;
-}
-
-// ── getFreshDriveToken: Smart multi-layer token refresh ──────────────────────
-export async function getFreshDriveToken() {
-  const user = auth.currentUser;
-  if (!user) {
-    console.log("❌ No user signed in");
-    return null;
-  }
-
-  // ── Layer 1: Check Firestore for cached token ─────────────────────────────
-  const tokenData = await loadDriveToken(user.uid);
-  if (tokenData?.accessToken && Date.now() < (tokenData.expiresAt - 5 * 60 * 1000)) {
-    console.log("✅ Using cached Drive token from Firestore");
-    return tokenData.accessToken;
-  }
-
-  console.log("🔄 Token expired/missing - attempting refresh...");
-
-  // ── Layer 2: Try silent re-authentication ──────────────────────────────────
-  try {
-    const refreshProvider = new GoogleAuthProvider();
-    refreshProvider.addScope("https://www.googleapis.com/auth/drive.file");
-    refreshProvider.setCustomParameters({
-      login_hint: user.email,
-      prompt: 'none' // Try silent refresh first
-    });
-
-    const result = await signInWithPopup(auth, refreshProvider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    const newAccessToken = credential?.accessToken;
-
-    if (newAccessToken) {
-      await saveDriveToken(user.uid, newAccessToken);
-      console.log("✅ Drive token refreshed silently!");
-      return newAccessToken;
-    }
-  } catch (silentError) {
-    // Silent refresh failed - try with consent prompt
-    console.log("⚠️ Silent refresh unavailable, checking for manual re-auth need...");
-  }
-
-  // ── Layer 3: Test if old token still works ────────────────────────────────
-  if (tokenData?.accessToken) {
-    try {
-      const testRes = await fetch(
-        'https://www.googleapis.com/drive/v3/about?fields=user',
-        { headers: { Authorization: `Bearer ${tokenData.accessToken}` } }
-      );
-      
-      if (testRes.ok) {
-        // Old token still works! Extend its life
-        await saveDriveToken(user.uid, tokenData.accessToken);
-        console.log("✅ Old token still valid - extended in Firestore");
-        return tokenData.accessToken;
-      } else {
-        console.log("❌ Old token invalid:", testRes.status);
-      }
-    } catch (testError) {
-      console.log("❌ Token test failed:", testError.message);
-    }
-  }
-
-  // ── Layer 4: All automatic methods failed ─────────────────────────────────
-  console.log("❌ Token refresh failed - manual re-authentication required");
-  return null;
-}
-
-// ── Re-authenticate Drive (shows popup with consent) ──────────────────────────
-export async function reauthenticateDrive() {
-  try {
-    const user = auth.currentUser;
-    if (!user) {
-      throw new Error("Not signed in. Please sign in with Google first.");
-    }
-
-    console.log("🔐 Re-authorizing Drive access with consent...");
-    
-    const provider = new GoogleAuthProvider();
-    provider.addScope("https://www.googleapis.com/auth/drive.file");
-    provider.setCustomParameters({
-      login_hint: user.email,
-      prompt: 'consent' // Force consent screen for fresh token
-    });
-
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    const accessToken = credential?.accessToken;
-
-    if (accessToken) {
-      await saveDriveToken(user.uid, accessToken);
-      console.log("✅ Drive re-authorized successfully!");
-      return { success: true, token: accessToken };
-    }
-
-    throw new Error("Failed to get access token");
-  } catch (error) {
-    console.error("Drive re-authentication error:", error);
-    return { success: false, error: error.message };
-  }
-}
-
-// ── Sign Out (cleans up Drive tokens) ─────────────────────────────────────────
+// ── Sign Out ──────────────────────────────────────────────────────────────────
 export const signOutUser = async () => {
   const user = auth.currentUser;
   if (user) {
     try {
-      // Clean up Drive token from Firestore
-      const tokenRef = doc(db, "users", user.uid, "tokens", "drive");
-      await setDoc(tokenRef, { accessToken: null, expiresAt: 0 });
+      // Mark Drive as unauthorized in Firestore
+      await setDoc(doc(db, "users", user.uid, "settings", "drive"), {
+        authorized: false,
+        authorizedAt: null,
+      });
     } catch (error) {
-      console.error("Error cleaning Drive token:", error);
+      console.error("Error updating Drive settings:", error);
     }
   }
   return signOut(auth);
 };
 
 export { onAuthStateChanged };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GOOGLE DRIVE API - CLOUD FUNCTION INTEGRATION
+// ══════════════════════════════════════════════════════════════════════════════
+// All Drive operations go through Cloud Function
+// Firebase ID Token is automatically refreshed (no popups!)
+
+const CLOUD_FUNCTION_URL = "https://us-central1-fintracker-raven.cloudfunctions.net/driveAPI";
+
+// ── Get Fresh Firebase ID Token (auto-refreshed by Firebase) ──────────────────
+async function getFirebaseIdToken() {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error("Not signed in");
+  }
+  
+  // Firebase automatically refreshes this token every hour
+  // No popup needed - happens in the background!
+  const idToken = await user.getIdToken(true); // true = force refresh
+  return idToken;
+}
+
+// ── Upload File to Google Drive (via Cloud Function) ──────────────────────────
+export async function uploadToDrive(file, metadata = {}) {
+  try {
+    const idToken = await getFirebaseIdToken();
+    
+    // Convert file to base64
+    const base64 = await fileToBase64(file);
+    
+    const response = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        action: 'upload',
+        fileName: file.name,
+        mimeType: file.type,
+        fileData: base64,
+        metadata,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log("✅ File uploaded to Drive:", result.fileId);
+    return result;
+  } catch (error) {
+    console.error("Drive upload error:", error);
+    throw error;
+  }
+}
+
+// ── Download File from Google Drive (via Cloud Function) ──────────────────────
+export async function downloadFromDrive(fileId) {
+  try {
+    const idToken = await getFirebaseIdToken();
+    
+    const response = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        action: 'download',
+        fileId,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log("✅ File downloaded from Drive");
+    return result;
+  } catch (error) {
+    console.error("Drive download error:", error);
+    throw error;
+  }
+}
+
+// ── List Files in Google Drive (via Cloud Function) ───────────────────────────
+export async function listDriveFiles(query = {}) {
+  try {
+    const idToken = await getFirebaseIdToken();
+    
+    const response = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        action: 'list',
+        query,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`List files failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log(`✅ Found ${result.files?.length || 0} files in Drive`);
+    return result;
+  } catch (error) {
+    console.error("Drive list error:", error);
+    throw error;
+  }
+}
+
+// ── Delete File from Google Drive (via Cloud Function) ────────────────────────
+export async function deleteFromDrive(fileId) {
+  try {
+    const idToken = await getFirebaseIdToken();
+    
+    const response = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        action: 'delete',
+        fileId,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Delete failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log("✅ File deleted from Drive");
+    return result;
+  } catch (error) {
+    console.error("Drive delete error:", error);
+    throw error;
+  }
+}
+
+// ── Helper: Convert File to Base64 ────────────────────────────────────────────
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // FIRESTORE HELPERS
