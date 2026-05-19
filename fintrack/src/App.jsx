@@ -1,30 +1,3 @@
-// ══════════════════════════════════════════════════════════════════════════════
-// APP VERSION 1 - CLOUD FUNCTION GOOGLE DRIVE INTEGRATION
-// ══════════════════════════════════════════════════════════════════════════════
-// 
-// 🎉 MAJOR UPDATE: No More Hourly Popups!
-// 
-// CHANGES IN V1:
-// ✅ Uses firebase_v2.js with Cloud Function backend
-// ✅ Google Drive operations now handled server-side
-// ✅ Automatic token refresh (no popups after initial login!)
-// ✅ Removed all manual token management code
-// ✅ Simplified Drive API calls (uploadToDrive, deleteFromDrive, etc.)
-// 
-// WHAT WAS REMOVED:
-// ❌ getFreshDriveToken() - now handled by Cloud Function
-// ❌ ensureDriveFolder() - Cloud Function creates folders automatically
-// ❌ uploadFileToDrive() - replaced with uploadToDrive()
-// ❌ deleteFileFromDrive() - replaced with deleteFromDrive()
-// ❌ Token auto-refresh interval - Firebase ID tokens refresh automatically
-// 
-// DEPLOYMENT:
-// 1. Deploy Cloud Function (see DEPLOYMENT_GUIDE.md)
-// 2. Replace firebase.js with firebase_v2.js
-// 3. Update index.js to import App_v1
-// 
-// ══════════════════════════════════════════════════════════════════════════════
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   auth,
@@ -33,18 +6,78 @@ import {
   onAuthStateChanged,
   loadFromFirestore,
   saveToFirestore,
-  uploadToDrive,
-  downloadFromDrive,
-  listDriveFiles,
-  deleteFromDrive,
+  getFreshDriveToken,
 } from "./firebase";
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GOOGLE DRIVE API - NOW HANDLED BY CLOUD FUNCTION
+// GOOGLE DRIVE API HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
-// All Drive operations (upload, download, list, delete) are now managed by
-// the Cloud Function backend. No token management needed in frontend!
-// Import: uploadToDrive, downloadFromDrive, listDriveFiles, deleteFromDrive
+
+async function ensureDriveFolder(token, folderName, parentFolderId = null) {
+  // Check if folder exists
+  const searchQuery = parentFolderId 
+    ? `name='${folderName}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+    : `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  
+  const searchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQuery)}&fields=files(id,name)`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const searchData = await searchRes.json();
+  
+  if (searchData.files && searchData.files.length > 0) {
+    return searchData.files[0].id;
+  }
+  
+  // Create folder
+  const metadata = {
+    name: folderName,
+    mimeType: 'application/vnd.google-apps.folder',
+    ...(parentFolderId && { parents: [parentFolderId] })
+  };
+  
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(metadata)
+  });
+  
+  const createData = await createRes.json();
+  return createData.id;
+}
+
+async function uploadFileToDrive(token, file, fileName, parentFolderId) {
+  const metadata = {
+    name: fileName,
+    parents: [parentFolderId]
+  };
+  
+  const formData = new FormData();
+  formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  formData.append('file', file);
+  
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,webContentLink', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: formData
+  });
+  
+  return await response.json();
+}
+
+async function deleteFileFromDrive(token, fileId) {
+  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
 
 // ── Force Light Mode CSS Variables ──────────────────────────────────────────
 const LIGHT_MODE_STYLE = `
@@ -261,34 +294,68 @@ export default function App() {
       // If we just migrated local data, persist it to Firestore immediately
       if (migrated) saveToFirestore(firebaseUser.uid, loaded);
 
-      // ── Auto-connect Google Drive (now using Cloud Function backend) ───────
-      // Cloud Function automatically manages folders and tokens - no manual setup needed!
+      // ── Auto-connect Google Drive silently (token already held from sign-in) ──
+      // Only runs if not already connected — zero popups, uses stored token.
       const alreadyConnected = loaded?.gdriveIntegration?.connected;
       if (!alreadyConnected) {
         try {
-          // With the new Cloud Function backend, just test if Drive is authorized
-          // by making a simple list call
-          const testResult = await listDriveFiles({ pageSize: 1 });
+          // Wait a bit for token to be saved from Gmail login
+          await new Promise(resolve => setTimeout(resolve, 500));
           
-          if (testResult && !cancelled) {
-            setData(prev => {
-              const next = {
-                ...prev,
-                gdriveIntegration: {
-                  connected: true,
-                  email: firebaseUser.email || "",
-                  connectedAt: new Date().toISOString(),
-                },
-              };
-              saveToFirestore(firebaseUser.uid, next);
-              return next;
-            });
-            console.log("✅ Google Drive auto-connected successfully!");
+          const token = await getFreshDriveToken();
+          if (token) {
+            console.log("✅ Drive token found - auto-connecting Google Drive...");
+            // Find or create FinTracker folder
+            const FOLDER_NAME = "FinTracker";
+            const searchRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=name%3D'${FOLDER_NAME}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20trashed%3Dfalse&fields=files(id,name)`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            let folderId = null;
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              if (searchData.files?.length > 0) {
+                folderId = searchData.files[0].id;
+                console.log("✅ Found existing FinTracker folder");
+              } else {
+                // Create folder
+                const createRes = await fetch(
+                  "https://www.googleapis.com/drive/v3/files",
+                  {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" }),
+                  }
+                );
+                if (createRes.ok) {
+                  const created = await createRes.json();
+                  folderId = created.id;
+                  console.log("✅ Created new FinTracker folder");
+                }
+              }
+            }
+            if (folderId && !cancelled) {
+              setData(prev => {
+                const next = {
+                  ...prev,
+                  gdriveIntegration: {
+                    connected: true,
+                    email: firebaseUser.email || "",
+                    folderId,
+                    connectedAt: new Date().toISOString(),
+                  },
+                };
+                saveToFirestore(firebaseUser.uid, next);
+                return next;
+              });
+              console.log("✅ Google Drive auto-connected successfully!");
+            }
+          } else {
+            console.log("ℹ️ No Drive token available yet - Drive integration will be available in Settings");
           }
         } catch (e) {
           // Silent fail — user can manually connect from Settings → Integrations
-          // Drive will work when user uploads their first file
-          console.log("ℹ️ Drive will be available after first use");
+          console.warn("Drive auto-connect:", e);
         }
       } else {
         console.log("✅ Google Drive already connected - email:", loaded?.gdriveIntegration?.email);
@@ -369,10 +436,34 @@ export default function App() {
   }, [dataReady, autoAddBusFare]);
 
   // ── Auto Drive Token Refresh: keeps Drive connected without re-auth ───────────
-  // ── Drive Token Auto-Refresh: NO LONGER NEEDED! ─────────────────────────────
-  // With Cloud Function backend, tokens are managed server-side automatically.
-  // Firebase ID tokens refresh automatically in the background - no manual refresh needed!
-  // This entire useEffect has been removed for the new architecture.
+  useEffect(() => {
+    if (!firebaseUser) return;
+    if (!data.gdriveIntegration?.connected) return;
+
+    console.log("🔄 Drive token auto-refresh enabled (runs every 50 minutes)");
+
+    // Function to refresh Drive token silently
+    const refreshDriveToken = async () => {
+      try {
+        const token = await getFreshDriveToken();
+        if (token) {
+          console.log("✅ Drive token refreshed silently");
+        } else {
+          console.warn("⚠️ Drive token refresh failed - might need re-authentication");
+        }
+      } catch (error) {
+        console.error("❌ Drive token refresh error:", error);
+      }
+    };
+
+    // Refresh immediately on mount (to catch expired tokens)
+    refreshDriveToken();
+
+    // Then refresh every 50 minutes (token expires in ~60 minutes)
+    const refreshInterval = setInterval(refreshDriveToken, 50 * 60 * 1000);
+
+    return () => clearInterval(refreshInterval);
+  }, [firebaseUser, data.gdriveIntegration?.connected]);
 
   const totalIncome = data.transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
   const totalExpense = data.transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
@@ -3945,17 +4036,34 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     parseInt(localStorage.getItem("ft_last_auto_backup") || "0")
   );
 
-  // ── Token checking removed - Cloud Function handles authentication! ──────────
-  // With the new backend architecture, token management is automatic.
-  // No need to check token status or handle re-authentication manually.
+  // ── Check token status on component mount and when Drive connects ──────────────
+  useEffect(() => {
+    // Check if we have a valid token when component mounts or Drive connects
+    if (isConnected) {
+      getFreshDriveToken().then(token => {
+        if (token) {
+          setTokenExpired(false);
+        }
+      });
+    }
+  }, [isConnected]);
 
   function flashMsg(type, text, dur = 5000) {
     setMsg({ type, text });
     if (dur) setTimeout(() => setMsg({ type: null, text: "" }), dur);
   }
 
-  // ── Re-authenticate: Simplified with Cloud Function backend ─────────────────
-  // Now just re-signs in the user - Cloud Function handles Drive permissions automatically
+  // ── Get OAuth token — silent auto-refresh if expired ─────────────────────────
+  // Calls getFreshDriveToken which tries prompt:none silent refresh first.
+  // Only sets tokenExpired=true if user has also logged out of Google entirely.
+  async function getStoredToken() {
+    const token = await getFreshDriveToken();
+    if (token) { setTokenExpired(false); return token; }
+    setTokenExpired(true);
+    return null;
+  }
+
+  // ── Re-authenticate (fallback — only if silent refresh fails) ────────────────
   async function reAuth() {
     setStatus("reauth");
     try {
@@ -9085,9 +9193,22 @@ function BusinessPage({ data, update }) {
     setUploadingBill(true);
     
     try {
+      const token = await getFreshDriveToken();
+      if (!token) {
+        alert("Please sign in with Google to upload bills.");
+        setUploadingBill(false);
+        return;
+      }
+
       // Get the entry details
       const entry = bizData.find(e => e.id === entryId);
       if (!entry) return;
+
+      // Build folder structure: FinTracker/Business/BusinessName/Year
+      const finTrackerFolderId = await ensureDriveFolder(token, "FinTracker");
+      const businessRootId = await ensureDriveFolder(token, "Business", finTrackerFolderId);
+      const businessFolderId = await ensureDriveFolder(token, activeBiz.name, businessRootId);
+      const yearFolderId = await ensureDriveFolder(token, String(entry.year), businessFolderId);
 
       // Count existing bills for this month to number them
       const existingBills = (entry.bills || []);
@@ -9100,26 +9221,18 @@ function BusinessPage({ data, update }) {
         ? `bill_${monthName}.${fileExtension}`
         : `bill_${monthName}_${billNumber}.${fileExtension}`;
 
-      // Upload to Drive using Cloud Function (folder structure created automatically!)
-      const driveFile = await uploadToDrive(file, {
-        description: `FinTrack Business Bill - ${activeBiz.name} - ${entry.month} ${entry.year}`,
-        properties: {
-          business: activeBiz.name,
-          year: String(entry.year),
-          month: entry.month,
-          type: 'bill'
-        }
-      });
+      // Upload to Drive
+      const driveFile = await uploadFileToDrive(token, file, fileName, yearFolderId);
 
       // Save bill info to entry
       const newBill = {
-        id: driveFile.fileId,
+        id: driveFile.id,
         name: fileName,
         originalName: file.name,
-        url: driveFile.file?.webViewLink || '',
-        downloadUrl: driveFile.file?.webContentLink || '',
-        size: driveFile.file?.size || file.size,
-        mimeType: driveFile.file?.mimeType || file.type,
+        url: driveFile.webViewLink,
+        downloadUrl: driveFile.webContentLink,
+        size: driveFile.size,
+        mimeType: driveFile.mimeType,
         uploadedAt: new Date().toISOString()
       };
 
@@ -9130,11 +9243,7 @@ function BusinessPage({ data, update }) {
       alert("Bill uploaded successfully!");
     } catch (error) {
       console.error("Upload error:", error);
-      if (error.message.includes('not authorized')) {
-        alert("Please sign out and sign in again to restore Drive access.");
-      } else {
-        alert("Failed to upload bill. Please try again.");
-      }
+      alert("Failed to upload bill. Please try again.");
     } finally {
       setUploadingBill(false);
     }
@@ -9145,8 +9254,9 @@ function BusinessPage({ data, update }) {
     setBillToDelete(bill.id);
     
     try {
-      if (bill.id) {
-        await deleteFromDrive(bill.id);
+      const token = await getFreshDriveToken();
+      if (token && bill.id) {
+        await deleteFileFromDrive(token, bill.id);
       }
       
       updateBizData(d => d.map(e => 
