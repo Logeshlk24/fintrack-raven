@@ -10927,7 +10927,7 @@ function ProjectsPage({ data, update }) {
 
   // Task form state — taskTypes is now an array
   const [showAddTask, setShowAddTask] = useState(false);
-  const [taskForm, setTaskForm] = useState({ name: "", types: [], eta: "" });
+  const [taskForm, setTaskForm] = useState({ name: "", types: [], startDate: "", eta: "" });
 
   // Edit task state
   const [editTaskId, setEditTaskId] = useState(null);
@@ -10981,12 +10981,13 @@ function ProjectsPage({ data, update }) {
       taskTypes: taskForm.types.length > 0 ? taskForm.types : [],
       taskType: taskForm.types.length === 1 ? taskForm.types[0] : (taskForm.types.length > 1 ? taskForm.types.join(", ") : ""),
       completedTypes: [], // tracks which subtypes are done
+      startDate: taskForm.startDate,
       eta: taskForm.eta,
       done: false,
       createdAt: new Date().toISOString(),
     };
     update(p => ({ projectsData: (p.projectsData || []).map(pr => pr.id === project.id ? { ...pr, todos: [...(pr.todos || []), todo] } : pr) }));
-    setTaskForm({ name: "", types: [], eta: "" });
+    setTaskForm({ name: "", types: [], startDate: "", eta: "" });
     setShowAddTask(false);
   }
 
@@ -11010,7 +11011,7 @@ function ProjectsPage({ data, update }) {
     const types = t.taskTypes && t.taskTypes.length > 0
       ? t.taskTypes
       : (t.taskType ? [t.taskType] : []);
-    setEditTaskForm({ name: t.text, types, eta: t.eta || "" });
+    setEditTaskForm({ name: t.text, types, startDate: t.startDate || "", eta: t.eta || "" });
   }
 
   function saveEditTask() {
@@ -11022,6 +11023,7 @@ function ProjectsPage({ data, update }) {
           taskTypes: editTaskForm.types,
           taskType: editTaskForm.types.length === 1 ? editTaskForm.types[0] : (editTaskForm.types.join(", ")),
           completedTypes: (t.completedTypes || []).filter(ct => editTaskForm.types.includes(ct)), // remove any no longer valid
+          startDate: editTaskForm.startDate,
           eta: editTaskForm.eta
         } : t) }
       : pr
@@ -11301,9 +11303,15 @@ function ProjectsPage({ data, update }) {
                           })}
                         </div>
                       </div>
-                      <div>
-                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>ETA (Due Date)</label>
-                        <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label>
+                          <input type="date" value={taskForm.startDate} onChange={e => setTaskForm(f => ({ ...f, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>ETA (Due Date)</label>
+                          <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => { setShowAddTask(false); setTaskForm({ name: "", types: [], eta: "" }); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
@@ -11353,7 +11361,16 @@ function ProjectsPage({ data, update }) {
                                   })}
                                 </div>
                               </div>
-                              <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                                <div>
+                                  <label style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 }}>Start Date</label>
+                                  <input type="date" value={editTaskForm.startDate} onChange={e => setEditTaskForm(f => ({ ...f, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 }}>Due Date</label>
+                                  <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                                </div>
+                              </div>
                               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                 <button onClick={() => setEditTaskId(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
                                 <button onClick={saveEditTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Save</button>
@@ -11420,10 +11437,13 @@ function ProjectsPage({ data, update }) {
                                     </div>
                                   );
                                 })()}
-                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: t.eta ? 6 : 0 }}>
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: (t.startDate || t.eta) ? 6 : 0 }}>
+                                  {t.startDate && (
+                                    <span style={{ fontSize: 10, color: "#4da6ff", fontWeight: 500 }}>🚀 Start: {new Date(t.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                                  )}
                                   {t.eta
-                                    ? <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 {formatEta(t.eta)}</span>
-                                    : <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>
+                                    ? <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 Due: {formatEta(t.eta)}</span>
+                                    : (!t.startDate && <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>)
                                   }
                                 </div>
                                 {/* Time timeline progress bar — only shown when ETA is set */}
@@ -11432,10 +11452,19 @@ function ProjectsPage({ data, update }) {
                                   // Normalize due date to end of that day
                                   const due = new Date(t.eta + "T23:59:59");
                                   const isOverdue = now > due;
-                                  // Use createdAt if available, else fall back to task id (timestamp)
-                                  const createdRaw = t.createdAt ? new Date(t.createdAt) : new Date(typeof t.id === "number" ? t.id : Date.now());
+                                  // Use startDate if available, else use createdAt, else fall back to task id
+                                  let created;
+                                  if (t.startDate) {
+                                    created = new Date(t.startDate + "T00:00:00");
+                                  } else if (t.createdAt) {
+                                    created = new Date(t.createdAt);
+                                  } else {
+                                    created = new Date(typeof t.id === "number" ? t.id : Date.now());
+                                  }
                                   // If created on same day or after due, use 1 day before due as start
-                                  const created = createdRaw >= due ? new Date(due.getTime() - 86400000) : createdRaw;
+                                  if (created >= due) {
+                                    created = new Date(due.getTime() - 86400000);
+                                  }
                                   const total = due - created;
                                   const elapsed = now - created;
                                   const rawPct = total > 0 ? Math.round((elapsed / total) * 100) : 100;
