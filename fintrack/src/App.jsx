@@ -4283,7 +4283,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     setStatus("saving");
     setMsg({ type: null, text: "" });
     try {
-      const token = getStoredToken();
+      const token = await getStoredToken();
       if (!token) { setStatus(null); return; }
       const folderId       = gdrive.folderId       || await ensureFinTrackerFolder();
       const backupFolderId = gdrive.backupFolderId  || await ensureBackupFolder(folderId);
@@ -4423,7 +4423,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     setStatus("loading");
     setMsg({ type: null, text: "" });
     try {
-      const token = getStoredToken();
+      const token = await getStoredToken();
       if (!token) { setStatus(null); return; }
       const resp = await fetch(
         `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
