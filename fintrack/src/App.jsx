@@ -8040,6 +8040,7 @@ function GoalsPage({ data, update }) {
         date: today(),
         bankId: bankId || "",
         isGoalTransaction: true, // Mark as goal transaction
+        goalId: id,              // Link to goal by ID — so note edits never break the link
         excludeFromMainTransactions: excludeFromMainTx, // Hide from Money → Transactions if true
         isGoalAccountTx: excludeFromMainTx, // Exclude from net worth & bank balance calcs if goal account
       };
@@ -8388,9 +8389,9 @@ function GoalsPage({ data, update }) {
     const isTask = item.goalType === "task";
     const remaining = item.targetAmount - item.savedAmount;
 
-    // Transactions for this goal
+    // Transactions for this goal — matched by goalId (not note text, so edits do not hide them)
     const goalTxs = (data.transactions || [])
-      .filter(t => t.note && t.note === `Goal: ${item.name}`)
+      .filter(t => t.isGoalTransaction && (t.goalId === item.id || (!t.goalId && t.note === `Goal: ${item.name}`)))
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
     // Plan calculation
