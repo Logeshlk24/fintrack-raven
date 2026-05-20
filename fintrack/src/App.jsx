@@ -7911,7 +7911,7 @@ function GoalsPage({ data, update }) {
   const [selectedGoal, setSelectedGoal] = useState(null);
   // goalInnerTab: "overview" | "transactions" | "plan"
   const [goalInnerTab, setGoalInnerTab] = useState("overview");
-  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false, orderNum: "" });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   // plan inputs
@@ -7956,9 +7956,10 @@ function GoalsPage({ data, update }) {
         createdAt: today(),
         completed: false,
         excludeFromNetWorth: form.excludeFromNetWorth || false,
+        orderNum: form.orderNum !== "" ? parseInt(form.orderNum) : null,
       }]
     }));
-    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false, orderNum: "" });
     setShowAdd(false);
   }
 
@@ -7974,6 +7975,7 @@ function GoalsPage({ data, update }) {
         priority: editItem.priority,
         urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
         excludeFromNetWorth: editItem.excludeFromNetWorth || false,
+        orderNum: editItem.orderNum !== "" && editItem.orderNum != null ? parseInt(editItem.orderNum) : null,
       } : x)
     }));
     // Refresh selectedGoal if it's the one being edited
@@ -8198,6 +8200,10 @@ function GoalsPage({ data, update }) {
           </div>
         </div>
         <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Goal Number (for ordering)</label>
+          <input type="text" inputMode="numeric" placeholder="e.g. 1, 2, 3…" value={values.orderNum != null ? String(values.orderNum) : ""} onChange={e => { const v = e.target.value; if (v === "" || /^\d+$/.test(v)) onChange({ ...values, orderNum: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+        </div>
+        <div style={{ marginBottom: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
           <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
@@ -8275,6 +8281,9 @@ function GoalsPage({ data, update }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               {!isInsideFolder && <span style={{ fontSize: 13, marginRight: 2 }}>📁</span>}
+              {item.orderNum != null && (
+                <span style={{ fontSize: 11, background: "#1a6b3c", color: "#fff", borderRadius: 5, padding: "1px 7px", fontWeight: 700, flexShrink: 0 }}>#{item.orderNum}</span>
+              )}
               <span style={{ fontWeight: 600, fontSize: 14 }}>
                 {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
                 {item.name}
@@ -8300,7 +8309,7 @@ function GoalsPage({ data, update }) {
             <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {item.completed ? "↩" : "✓"}
             </button>
-            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money", urls: item.urls || (item.url ? [item.url] : [""]) })} onDelete={() => deleteItem(item.id)} />
+            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money", urls: item.urls || (item.url ? [item.url] : [""]), orderNum: item.orderNum != null ? String(item.orderNum) : "" })} onDelete={() => deleteItem(item.id)} />
           </div>
         </div>
 
@@ -8814,6 +8823,9 @@ function GoalsPage({ data, update }) {
                   {displayed.sort((a, b) => {
                     const pOrder = { high: 0, medium: 1, low: 2 };
                     if (a.completed !== b.completed) return a.completed ? 1 : -1;
+                    const aNum = a.orderNum != null ? a.orderNum : Infinity;
+                    const bNum = b.orderNum != null ? b.orderNum : Infinity;
+                    if (aNum !== bNum) return aNum - bNum;
                     return pOrder[a.priority] - pOrder[b.priority];
                   }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
                 </div>
@@ -9550,22 +9562,17 @@ function BusinessPage({ data, update }) {
                 const isImage = mimeType.startsWith("image/");
                 const isPDF = mimeType === "application/pdf" || previewBill.name.toLowerCase().endsWith(".pdf");
                 
-                if (isImage) {
-                  return (
-                    <img 
-                      src={`https://drive.google.com/uc?export=view&id=${previewBill.id}`}
-                      alt={previewBill.name}
-                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 8 }}
-                    />
-                  );
-                } else if (isPDF) {
+                if (isImage || isPDF) {
                   return (
                     <iframe
                       src={`https://drive.google.com/file/d/${previewBill.id}/preview`}
                       style={{ width: "100%", height: "600px", border: "none", borderRadius: 8 }}
                       title={previewBill.name}
+                      allow="autoplay"
                     />
                   );
+                } else if (false) {
+                  return null;
                 } else {
                   return (
                     <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)" }}>
