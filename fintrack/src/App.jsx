@@ -481,9 +481,9 @@ export default function App() {
     !t.isGoalAccountTx &&
     (!t.bankId || (!linkedBankIds.has(String(t.bankId)) && !goalAccountIds.has(String(t.bankId))))
   ).reduce((s, t) => s + Number(t.amount || 0), 0);
-  const excludedGoalSavings = (data.needsWants || []).filter(g => g.excludeFromNetWorth && !g.completed).reduce((s, g) => s + Number(g.savedAmount || 0), 0);
+  // Net worth: goals with "Exclude from Net Worth" ON → tagged isGoalAccountTx=true → skipped below
+  // Goals with "Exclude from Net Worth" OFF → tagged isGoalAccountTx=false → counted in bank balance normally
   const netWorth = ((data.banks || []).reduce((s, b) => {
-    // Only count non-goal-account transactions for real bank balances
     const inc = data.transactions.filter(t =>
       t.type === "income" &&
       String(t.bankId) === String(b.id) &&
@@ -499,7 +499,7 @@ export default function App() {
       return s - outstanding;
     }
     return s + (b.openingBalance || 0) + inc - exp;
-  }, 0) + (unlinkedIncome - unlinkedExpense)) - excludedGoalSavings;
+  }, 0) + (unlinkedIncome - unlinkedExpense));
 
   const totalAssets = data.assets.reduce((s, a) => s + Number(a.value || 0), 0);
   const totalLiabilities = data.liabilities.reduce((s, l) => s + Number(l.value || 0), 0);
