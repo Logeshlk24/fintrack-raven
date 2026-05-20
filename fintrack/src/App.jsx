@@ -4162,107 +4162,81 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
   // ── Core upload: always overwrites the same fixed file ──────────────────────
   // Uses PATCH (update) if the file already exists, POST (create) if not.
   // This keeps exactly ONE backup file: FinTracker/Backup/fintrack_backup.json
+  // It simply overwrites the same file each time
   async function uploadBackup(token, backupFolderId, silent = false) {
     const { user, ...exportable } = data;
     const payload  = { _meta: { exportedAt: new Date().toISOString(), appVersion: "fintrack_v2" }, ...exportable };
     const jsonStr  = JSON.stringify(payload, null, 2);
     const FILE_NAME = "fintrack_backup.json";
-    const FILE_NAME_BACKUP = "fintrack_backup-1.json";
 
-    console.log("🔄 Starting backup rotation...");
+    console.log("🔄 Starting backup...");
 
-    // ── Step 1: Search for existing main backup (fintrack_backup.json) ────────────
-    const searchMainRes = await fetch(
+    // ── Step 1: Search for existing backup file ────────────
+    const searchRes = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=name%3D'${FILE_NAME}'%20and%20'${backupFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id)`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if (!searchMainRes.ok) {
-      if (searchMainRes.status === 401) { setTokenExpired(true); return false; }
-      throw new Error(`Search failed (${searchMainRes.status})`);
+    if (!searchRes.ok) {
+      if (searchRes.status === 401) { setTokenExpired(true); return false; }
+      throw new Error(`Search failed (${searchRes.status})`);
     }
-    const searchMainData = await searchMainRes.json();
-    const existingMainId = searchMainData.files?.[0]?.id || null;
+    const searchData = await searchRes.json();
+    const existingFileId = searchData.files?.[0]?.id || null;
 
-    console.log(`📁 Existing main backup: ${existingMainId ? 'Found' : 'Not found'}`);
+    console.log(`📁 Existing backup: ${existingFileId ? 'Found (will overwrite)' : 'Not found (will create new)'}`);
 
-    // ── Step 2: If main backup exists, implement rotation ─────────────────────────
-    if (existingMainId) {
-      console.log("🔄 Main backup exists, starting rotation...");
+    // ── Step 2: Upload (create new or update existing) ────────────
+    let uploadRes;
+    
+    if (existingFileId) {
+      // Update existing file
+      console.log("📝 Overwriting existing backup...");
+      const boundary = "fintrack_boundary_xyz";
+      const body = [
+        `--${boundary}`,
+        "Content-Type: application/json; charset=UTF-8",
+        "",
+        JSON.stringify({ name: FILE_NAME }),
+        `--${boundary}`,
+        "Content-Type: application/json",
+        "",
+        jsonStr,
+        `--${boundary}--`,
+      ].join("\r\n");
       
-      // Search for existing backup-1 file
-      const searchBackup1Res = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name%3D'${FILE_NAME_BACKUP}'%20and%20'${backupFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id)`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      if (searchBackup1Res.ok) {
-        const searchBackup1Data = await searchBackup1Res.json();
-        const existingBackup1Id = searchBackup1Data.files?.[0]?.id || null;
-        
-        console.log(`📁 Existing backup-1: ${existingBackup1Id ? 'Found (will delete)' : 'Not found'}`);
-        
-        // Delete old backup-1 if it exists
-        if (existingBackup1Id) {
-          const deleteRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${existingBackup1Id}`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` }
-            }
-          );
-          
-          if (deleteRes.ok) {
-            console.log("✅ Old backup-1 deleted successfully");
-          } else {
-            console.warn("⚠️ Failed to delete old backup-1:", deleteRes.status);
-          }
-        }
-      }
-
-      // Rename current main backup to backup-1
-      console.log("📝 Renaming current main backup to backup-1...");
-      const renameRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${existingMainId}`,
+      uploadRes = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`,
         {
           method: "PATCH",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ name: FILE_NAME_BACKUP })
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+          body,
         }
       );
+    } else {
+      // Create new file
+      console.log("📤 Creating new backup file...");
+      const boundary = "fintrack_boundary_xyz";
+      const body = [
+        `--${boundary}`,
+        "Content-Type: application/json; charset=UTF-8",
+        "",
+        JSON.stringify({ name: FILE_NAME, parents: [backupFolderId] }),
+        `--${boundary}`,
+        "Content-Type: application/json",
+        "",
+        jsonStr,
+        `--${boundary}--`,
+      ].join("\r\n");
       
-      if (renameRes.ok) {
-        console.log("✅ Main backup renamed to backup-1 successfully");
-      } else {
-        console.error("❌ Failed to rename main backup:", renameRes.status);
-        const errorData = await renameRes.json().catch(() => ({}));
-        console.error("Error details:", errorData);
-        throw new Error(`Rename failed (${renameRes.status})`);
-      }
+      uploadRes = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+          body,
+        }
+      );
     }
-
-    // ── Step 3: Create new main backup file ───────────────────────────────────────
-    console.log("📤 Creating new main backup file...");
-    const boundary = "fintrack_boundary_xyz";
-    const body = [
-      `--${boundary}`,
-      "Content-Type: application/json; charset=UTF-8",
-      "",
-      JSON.stringify({ name: FILE_NAME, parents: [backupFolderId] }),
-      `--${boundary}`,
-      "Content-Type: application/json",
-      "",
-      jsonStr,
-      `--${boundary}--`,
-    ].join("\r\n");
-    
-    const uploadRes = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
-        body,
-      }
-    );
 
     if (!uploadRes.ok) {
       if (uploadRes.status === 401) { setTokenExpired(true); return false; }
@@ -4271,8 +4245,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
       throw new Error(err?.error?.message || `Upload failed (${uploadRes.status})`);
     }
     
-    console.log("✅ New main backup created successfully");
-    console.log("🎉 Backup rotation complete!");
+    console.log("✅ Backup saved successfully");
     
     if (!silent) flashMsg("success", `✅ Backup saved → FinTracker/Backup/${FILE_NAME}`);
     return true;
