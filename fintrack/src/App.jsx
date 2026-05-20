@@ -8713,11 +8713,15 @@ function GoalsPage({ data, update }) {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {(data.goalAccounts || []).map(acc => (
+                  {(data.goalAccounts || []).map(acc => {
+                    const accInc = (data.transactions || []).filter(t => t.type === "income" && String(t.bankId) === String(acc.id) && t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount || 0), 0);
+                    const accExp = (data.transactions || []).filter(t => t.type === "expense" && String(t.bankId) === String(acc.id) && t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount || 0), 0);
+                    const accBalance = (acc.balance || 0) + accInc - accExp;
+                    return (
                     <div key={acc.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "12px 14px", border: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text-primary)" }}>{acc.name}</div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Balance: {fmtCur(acc.balance || 0)}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Balance: {fmtCur(accBalance)}</div>
                       </div>
                       <div style={{ display: "flex", gap: 4 }}>
                         <button onClick={() => { setEditGoalAcc(acc); setGoalAccForm({ name: acc.name, balance: String(acc.balance || 0) }); }}
@@ -8730,7 +8734,8 @@ function GoalsPage({ data, update }) {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
