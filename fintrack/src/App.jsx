@@ -7911,7 +7911,7 @@ function GoalsPage({ data, update }) {
   const [selectedGoal, setSelectedGoal] = useState(null);
   // goalInnerTab: "overview" | "transactions" | "plan"
   const [goalInnerTab, setGoalInnerTab] = useState("overview");
-  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false, orderNum: "" });
+  const [form, setForm] = useState({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   // plan inputs
@@ -7956,10 +7956,9 @@ function GoalsPage({ data, update }) {
         createdAt: today(),
         completed: false,
         excludeFromNetWorth: form.excludeFromNetWorth || false,
-        orderNum: form.orderNum !== "" ? parseInt(form.orderNum) : null,
       }]
     }));
-    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false, orderNum: "" });
+    setForm({ name: "", goalType: "money", targetAmount: "", savedAmount: "", notes: "", priority: "medium", dueDate: "", urls: [""], excludeFromNetWorth: false });
     setShowAdd(false);
   }
 
@@ -7975,7 +7974,6 @@ function GoalsPage({ data, update }) {
         priority: editItem.priority,
         urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
         excludeFromNetWorth: editItem.excludeFromNetWorth || false,
-        orderNum: editItem.orderNum !== "" && editItem.orderNum != null ? parseInt(editItem.orderNum) : null,
       } : x)
     }));
     // Refresh selectedGoal if it's the one being edited
@@ -8200,10 +8198,6 @@ function GoalsPage({ data, update }) {
           </div>
         </div>
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Goal Number (for ordering)</label>
-          <input type="text" inputMode="numeric" placeholder="e.g. 1, 2, 3…" value={values.orderNum != null ? String(values.orderNum) : ""} onChange={e => { const v = e.target.value; if (v === "" || /^\d+$/.test(v)) onChange({ ...values, orderNum: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
-        </div>
-        <div style={{ marginBottom: 10 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
           <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
         </div>
@@ -8281,9 +8275,6 @@ function GoalsPage({ data, update }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               {!isInsideFolder && <span style={{ fontSize: 13, marginRight: 2 }}>📁</span>}
-              {item.orderNum != null && (
-                <span style={{ fontSize: 11, background: "#1a6b3c", color: "#fff", borderRadius: 5, padding: "1px 7px", fontWeight: 700, flexShrink: 0 }}>#{item.orderNum}</span>
-              )}
               <span style={{ fontWeight: 600, fontSize: 14 }}>
                 {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
                 {item.name}
@@ -8309,7 +8300,7 @@ function GoalsPage({ data, update }) {
             <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {item.completed ? "↩" : "✓"}
             </button>
-            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money", urls: item.urls || (item.url ? [item.url] : [""]), orderNum: item.orderNum != null ? String(item.orderNum) : "" })} onDelete={() => deleteItem(item.id)} />
+            <ThreeDotMenu onEdit={() => setEditItem({ ...item, goalType: item.goalType || "money", urls: item.urls || (item.url ? [item.url] : [""]) })} onDelete={() => deleteItem(item.id)} />
           </div>
         </div>
 
@@ -8823,9 +8814,6 @@ function GoalsPage({ data, update }) {
                   {displayed.sort((a, b) => {
                     const pOrder = { high: 0, medium: 1, low: 2 };
                     if (a.completed !== b.completed) return a.completed ? 1 : -1;
-                    const aNum = a.orderNum != null ? a.orderNum : Infinity;
-                    const bNum = b.orderNum != null ? b.orderNum : Infinity;
-                    if (aNum !== bNum) return aNum - bNum;
                     return pOrder[a.priority] - pOrder[b.priority];
                   }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
                 </div>
@@ -9011,6 +8999,34 @@ function BusinessPage({ data, update }) {
   const [uploadingBill, setUploadingBill] = useState(false);
   const [billToDelete, setBillToDelete] = useState(null);
   const [previewBill, setPreviewBill] = useState(null); // For preview modal
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  async function openPreview(bill) {
+    setPreviewBill(bill);
+    setPreviewBlobUrl(null);
+    setPreviewLoading(true);
+    try {
+      const token = await getFreshDriveToken();
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${bill.id}?alt=media`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setPreviewBlobUrl(url);
+    } catch (e) {
+      console.error("Preview fetch failed", e);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function closePreview() {
+    setPreviewBill(null);
+    if (previewBlobUrl) { URL.revokeObjectURL(previewBlobUrl); setPreviewBlobUrl(null); }
+    setPreviewLoading(false);
+  }
 
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -9530,11 +9546,11 @@ function BusinessPage({ data, update }) {
 
       {/* Preview Modal */}
       {previewBill && (
-        <div 
+        <div
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
-          onClick={() => setPreviewBill(null)}
+          onClick={() => closePreview()}
         >
-          <div 
+          <div
             style={{ background: "var(--color-background-primary)", borderRadius: 16, width: "min(900px, 95vw)", maxHeight: "90vh", overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -9547,118 +9563,54 @@ function BusinessPage({ data, update }) {
                   {previewBill.uploadedAt && ` · Uploaded ${new Date(previewBill.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
                 </div>
               </div>
-              <button
-                onClick={() => setPreviewBill(null)}
-                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: "var(--color-text-secondary)", padding: "0 8px" }}
-              >
-                ×
-              </button>
+              <button onClick={() => closePreview()} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: "var(--color-text-secondary)", padding: "0 8px" }}>×</button>
             </div>
 
             {/* Modal Body */}
-            <div style={{ flex: 1, overflow: "auto", padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb" }}>
-              {(() => {
+            <div style={{ flex: 1, overflow: "auto", padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", minHeight: 300 }}>
+              {previewLoading ? (
+                <div style={{ textAlign: "center", color: "var(--color-text-secondary)" }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>
+                  <div style={{ fontSize: 14 }}>Loading preview…</div>
+                </div>
+              ) : previewBlobUrl ? (() => {
                 const mimeType = previewBill.mimeType || "";
                 const isImage = mimeType.startsWith("image/");
                 const isPDF = mimeType === "application/pdf" || previewBill.name.toLowerCase().endsWith(".pdf");
-                
-                if (isImage || isPDF) {
-                  return (
-                    <iframe
-                      src={`https://drive.google.com/file/d/${previewBill.id}/preview`}
-                      style={{ width: "100%", height: "600px", border: "none", borderRadius: 8 }}
-                      title={previewBill.name}
-                      allow="autoplay"
-                    />
-                  );
-                } else if (false) {
-                  return null;
+                if (isImage) {
+                  return <img src={previewBlobUrl} alt={previewBill.name} style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 8 }} />;
+                } else if (isPDF) {
+                  return <iframe src={previewBlobUrl} style={{ width: "100%", height: "600px", border: "none", borderRadius: 8 }} title={previewBill.name} />;
                 } else {
                   return (
                     <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)" }}>
                       <div style={{ fontSize: 48, marginBottom: 16 }}>📄</div>
-                      <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>Preview not available</div>
-                      <div style={{ fontSize: 13, marginBottom: 20 }}>{previewBill.name}</div>
-                      <a
-                        href={previewBill.downloadUrl || previewBill.url}
-                        download={previewBill.name}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          background: "#1a6b3c",
-                          color: "#fff",
-                          padding: "10px 20px",
-                          borderRadius: 8,
-                          textDecoration: "none",
-                          fontWeight: 500
-                        }}
-                      >
-                        ⬇ Download File
-                      </a>
+                      <div style={{ fontSize: 14 }}>Preview not supported for this file type.</div>
+                      <div style={{ fontSize: 12, marginTop: 6 }}>Use Download or Open in Drive instead.</div>
                     </div>
                   );
                 }
-              })()}
+              })() : (
+                <div style={{ textAlign: "center", color: "var(--color-text-secondary)" }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
+                  <div style={{ fontSize: 14 }}>Could not load preview.</div>
+                  <div style={{ fontSize: 12, marginTop: 6 }}>Use Download or Open in Drive instead.</div>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", padding: "1rem 1.5rem", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-              <a
-                href={previewBill.downloadUrl || previewBill.url}
-                download={previewBill.name}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "#1a6b3c",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "8px 18px",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  textDecoration: "none"
-                }}
-              >
+              <a href={previewBill.downloadUrl || previewBill.url} download={previewBill.name} target="_blank" rel="noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 14, fontWeight: 500, textDecoration: "none" }}>
                 ⬇ Download
               </a>
-              <a
-                href={previewBill.url}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "#4da6ff",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "8px 18px",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  textDecoration: "none"
-                }}
-              >
+              <a href={previewBill.url} target="_blank" rel="noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#4da6ff", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 14, fontWeight: 500, textDecoration: "none" }}>
                 ↗ Open in Drive
               </a>
-              <button
-                onClick={() => setPreviewBill(null)}
-                style={{
-                  background: "none",
-                  border: "0.5px solid var(--color-border-secondary)",
-                  borderRadius: 8,
-                  padding: "8px 18px",
-                  cursor: "pointer",
-                  fontSize: 14,
-                  color: "var(--color-text-secondary)"
-                }}
-              >
+              <button onClick={() => closePreview()}
+                style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, color: "var(--color-text-secondary)" }}>
                 Close
               </button>
             </div>
@@ -10323,7 +10275,7 @@ function BusinessPage({ data, update }) {
                                 </div>
                                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                                   <button
-                                    onClick={() => setPreviewBill(bill)}
+                                    onClick={() => openPreview(bill)}
                                     style={{
                                       background: "#4da6ff",
                                       color: "#fff",
