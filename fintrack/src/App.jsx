@@ -8293,20 +8293,24 @@ function GoalsPage({ data, update }) {
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              {!isInsideFolder && <span style={{ fontSize: 13, marginRight: 2 }}>📁</span>}
+            {/* Top row: folder icon + number + chips */}
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+              {!isInsideFolder && <span style={{ fontSize: 12 }}>📁</span>}
               {item.goalNumber && (
                 <span style={{ fontSize: 11, fontWeight: 700, color: cardAccent, background: cardAccent + "18", borderRadius: 5, padding: "1px 7px", flexShrink: 0 }}>
                   #{item.goalNumber}
                 </span>
               )}
-              <span style={{ fontWeight: 600, fontSize: 14 }}>
-                {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
-                {item.name}
-              </span>
               {isTask && <span style={{ fontSize: 10, background: "#e8f0ff", color: "#4da6ff", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>✅ Task</span>}
               <span style={{ fontSize: 10, background: item.priority === "high" ? "#fdf0f0" : item.priority === "medium" ? "#fffbe0" : "#e8f5ee", color: item.priority === "high" ? "#d44" : item.priority === "medium" ? "#b8860b" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500 }}>
                 {item.priority === "high" ? "🔴" : item.priority === "medium" ? "🟡" : "🟢"} {item.priority}
+              </span>
+            </div>
+            {/* Name row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3 }}>
+                {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
+                {item.name}
               </span>
             </div>
             {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
