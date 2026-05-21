@@ -435,6 +435,201 @@ export default function App() {
     return () => clearInterval(interval);
   }, [dataReady, autoAddBusFare]);
 
+  // ── Auto Scheduled Payments: process due payments regardless of tab ──────────
+  const processScheduledPayments = useCallback((currentData) => {
+    const payments = currentData.scheduledPayments || [];
+    if (!payments.length) return;
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const nowDate = new Date(now); 
+    nowDate.setHours(0, 0, 0, 0);
+    const nowHHMM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    const updates = [];
+
+    // Helper function to get all due keys for weekly payments
+    const getAllDueKeysForWeekly = (pay, nowDate) => {
+      if (!pay.customWeekDays || pay.customWeekDays.length === 0) return [];
+      const startD = new Date(pay.startDate);
+      startD.setHours(0, 0, 0, 0);
+      const everyNWeeks = pay.customEveryN ? parseInt(pay.customEveryN) : 1;
+      const keys = [];
+      let candidate = new Date(startD);
+      while (candidate <= nowDate) {
+        for (const wd of pay.customWeekDays) {
+          const offset = (parseInt(wd) - candidate.getDay() + 7) % 7;
+          const thisDate = new Date(candidate);
+          thisDate.setDate(thisDate.getDate() + offset);
+          thisDate.setHours(0, 0, 0, 0);
+          if (thisDate >= startD && thisDate <= nowDate) {
+            const key = `${thisDate.getFullYear()}-${pad(thisDate.getMonth()+1)}-${pad(thisDate.getDate())}`;
+            keys.push(key);
+          }
+        }
+        candidate.setDate(candidate.getDate() + everyNWeeks * 7);
+      }
+      return keys;
+    };
+
+    // Helper function to get next due key
+    const getNextDueKey = (pay) => {
+      const [sy, sm] = pay.startMonth.split("-").map(Number);
+      const now = new Date();
+      const cy = now.getFullYear();
+      const cm = now.getMonth() + 1;
+      if (pay.freq === "monthly") {
+        if (cy < sy || (cy === sy && cm < sm)) return null;
+        if (pay.tenure) {
+          const elapsed = (cy - sy) * 12 + (cm - sm);
+          if (elapsed >= pay.tenure) return null;
+        }
+        return `${cy}-${cm}`;
+      } else if (pay.freq === "quarterly") {
+        let elapsed = (cy - sy) * 4 + Math.floor((cm - sm) / 3);
+        if (elapsed < 0) return null;
+        if (pay.tenure && elapsed >= pay.tenure) return null;
+        return `${cy}-${cm}`;
+      } else if (pay.freq === "annually") {
+        let elapsed = cy - sy;
+        if (elapsed < 0) return null;
+        if (pay.tenure && elapsed >= pay.tenure) return null;
+        return `${cy}-${sm}`;
+      } else if (pay.freq === "one-time") {
+        if (cy > sy || (cy === sy && cm > sm)) return null;
+        return pay.startMonth;
+      } else if (pay.freq === "custom") {
+        if (pay.customUnit === "weeks") {
+          const startD = new Date(pay.startDate);
+          startD.setHours(0, 0, 0, 0);
+          const everyNWeeks = pay.customEveryN ? parseInt(pay.customEveryN) : 1;
+          let candidate = new Date(startD);
+          let count = 0;
+          while (candidate <= now) {
+            count++;
+            if (pay.tenure && count > pay.tenure) return null;
+            if (candidate.getTime() === nowDate.getTime() || candidate < nowDate) {
+              const key = `${candidate.getFullYear()}-${pad(candidate.getMonth()+1)}-${pad(candidate.getDate())}`;
+              if (!pay.paid.includes(key)) return key;
+            }
+            candidate.setDate(candidate.getDate() + everyNWeeks * 7);
+          }
+          return null;
+        } else if (pay.customUnit === "months") {
+          const everyN = pay.customEveryN ? parseInt(pay.customEveryN) : 1;
+          let testY = sy, testM = sm;
+          let count = 0;
+          while (testY < cy || (testY === cy && testM <= cm)) {
+            count++;
+            if (pay.tenure && count > pay.tenure) return null;
+            const key = `${testY}-${testM}`;
+            if (!pay.paid.includes(key)) return key;
+            testM += everyN;
+            while (testM > 12) { testM -= 12; testY++; }
+          }
+          return null;
+        }
+      }
+      return null;
+    };
+
+    payments.forEach(pay => {
+      // For custom weekly payments with multiple days, get all due keys
+      if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
+        const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
+        allDueKeys.forEach(key => {
+          if (pay.paid.includes(key)) return;
+          const parts = key.split("-").map(Number);
+          const dueDate = new Date(parts[0], parts[1] - 1, parts[2]);
+          dueDate.setHours(0, 0, 0, 0);
+          if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
+            if (nowHHMM < pay.autoTime) return;
+          }
+          updates.push({ pay, key });
+        });
+      } else {
+        const key = getNextDueKey(pay);
+        if (!key) return;
+        let dueDate;
+        if (pay.freq === "custom" && pay.customUnit === "weeks") {
+          const parts = key.split("-").map(Number);
+          dueDate = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : null;
+        } else {
+          const [ky, km] = key.split("-").map(Number);
+          dueDate = new Date(ky, km - 1, pay.day);
+        }
+        if (!dueDate) return;
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate > nowDate) return;
+        if (pay.paid.includes(key)) return;
+        if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
+          if (nowHHMM < pay.autoTime) return;
+        }
+        updates.push({ pay, key });
+      }
+    });
+
+    if (!updates.length) return;
+
+    update(p => {
+      let scheduledPayments = p.scheduledPayments || [];
+      let transactions = p.transactions || [];
+
+      updates.forEach(({ pay, key }) => {
+        const current = scheduledPayments.find(x => x.id === pay.id);
+        if (!current || current.paid.includes(key)) return;
+
+        let txDate;
+        if (pay.freq === "custom" && pay.customUnit === "weeks" && key.split("-").length === 3) {
+          txDate = key;
+        } else {
+          const [ky, km] = key.split("-").map(Number);
+          txDate = `${ky}-${pad(km)}-${pad(pay.day)}`;
+        }
+        const txType = pay.flowType === "income" ? "income" : "expense";
+
+        const alreadyLogged = transactions.some(t => 
+          t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key
+        );
+        
+        if (!alreadyLogged) {
+          transactions = [...transactions, {
+            id: Date.now() + Math.random(),
+            type: txType,
+            amount: pay.amount,
+            category: pay.type || (txType === "income" ? "Income" : "EMI"),
+            note: pay.name + (pay.notes ? ` — ${pay.notes}` : "") + " (auto)",
+            date: txDate,
+            time: pay.autoTime || "",
+            bankId: pay.accountId || "",
+            scheduledPaymentId: pay.id,
+            scheduledPeriodKey: key,
+          }];
+        }
+
+        scheduledPayments = scheduledPayments.map(x =>
+          x.id === pay.id ? { ...x, paid: [...x.paid, key] } : x
+        );
+      });
+
+      return { scheduledPayments, transactions };
+    });
+  }, [update]);
+
+  // Run catch-up when data is ready (handles overdue payments when app opens)
+  useEffect(() => {
+    if (dataReady) processScheduledPayments(dataRef.current);
+  }, [dataReady]); // eslint-disable-line
+
+  // Run every minute to process scheduled payments at exact time
+  useEffect(() => {
+    if (!dataReady) return;
+    const interval = setInterval(() => {
+      processScheduledPayments(dataRef.current);
+    }, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [dataReady, processScheduledPayments]);
+
   // ── Auto Drive Token Refresh: keeps Drive connected without re-auth ───────────
   useEffect(() => {
     if (!firebaseUser) return;
@@ -6153,185 +6348,8 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
   }
 
-  // ── Auto-pay: mark due/overdue payments as paid and log transactions ────────
-  useEffect(() => {
-    if (!payments.length) return;
-    const now = new Date();
-    const nowDate = new Date(now); nowDate.setHours(0,0,0,0);
-    const nowHHMM = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-
-    const updates = [];
-    payments.forEach(pay => {
-      // For custom weekly payments with multiple days, get all due keys
-      if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
-        const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
-        allDueKeys.forEach(key => {
-          if (pay.paid.includes(key)) return; // already paid
-          
-          const parts = key.split("-").map(Number);
-          const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
-          dueDate.setHours(0,0,0,0);
-          
-          // If autoTime set, only trigger after that time today (or if overdue from past days)
-          if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
-            if (nowHHMM < pay.autoTime) return; // not time yet
-          }
-          
-          updates.push({ pay, key });
-        });
-      } else {
-        // Original logic for non-weekly payments
-        const key = getNextDueKey(pay);
-        if (!key) return;
-        // Determine due date from key
-        let dueDate;
-        if (pay.freq === "custom" && pay.customUnit === "weeks") {
-          const parts = key.split("-").map(Number);
-          dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
-        } else {
-          const [ky, km] = key.split("-").map(Number);
-          dueDate = new Date(ky, km-1, pay.day);
-        }
-        if (!dueDate) return;
-        dueDate.setHours(0,0,0,0);
-        if (dueDate > nowDate) return; // not due yet
-        if (pay.paid.includes(key)) return; // already paid
-        // If autoTime set, only trigger after that time today (or if overdue from past days)
-        if (pay.autoTime && dueDate.getTime() === nowDate.getTime()) {
-          if (nowHHMM < pay.autoTime) return; // not time yet
-        }
-        updates.push({ pay, key });
-      }
-    });
-
-    if (!updates.length) return;
-
-    update(p => {
-      let scheduledPayments = p.scheduledPayments || [];
-      let transactions = p.transactions || [];
-
-      updates.forEach(({ pay, key }) => {
-        const current = scheduledPayments.find(x => x.id === pay.id);
-        if (!current || current.paid.includes(key)) return;
-
-        // Derive txDate from key
-        let txDate;
-        if (pay.freq === "custom" && pay.customUnit === "weeks" && key.split("-").length === 3) {
-          txDate = key;
-        } else {
-          const [ky, km] = key.split("-").map(Number);
-          txDate = `${ky}-${pad2(km)}-${pad2(pay.day)}`;
-        }
-        const txType = pay.flowType === "income" ? "income" : "expense";
-
-        const alreadyLogged = transactions.some(t => t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key);
-        if (!alreadyLogged) {
-          transactions = [...transactions, {
-            id: Date.now() + Math.random(),
-            type: txType,
-            amount: pay.amount,
-            category: pay.type || (txType === "income" ? "Income" : "EMI"),
-            note: pay.name + (pay.notes ? ` — ${pay.notes}` : "") + " (auto)",
-            date: txDate,
-            time: pay.autoTime || "",
-            bankId: pay.accountId || "",
-            scheduledPaymentId: pay.id,
-            scheduledPeriodKey: key,
-          }];
-        }
-
-        scheduledPayments = scheduledPayments.map(x =>
-          x.id === pay.id ? { ...x, paid: [...x.paid, key] } : x
-        );
-      });
-
-      return { scheduledPayments, transactions };
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // Run once on mount — catches any overdue/today payments immediately
-
-  // Per-minute interval: auto-add scheduled payments with autoTime set
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Re-run the same auto-pay logic every minute for time-based triggers
-      const payments = data.scheduledPayments || [];
-      if (!payments.some(p => p.autoTime)) return; // skip if no timed payments
-      const now = new Date();
-      const nowDate = new Date(now); nowDate.setHours(0,0,0,0);
-      const nowHHMM = pad2(now.getHours()) + ":" + pad2(now.getMinutes());
-
-      const updates = [];
-      payments.forEach(pay => {
-        if (!pay.autoTime) return;
-        
-        // For custom weekly payments with multiple days, get all due keys
-        if (pay.freq === "custom" && pay.customUnit === "weeks" && pay.customWeekDays && pay.customWeekDays.length > 0) {
-          const allDueKeys = getAllDueKeysForWeekly(pay, nowDate);
-          allDueKeys.forEach(key => {
-            if (pay.paid.includes(key)) return;
-            
-            const parts = key.split("-").map(Number);
-            const dueDate = new Date(parts[0], parts[1]-1, parts[2]);
-            dueDate.setHours(0,0,0,0);
-            
-            if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
-            if (nowHHMM < pay.autoTime) return;
-            updates.push({ pay, key });
-          });
-        } else {
-          // Original logic for non-weekly payments
-          const key = getNextDueKey(pay);
-          if (!key) return;
-          let dueDate;
-          if (pay.freq === "custom" && pay.customUnit === "weeks") {
-            const parts = key.split("-").map(Number);
-            dueDate = parts.length === 3 ? new Date(parts[0], parts[1]-1, parts[2]) : null;
-          } else {
-            const [ky, km] = key.split("-").map(Number);
-            dueDate = new Date(ky, km-1, pay.day);
-          }
-          if (!dueDate) return;
-          dueDate.setHours(0,0,0,0);
-          if (dueDate.getTime() !== nowDate.getTime()) return; // only trigger on exact due date
-          if (pay.paid.includes(key)) return;
-          if (nowHHMM < pay.autoTime) return;
-          updates.push({ pay, key });
-        }
-      });
-
-      if (!updates.length) return;
-
-      update(p => {
-        let scheduledPayments = p.scheduledPayments || [];
-        let transactions = p.transactions || [];
-        updates.forEach(({ pay, key }) => {
-          const current = scheduledPayments.find(x => x.id === pay.id);
-          if (!current || current.paid.includes(key)) return;
-          let txDate;
-          if (pay.freq === "custom" && pay.customUnit === "weeks" && key.split("-").length === 3) {
-            txDate = key;
-          } else {
-            const [ky, km] = key.split("-").map(Number);
-            txDate = ky + "-" + pad2(km) + "-" + pad2(pay.day);
-          }
-          const txType = pay.flowType === "income" ? "income" : "expense";
-          const alreadyLogged = transactions.some(t => t.scheduledPaymentId === pay.id && t.scheduledPeriodKey === key);
-          if (!alreadyLogged) {
-            transactions = [...transactions, {
-              id: Date.now() + Math.random(), type: txType, amount: pay.amount,
-              category: pay.type || (txType === "income" ? "Income" : "EMI"),
-              note: pay.name + (pay.notes ? " — " + pay.notes : "") + " (auto)",
-              date: txDate, time: pay.autoTime, bankId: pay.accountId || "",
-              scheduledPaymentId: pay.id, scheduledPeriodKey: key,
-            }];
-          }
-          scheduledPayments = scheduledPayments.map(x => x.id === pay.id ? { ...x, paid: [...x.paid, key] } : x);
-        });
-        return { scheduledPayments, transactions };
-      });
-    }, 60000);
-    return () => clearInterval(interval);
-  }); // eslint-disable-line
+  // Note: Auto-payment processing is now handled globally in the App component,
+  // so scheduled payments are processed automatically even when this tab is not active.
 
   function deletePayment(id) {
     // Keep all past transactions including current month — only drop strictly future ones
