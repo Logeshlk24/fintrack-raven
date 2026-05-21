@@ -9994,17 +9994,11 @@ function BusinessPage({ data, update }) {
                       style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
                     <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
                     <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
-                {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
-                  <div key={s.year} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{s.year} — Gross</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "#1a6b3c" }}>{fmtCur(s.totalGross)}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 2 }}>Net</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "#4da6ff" }}>{fmtCur(s.totalNet)}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
+                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(s.totalNet)}</span>
+                    </div>
                   </div>
                 ))}
               </div>
