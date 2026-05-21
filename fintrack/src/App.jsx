@@ -7941,10 +7941,17 @@ function GoalsPage({ data, update }) {
   function addItem() {
     if (!form.name.trim()) return;
     if (form.goalType === "money" && !form.targetAmount) return;
+    // Compute next goal number within the same kind (need/want)
+    const kind = activeTab === "needs" ? "need" : "want";
+    const existingNumbers = (data.needsWants || [])
+      .filter(x => x.kind === kind)
+      .map(x => x.goalNumber || 0);
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
     update(p => ({
       needsWants: [...(p.needsWants || []), {
         id: Date.now(),
-        kind: activeTab === "needs" ? "need" : "want",
+        kind,
+        goalNumber: nextNumber,
         goalType: form.goalType || "money",
         name: form.name.trim(),
         targetAmount: parseFloat(form.targetAmount) || 0,
@@ -8246,7 +8253,7 @@ function GoalsPage({ data, update }) {
   }
 
   // ── renderItemCard — the card shown in the grid AND inside a goal folder ─────
-  function renderItemCard(item, { isInsideFolder = false } = {}) {
+  function renderItemCard(item, { isInsideFolder = false } = {}, _idx) {
     const pct = item.targetAmount > 0 ? Math.min((item.savedAmount / item.targetAmount) * 100, 100) : 0;
     const remaining = item.targetAmount - item.savedAmount;
     const cardAccent = item.kind === "need" ? "#4da6ff" : "#9b59b6";
@@ -8274,6 +8281,11 @@ function GoalsPage({ data, update }) {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {!isInsideFolder && item.goalNumber != null && (
+                <span style={{ fontSize: 10, background: cardAccent, color: "#fff", borderRadius: 4, padding: "1px 7px", fontWeight: 700, flexShrink: 0 }}>
+                  #{item.goalNumber}
+                </span>
+              )}
               {!isInsideFolder && <span style={{ fontSize: 13, marginRight: 2 }}>📁</span>}
               <span style={{ fontWeight: 600, fontSize: 14 }}>
                 {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
@@ -8812,10 +8824,12 @@ function GoalsPage({ data, update }) {
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
                   {displayed.sort((a, b) => {
-                    const pOrder = { high: 0, medium: 1, low: 2 };
                     if (a.completed !== b.completed) return a.completed ? 1 : -1;
-                    return pOrder[a.priority] - pOrder[b.priority];
-                  }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
+                    // Sort by goalNumber; goals without a number go to end
+                    const na = a.goalNumber ?? Infinity;
+                    const nb = b.goalNumber ?? Infinity;
+                    return na - nb;
+                  }).map((item, idx) => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item, {}, idx)}</div>)}
                 </div>
               )}
             </div>
@@ -9550,20 +9564,13 @@ function BusinessPage({ data, update }) {
                 const isImage = mimeType.startsWith("image/");
                 const isPDF = mimeType === "application/pdf" || previewBill.name.toLowerCase().endsWith(".pdf");
                 
-                if (isImage) {
-                  return (
-                    <img 
-                      src={`https://drive.google.com/uc?export=view&id=${previewBill.id}`}
-                      alt={previewBill.name}
-                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 8 }}
-                    />
-                  );
-                } else if (isPDF) {
+                if (isImage || isPDF) {
                   return (
                     <iframe
                       src={`https://drive.google.com/file/d/${previewBill.id}/preview`}
                       style={{ width: "100%", height: "600px", border: "none", borderRadius: 8 }}
                       title={previewBill.name}
+                      allow="autoplay"
                     />
                   );
                 } else {
