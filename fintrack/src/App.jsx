@@ -4632,12 +4632,12 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
         {sectionTitle("🗂️", "Google Drive", "Back up and restore FinTrack data directly in your Google Drive.")}
 
         {/* ── Token expired banner ─────────────────────────────────────── */}
-        {tokenExpired && !isConnected && (
+        {tokenExpired && (
           <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 20 }}>🔑</span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e" }}>Drive sign-in needed</div>
-              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>Looks like you signed out of Google. Click Sign in to reconnect Drive — takes 2 seconds.</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e" }}>Drive token expired</div>
+              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>Your Drive session expired. Click Sign in to reconnect — takes 2 seconds.</div>
             </div>
             <button
               onClick={reAuth}
@@ -4658,9 +4658,9 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
             <div style={{ fontWeight: 600, fontSize: 14 }}>Google Drive</div>
             {isConnected ? (
               <>
-                <div style={{ fontSize: 12, color: "#1a6b3c", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
-                  Connected · {gdrive.email}
+                <div style={{ fontSize: 12, color: tokenExpired ? "#b45309" : "#1a6b3c", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: tokenExpired ? "#f59e0b" : "#1a6b3c", display: "inline-block" }} />
+                  {tokenExpired ? "Token expired · " : "Connected · "}{gdrive.email}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
                   📁 All backups saved inside <strong>FinTracker/Backup/</strong>
