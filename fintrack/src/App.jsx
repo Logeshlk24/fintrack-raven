@@ -10410,6 +10410,39 @@ function BusinessPage({ data, update }) {
                           </div>
                         )}
                       </div>
+
+                      {/* Notes Section */}
+                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)" }}>📝 Notes</span>
+                        </div>
+                        <textarea
+                          key={`notes-${entry.id}`}
+                          defaultValue={entry.notes || ""}
+                          placeholder="Add any notes for this month…"
+                          rows={3}
+                          onBlur={ev => {
+                            const val = ev.target.value;
+                            updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, notes: val }));
+                          }}
+                          style={{
+                            width: "100%",
+                            boxSizing: "border-box",
+                            resize: "vertical",
+                            fontSize: 13,
+                            color: "var(--color-text-primary)",
+                            background: "var(--color-background-secondary)",
+                            border: "0.5px solid var(--color-border-secondary)",
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                            fontFamily: "inherit",
+                            lineHeight: 1.5,
+                            outline: "none",
+                          }}
+                          onFocus={ev => { ev.target.style.border = "1.5px solid #4da6ff"; ev.target.style.background = "#fff"; }}
+                          onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
+                        />
+                      </div>
                     </div>
                   );
                 }
