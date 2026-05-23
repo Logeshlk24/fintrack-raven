@@ -5084,6 +5084,15 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
     setStatus("connecting");
     setMsg({ type: null, text: "" });
     try {
+      // First check if we have a valid token
+      const token = await getStoredToken();
+      if (!token) {
+        // No valid token - user needs to sign in with Google
+        flashMsg("error", "❌ Please sign in with Google first. Click your profile → Sign in with Google.");
+        setStatus(null);
+        return;
+      }
+
       const folderId       = await ensureFinTrackerFolder();
       const backupFolderId = await ensureBackupFolder(folderId);
       update(() => ({
@@ -5430,6 +5439,28 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Token expired re-auth prompt */}
+      {tokenExpired && !isConnected && (
+        <div style={{ ...cardStyle, background: "#fef3c7", border: "1px solid #f59e0b", marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <span style={{ fontSize: 24 }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: "#92400e" }}>Google Drive Token Expired</div>
+              <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>
+                Your authentication has expired. Sign in again to reconnect Drive.
+              </div>
+            </div>
+          </div>
+          <button
+            style={{ ...btnBase, background: "#f59e0b", color: "#fff", width: "100%" }}
+            onClick={reAuth}
+            disabled={status === "reauth"}
+          >
+            {status === "reauth" ? "Signing in…" : "Sign in with Google"}
+          </button>
         </div>
       )}
 
