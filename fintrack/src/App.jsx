@@ -4196,7 +4196,7 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   // Redirect legacy tab values to new names
   const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
 
-  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "backup", "integrations", "docs"];
+  const settingsTabs   = ["profile", "features", "money", "categories", "projects", "backup", "docs"];
   const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Backup", "Docs"];
 
   return (
