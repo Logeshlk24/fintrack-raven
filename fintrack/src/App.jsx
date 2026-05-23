@@ -10976,60 +10976,101 @@ function BusinessPage({ data, update }) {
 }
 // ─── Docs Page ────────────────────────────────────────────────────────────────
 function DocsPage({ data, update }) {
+  // Navigation: null = root, folderId = inside folder, { folderId, subId } = inside subfolder
   const folders = data.docsFolders || [];
 
-  const [selectedFolder, setSelectedFolder] = useState(null);
-  const [showAddFolder,  setShowAddFolder]  = useState(false);
-  const [newFolderName,  setNewFolderName]  = useState("");
-  const [renamingFolder, setRenamingFolder] = useState(null);
-  const [uploadingDoc,   setUploadingDoc]   = useState(false);
-  const [deletingDoc,    setDeletingDoc]    = useState(null);
-  const [previewDoc,     setPreviewDoc]     = useState(null);
+  // Level state
+  const [selectedFolder,    setSelectedFolder]    = useState(null); // folder id
+  const [selectedSub,       setSelectedSub]       = useState(null); // subfolder id
+
+  // Add/rename state — folders
+  const [showAddFolder,     setShowAddFolder]     = useState(false);
+  const [newFolderName,     setNewFolderName]     = useState("");
+  const [renamingFolder,    setRenamingFolder]    = useState(null); // { id, value }
+
+  // Add/rename state — subfolders
+  const [showAddSub,        setShowAddSub]        = useState(false);
+  const [newSubName,        setNewSubName]        = useState("");
+  const [renamingSub,       setRenamingSub]       = useState(null); // { id, value }
+
+  // Upload / delete / preview
+  const [uploadingDoc,      setUploadingDoc]      = useState(false);
+  const [deletingDoc,       setDeletingDoc]       = useState(null);
+  const [previewDoc,        setPreviewDoc]        = useState(null);
 
   const activeFolder = folders.find(f => f.id === selectedFolder) || null;
-  const docs = activeFolder ? (activeFolder.docs || []) : [];
+  const subfolders   = activeFolder ? (activeFolder.subfolders || []) : [];
+  const activeSub    = subfolders.find(s => s.id === selectedSub) || null;
+  const docs         = activeSub ? (activeSub.docs || []) : [];
 
+  // ── helpers ──────────────────────────────────────────────────────────────
   function updateFolders(fn) {
     update(p => ({ docsFolders: fn(p.docsFolders || []) }));
   }
+  function updateSubfolders(fn) {
+    updateFolders(fs => fs.map(f => f.id === selectedFolder ? { ...f, subfolders: fn(f.subfolders || []) } : f));
+  }
+  function updateDocs(fn) {
+    updateSubfolders(ss => ss.map(s => s.id === selectedSub ? { ...s, docs: fn(s.docs || []) } : s));
+  }
 
+  // ── folder CRUD ───────────────────────────────────────────────────────────
   function addFolder() {
-    const name = newFolderName.trim();
-    if (!name) return;
-    const folder = { id: "docf_" + Date.now(), name, docs: [], createdAt: new Date().toISOString() };
-    updateFolders(fs => [...fs, folder]);
+    const name = newFolderName.trim(); if (!name) return;
+    const f = { id: "docf_" + Date.now(), name, subfolders: [], createdAt: new Date().toISOString() };
+    updateFolders(fs => [...fs, f]);
     setNewFolderName(""); setShowAddFolder(false);
-    setSelectedFolder(folder.id);
+    setSelectedFolder(f.id);
   }
-
   function deleteFolder(id) {
-    if (!confirm("Delete this folder and all its documents?")) return;
+    if (!confirm("Delete this folder and all its contents?")) return;
     updateFolders(fs => fs.filter(f => f.id !== id));
-    if (selectedFolder === id) setSelectedFolder(null);
+    if (selectedFolder === id) { setSelectedFolder(null); setSelectedSub(null); }
   }
-
-  function renameFolder(id, newName) {
-    const n = newName.trim(); if (!n) return;
+  function renameFolder(id, val) {
+    const n = val.trim(); if (!n) return;
     updateFolders(fs => fs.map(f => f.id === id ? { ...f, name: n } : f));
     setRenamingFolder(null);
   }
 
+  // ── subfolder CRUD ────────────────────────────────────────────────────────
+  function addSub() {
+    const name = newSubName.trim(); if (!name) return;
+    const s = { id: "docs_" + Date.now(), name, docs: [], createdAt: new Date().toISOString() };
+    updateSubfolders(ss => [...ss, s]);
+    setNewSubName(""); setShowAddSub(false);
+    setSelectedSub(s.id);
+  }
+  function deleteSub(id) {
+    if (!confirm("Delete this subfolder and all its documents?")) return;
+    updateSubfolders(ss => ss.filter(s => s.id !== id));
+    if (selectedSub === id) setSelectedSub(null);
+  }
+  function renameSub(id, val) {
+    const n = val.trim(); if (!n) return;
+    updateSubfolders(ss => ss.map(s => s.id === id ? { ...s, name: n } : s));
+    setRenamingSub(null);
+  }
+
+  // ── doc upload / delete ───────────────────────────────────────────────────
   async function uploadDoc(file) {
-    if (!activeFolder || !file) return;
+    if (!activeFolder || !activeSub || !file) return;
     setUploadingDoc(true);
     try {
       const token = await getFreshDriveToken();
       if (!token) { alert("Please sign in with Google to upload documents."); return; }
-      const finTrackerFolderId = await ensureDriveFolder(token, "FinTracker");
-      const docsRootId         = await ensureDriveFolder(token, "Docs", finTrackerFolderId);
-      const folderDriveId      = await ensureDriveFolder(token, activeFolder.name, docsRootId);
-      const ext      = file.name.split(".").pop();
-      const baseName = file.name.replace(/\.[^/.]+$/, "");
-      const count    = docs.length + 1;
-      const fileName = count === 1 ? file.name : `${baseName}_${count}.${ext}`;
-      const driveFile = await uploadFileToDrive(token, file, fileName, folderDriveId);
+      // Drive path: FinTracker/Docs/<Folder>/<Subfolder>/
+      const finTrackerId  = await ensureDriveFolder(token, "FinTracker");
+      const docsRootId    = await ensureDriveFolder(token, "Docs",           finTrackerId);
+      const folderDriveId = await ensureDriveFolder(token, activeFolder.name, docsRootId);
+      const subDriveId    = await ensureDriveFolder(token, activeSub.name,   folderDriveId);
+      const count         = docs.length + 1;
+      const ext           = file.name.split(".").pop();
+      const base          = file.name.replace(/\.[^/.]+$/, "");
+      const fileName      = count === 1 ? file.name : `${base}_${count}.${ext}`;
+      const driveFile     = await uploadFileToDrive(token, file, fileName, subDriveId);
       const newDoc = { id: driveFile.id, name: fileName, originalName: file.name, url: driveFile.webViewLink, downloadUrl: driveFile.webContentLink, size: driveFile.size, mimeType: driveFile.mimeType, uploadedAt: new Date().toISOString() };
-      updateFolders(fs => fs.map(f => f.id === selectedFolder ? { ...f, docs: [...(f.docs || []), newDoc] } : f));
+      updateDocs(ds => [...ds, newDoc]);
       alert("Document uploaded successfully!");
     } catch (err) {
       console.error("Doc upload error:", err);
@@ -11045,148 +11086,243 @@ function DocsPage({ data, update }) {
     try {
       const token = await getFreshDriveToken();
       if (token && doc.id) await deleteFileFromDrive(token, doc.id);
-      updateFolders(fs => fs.map(f => f.id === selectedFolder ? { ...f, docs: (f.docs || []).filter(d => d.id !== doc.id) } : f));
+      updateDocs(ds => ds.filter(d => d.id !== doc.id));
     } catch (err) {
       console.error("Doc delete error:", err);
-      updateFolders(fs => fs.map(f => f.id === selectedFolder ? { ...f, docs: (f.docs || []).filter(d => d.id !== doc.id) } : f));
+      updateDocs(ds => ds.filter(d => d.id !== doc.id));
     } finally {
       setDeletingDoc(null);
     }
   }
 
   function getFileIcon(mimeType, name) {
-    const m = (mimeType || "").toLowerCase();
-    const n = (name || "").toLowerCase();
-    if (m.includes("pdf") || n.endsWith(".pdf")) return "📕";
-    if (m.includes("word") || n.endsWith(".doc") || n.endsWith(".docx")) return "📘";
-    if (m.includes("sheet") || n.endsWith(".xls") || n.endsWith(".xlsx")) return "📗";
-    if (m.includes("presentation") || n.endsWith(".ppt") || n.endsWith(".pptx")) return "📙";
-    if (m.includes("image") || /\.(png|jpg|jpeg|gif|webp|svg)$/.test(n)) return "🖼️";
-    if (m.includes("zip") || /\.(zip|rar|7z)$/.test(n)) return "🗜️";
-    if (m.includes("text") || n.endsWith(".txt")) return "📝";
+    const m = (mimeType || "").toLowerCase(), n = (name || "").toLowerCase();
+    if (m.includes("pdf")          || n.endsWith(".pdf"))  return "📕";
+    if (m.includes("word")         || n.endsWith(".doc")  || n.endsWith(".docx")) return "📘";
+    if (m.includes("sheet")        || n.endsWith(".xls")  || n.endsWith(".xlsx")) return "📗";
+    if (m.includes("presentation") || n.endsWith(".ppt")  || n.endsWith(".pptx")) return "📙";
+    if (m.includes("image")        || /\.(png|jpg|jpeg|gif|webp|svg)$/.test(n))   return "🖼️";
+    if (m.includes("zip")          || /\.(zip|rar|7z)$/.test(n))                  return "🗜️";
+    if (m.includes("text")         || n.endsWith(".txt"))  return "📝";
     return "📄";
   }
 
-  const btnBase = { border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6 };
+  // ── shared styles ─────────────────────────────────────────────────────────
+  const btnBase   = { border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6 };
   const cardStyle = { background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 14, padding: "20px 22px", marginBottom: 20 };
 
-  return (
-    <div style={{ maxWidth: 860, margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ marginBottom: 22 }}>
-        {selectedFolder ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <button onClick={() => setSelectedFolder(null)} style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", padding: "6px 12px", fontSize: 12 }}>← Back</button>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>🗂️ {activeFolder?.name}</h2>
-          </div>
+  // ── grid card (shared for folders + subfolders) ───────────────────────────
+  function GridCard({ emoji, name, sub, isRenaming, renamingVal, onRenameChange, onRenameKey, onRenameBlur, onClick, onRename, onDelete }) {
+    return (
+      <div onClick={onClick}
+        style={{ position: "relative", padding: "18px 16px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, cursor: "pointer", userSelect: "none" }}
+        onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.1)"}
+        onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+        <div style={{ fontSize: 30, marginBottom: 8 }}>{emoji}</div>
+        {isRenaming ? (
+          <input autoFocus value={renamingVal} onClick={e => e.stopPropagation()}
+            onChange={onRenameChange}
+            onKeyDown={onRenameKey}
+            onBlur={onRenameBlur}
+            style={{ width: "100%", fontSize: 13, fontWeight: 600, padding: "2px 4px", borderRadius: 4, border: "1px solid #1a6b3c", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
         ) : (
+          <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+        )}
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>{sub}</div>
+        <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 2 }} onClick={e => e.stopPropagation()}>
+          <button onClick={onRename} title="Rename" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2, opacity: 0.5 }}>✏️</button>
+          <button onClick={onDelete} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2, opacity: 0.5 }}>🗑️</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── add-item input row (shared) ───────────────────────────────────────────
+  function AddRow({ value, onChange, onConfirm, onCancel, placeholder }) {
+    return (
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, padding: "12px 14px", background: "var(--color-background-secondary)", borderRadius: 10 }}>
+        <input autoFocus value={value} onChange={e => onChange(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") onConfirm(); if (e.key === "Escape") onCancel(); }}
+          placeholder={placeholder}
+          style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--color-border-primary)", fontSize: 14, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+        <button onClick={onConfirm} style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }}>Create</button>
+      </div>
+    );
+  }
+
+  // ── breadcrumb ────────────────────────────────────────────────────────────
+  function Breadcrumb() {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
+        <button onClick={() => { setSelectedFolder(null); setSelectedSub(null); }}
+          style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
+          🗂️ Docs
+        </button>
+        {activeFolder && (
           <>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>🗂️ Docs</h2>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--color-text-secondary)" }}>Organise and store your documents in folders, backed up to Google Drive.</p>
+            <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+            <button onClick={() => setSelectedSub(null)}
+              style={{ ...btnBase, background: selectedSub ? "var(--color-background-secondary)" : "#e8f5ee", color: selectedSub ? "var(--color-text-primary)" : "#1a6b3c", padding: "5px 10px", fontSize: 12 }}>
+              📁 {activeFolder.name}
+            </button>
+          </>
+        )}
+        {activeSub && (
+          <>
+            <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+            <span style={{ ...btnBase, background: "#e8f5ee", color: "#1a6b3c", padding: "5px 10px", fontSize: 12 }}>
+              📂 {activeSub.name}
+            </span>
           </>
         )}
       </div>
+    );
+  }
 
-      {/* ── Folder grid ── */}
+  // ── total doc count helper ────────────────────────────────────────────────
+  function folderDocCount(folder) {
+    return (folder.subfolders || []).reduce((s, sub) => s + (sub.docs || []).length, 0);
+  }
+  function subDocCount(sub) { return (sub.docs || []).length; }
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+
+      {/* ══ LEVEL 0: Root — folder grid ══════════════════════════════════════ */}
       {!selectedFolder && (
-        <div style={cardStyle}>
+        <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>Folders</span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>🗂️ Docs</h2>
+              <p style={{ margin: "3px 0 0", fontSize: 13, color: "var(--color-text-secondary)" }}>Organise documents in folders and subfolders, synced to Google Drive.</p>
+            </div>
             <button onClick={() => setShowAddFolder(v => !v)} style={{ ...btnBase, background: showAddFolder ? "#fee2e2" : "#1a6b3c", color: "#fff" }}>
               {showAddFolder ? "✕ Cancel" : "+ New Folder"}
             </button>
           </div>
 
-          {showAddFolder && (
-            <div style={{ display: "flex", gap: 8, marginBottom: 16, padding: "12px 14px", background: "var(--color-background-secondary)", borderRadius: 10 }}>
-              <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") addFolder(); if (e.key === "Escape") { setShowAddFolder(false); setNewFolderName(""); } }}
-                placeholder="Folder name…"
-                style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--color-border-primary)", fontSize: 14, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-              <button onClick={addFolder} style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }}>Create</button>
-            </div>
-          )}
-
-          {folders.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
-              No folders yet. Click <strong>+ New Folder</strong> to get started.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 }}>
-              {folders.map(folder => (
-                <div key={folder.id} onClick={() => setSelectedFolder(folder.id)}
-                  style={{ position: "relative", padding: "18px 16px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, cursor: "pointer", userSelect: "none" }}
-                  onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.1)"}
-                  onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
-                  <div style={{ fontSize: 30, marginBottom: 8 }}>📁</div>
-                  {renamingFolder?.id === folder.id ? (
-                    <input autoFocus value={renamingFolder.value} onClick={e => e.stopPropagation()}
-                      onChange={e => setRenamingFolder(r => ({ ...r, value: e.target.value }))}
-                      onKeyDown={e => { e.stopPropagation(); if (e.key === "Enter") renameFolder(folder.id, renamingFolder.value); if (e.key === "Escape") setRenamingFolder(null); }}
-                      onBlur={() => renameFolder(folder.id, renamingFolder.value)}
-                      style={{ width: "100%", fontSize: 13, fontWeight: 600, padding: "2px 4px", borderRadius: 4, border: "1px solid #1a6b3c", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-                  ) : (
-                    <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</div>
-                  )}
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>{(folder.docs || []).length} doc{(folder.docs || []).length !== 1 ? "s" : ""}</div>
-                  <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 2 }} onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setRenamingFolder({ id: folder.id, value: folder.name })} title="Rename" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2, opacity: 0.5 }}>✏️</button>
-                    <button onClick={() => deleteFolder(folder.id)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2, opacity: 0.5 }}>🗑️</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          <div style={cardStyle}>
+            {showAddFolder && (
+              <AddRow value={newFolderName} onChange={setNewFolderName} onConfirm={addFolder}
+                onCancel={() => { setShowAddFolder(false); setNewFolderName(""); }} placeholder="Folder name…" />
+            )}
+            {folders.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
+                No folders yet. Click <strong>+ New Folder</strong> to get started.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 }}>
+                {folders.map(folder => (
+                  <GridCard key={folder.id}
+                    emoji="📁" name={folder.name}
+                    sub={`${(folder.subfolders || []).length} subfolder${(folder.subfolders || []).length !== 1 ? "s" : ""} · ${folderDocCount(folder)} doc${folderDocCount(folder) !== 1 ? "s" : ""}`}
+                    isRenaming={renamingFolder?.id === folder.id} renamingVal={renamingFolder?.value || ""}
+                    onRenameChange={e => setRenamingFolder(r => ({ ...r, value: e.target.value }))}
+                    onRenameKey={e => { e.stopPropagation(); if (e.key === "Enter") renameFolder(folder.id, renamingFolder.value); if (e.key === "Escape") setRenamingFolder(null); }}
+                    onRenameBlur={() => renameFolder(folder.id, renamingFolder?.value || "")}
+                    onClick={() => setSelectedFolder(folder.id)}
+                    onRename={() => setRenamingFolder({ id: folder.id, value: folder.name })}
+                    onDelete={() => deleteFolder(folder.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
-      {/* ── Document list ── */}
-      {selectedFolder && activeFolder && (
-        <div style={cardStyle}>
+      {/* ══ LEVEL 1: Inside a folder — subfolder grid ════════════════════════ */}
+      {selectedFolder && !selectedSub && activeFolder && (
+        <>
+          <Breadcrumb />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>Documents · {docs.length} file{docs.length !== 1 ? "s" : ""}</span>
-            <label style={{ cursor: uploadingDoc ? "not-allowed" : "pointer" }}>
-              <input type="file" accept="*/*" style={{ display: "none" }} disabled={uploadingDoc}
-                onChange={async e => { const file = e.target.files?.[0]; if (file) await uploadDoc(file); e.target.value = ""; }} />
-              <span style={{ ...btnBase, background: uploadingDoc ? "#ccc" : "#1a6b3c", color: "#fff", pointerEvents: uploadingDoc ? "none" : "auto" }}>
-                {uploadingDoc ? "⏳ Uploading…" : "+ Upload Doc"}
-              </span>
-            </label>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📁 {activeFolder.name}</h2>
+            <button onClick={() => setShowAddSub(v => !v)} style={{ ...btnBase, background: showAddSub ? "#fee2e2" : "#1a6b3c", color: "#fff" }}>
+              {showAddSub ? "✕ Cancel" : "+ New Subfolder"}
+            </button>
           </div>
 
-          {docs.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
-              No documents yet. Click <strong>+ Upload Doc</strong> to add files.
+          <div style={cardStyle}>
+            {showAddSub && (
+              <AddRow value={newSubName} onChange={setNewSubName} onConfirm={addSub}
+                onCancel={() => { setShowAddSub(false); setNewSubName(""); }} placeholder="Subfolder name…" />
+            )}
+            {subfolders.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
+                No subfolders yet. Click <strong>+ New Subfolder</strong> to organise your documents.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 }}>
+                {subfolders.map(sub => (
+                  <GridCard key={sub.id}
+                    emoji="📂" name={sub.name}
+                    sub={`${subDocCount(sub)} doc${subDocCount(sub) !== 1 ? "s" : ""}`}
+                    isRenaming={renamingSub?.id === sub.id} renamingVal={renamingSub?.value || ""}
+                    onRenameChange={e => setRenamingSub(r => ({ ...r, value: e.target.value }))}
+                    onRenameKey={e => { e.stopPropagation(); if (e.key === "Enter") renameSub(sub.id, renamingSub.value); if (e.key === "Escape") setRenamingSub(null); }}
+                    onRenameBlur={() => renameSub(sub.id, renamingSub?.value || "")}
+                    onClick={() => setSelectedSub(sub.id)}
+                    onRename={() => setRenamingSub({ id: sub.id, value: sub.name })}
+                    onDelete={() => deleteSub(sub.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ══ LEVEL 2: Inside a subfolder — document list ══════════════════════ */}
+      {selectedFolder && selectedSub && activeSub && (
+        <>
+          <Breadcrumb />
+          <div style={cardStyle}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Documents · {docs.length} file{docs.length !== 1 ? "s" : ""}</span>
+              <label style={{ cursor: uploadingDoc ? "not-allowed" : "pointer" }}>
+                <input type="file" accept="*/*" style={{ display: "none" }} disabled={uploadingDoc}
+                  onChange={async e => { const file = e.target.files?.[0]; if (file) await uploadDoc(file); e.target.value = ""; }} />
+                <span style={{ ...btnBase, background: uploadingDoc ? "#ccc" : "#1a6b3c", color: "#fff", pointerEvents: uploadingDoc ? "none" : "auto" }}>
+                  {uploadingDoc ? "⏳ Uploading…" : "+ Upload Doc"}
+                </span>
+              </label>
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {docs.map(doc => (
-                <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--color-background-secondary)", borderRadius: 10, border: "0.5px solid var(--color-border-tertiary)" }}>
-                  <span style={{ fontSize: 22, flexShrink: 0 }}>{getFileIcon(doc.mimeType, doc.name)}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                      {doc.size ? `${(doc.size / 1024).toFixed(1)} KB` : ""}
-                      {doc.uploadedAt && ` · ${new Date(doc.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
+
+            {docs.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
+                No documents yet. Click <strong>+ Upload Doc</strong> to add files.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {docs.map(doc => (
+                  <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--color-background-secondary)", borderRadius: 10, border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <span style={{ fontSize: 22, flexShrink: 0 }}>{getFileIcon(doc.mimeType, doc.name)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                        {doc.size ? `${(doc.size / 1024).toFixed(1)} KB` : ""}
+                        {doc.uploadedAt && ` · ${new Date(doc.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => setPreviewDoc(doc)} style={{ ...btnBase, background: "#4da6ff", color: "#fff", padding: "5px 10px", fontSize: 11 }}>👁 Preview</button>
+                      <a href={doc.downloadUrl || doc.url} download={doc.name} target="_blank" rel="noreferrer"
+                        style={{ ...btnBase, background: "#1a6b3c", color: "#fff", padding: "5px 10px", fontSize: 11, textDecoration: "none" }}>⬇ Download</a>
+                      <button onClick={() => deleteDoc(doc)} disabled={deletingDoc === doc.id}
+                        style={{ ...btnBase, background: "#fee2e2", color: "#ef4444", padding: "5px 10px", fontSize: 11, opacity: deletingDoc === doc.id ? 0.5 : 1 }}>
+                        {deletingDoc === doc.id ? "…" : "🗑️"}
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button onClick={() => setPreviewDoc(doc)} style={{ ...btnBase, background: "#4da6ff", color: "#fff", padding: "5px 10px", fontSize: 11 }}>👁 Preview</button>
-                    <a href={doc.downloadUrl || doc.url} download={doc.name} target="_blank" rel="noreferrer"
-                      style={{ ...btnBase, background: "#1a6b3c", color: "#fff", padding: "5px 10px", fontSize: 11, textDecoration: "none" }}>⬇ Download</a>
-                    <button onClick={() => deleteDoc(doc)} disabled={deletingDoc === doc.id}
-                      style={{ ...btnBase, background: "#fee2e2", color: "#ef4444", padding: "5px 10px", fontSize: 11, opacity: deletingDoc === doc.id ? 0.5 : 1 }}>
-                      {deletingDoc === doc.id ? "…" : "🗑️"}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop: 16, fontSize: 11, color: "var(--color-text-secondary)" }}>
+              🔒 Files saved in <strong>FinTracker/Docs/{activeFolder?.name}/{activeSub.name}/</strong> on your Google Drive.
             </div>
-          )}
-          <div style={{ marginTop: 16, fontSize: 11, color: "var(--color-text-secondary)" }}>
-            🔒 Files saved in <strong>FinTracker/Docs/{activeFolder.name}/</strong> on your Google Drive.
           </div>
-        </div>
+        </>
       )}
 
       {/* ── Preview modal ── */}
