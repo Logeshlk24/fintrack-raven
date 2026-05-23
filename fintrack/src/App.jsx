@@ -8896,14 +8896,18 @@ function GoalsPage({ data, update }) {
     return (
       <div>
         {/* Breadcrumb */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-          <button onClick={closeGoal} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#1a6b3c", fontWeight: 500, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
-            ← Goals
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
+          <button onClick={closeGoal} style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
+            🎯 Goals
           </button>
-          <span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>/</span>
-          <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{activeTab === "needs" ? "🏠 Needs" : "✨ Wants"}</span>
-          <span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>/</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>📁 {item.name}</span>
+          <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+          <button onClick={closeGoal} style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
+            {activeTab === "needs" ? "🏠 Needs" : "✨ Wants"}
+          </button>
+          <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+          <span style={{ ...btnBase, background: "#e8f5ee", color: "#1a6b3c", padding: "5px 10px", fontSize: 12 }}>
+            📁 {item.name}
+          </span>
         </div>
 
         {/* Inner tabs */}
@@ -10176,18 +10180,45 @@ function BusinessPage({ data, update }) {
         </div>
       )}
 
-      {/* ── HEADER / BREADCRUMB ── */}
+      {/* ── BREADCRUMB ── */}
+      {(selectedBiz || selectedYear || selectedMonth) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
+          <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }}
+            style={{ ...btnBase, background: !selectedBiz ? "#e8f5ee" : "var(--color-background-secondary)", color: !selectedBiz ? "#1a6b3c" : "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
+            💼 Business
+          </button>
+          {selectedBiz && (
+            <>
+              <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+              <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }}
+                style={{ ...btnBase, background: !selectedYear ? "#e8f5ee" : "var(--color-background-secondary)", color: !selectedYear ? "#1a6b3c" : "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
+                📊 {activeBiz?.name || "Business"}
+              </button>
+            </>
+          )}
+          {selectedYear && (
+            <>
+              <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+              <button onClick={() => { setSelectedMonth(null); setSelectedNonDayMonth(null); }}
+                style={{ ...btnBase, background: !selectedMonth ? "#e8f5ee" : "var(--color-background-secondary)", color: !selectedMonth ? "#1a6b3c" : "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
+                📅 {selectedYear}
+              </button>
+            </>
+          )}
+          {selectedMonth && isDayWise && activeMonthEntry && (
+            <>
+              <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+              <span style={{ ...btnBase, background: "#e8f5ee", color: "#1a6b3c", padding: "5px 10px", fontSize: 12 }}>
+                📆 {activeMonthEntry.month}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── HEADER ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {selectedBiz && !selectedYear && (
-            <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Back</button>
-          )}
-          {selectedYear && !selectedMonth && (
-            <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Years</button>
-          )}
-          {selectedMonth && isDayWise && (
-            <button onClick={() => { setSelectedMonth(null); setShowAddDay(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>← Months</button>
-          )}
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
             {!selectedBiz ? "Business"
               : !selectedYear
@@ -12047,6 +12078,20 @@ function ProjectsPage({ data, update }) {
 
   return (
     <div>
+      {/* Breadcrumb */}
+      {project && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
+          <button onClick={() => { setSelectedProject(null); setShowAddTask(false); setEditTaskId(null); }}
+            style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
+            📋 Projects
+          </button>
+          <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+          <span style={{ ...btnBase, background: "#e8f5ee", color: "#1a6b3c", padding: "5px 10px", fontSize: 12 }}>
+            📁 {project.name}
+          </span>
+        </div>
+      )}
+      
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
