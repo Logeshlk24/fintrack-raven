@@ -4197,7 +4197,7 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   const effectiveTab = (tab === "trading" || tab === "accounts") ? "money" : tab;
 
   const settingsTabs   = ["profile", "features", "money", "categories", "projects", "backup", "integrations", "docs"];
-  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Backup", "Integrations", "Docs"];
+  const settingsLabels = ["Profile", "Features",  "Money", "Categories", "Projects", "Backup", "Docs"];
 
   return (
     <div>
@@ -4231,10 +4231,7 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
       {effectiveTab === "projects" && <ProjectSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
 
       {/* ── Backup ── */}
-      {effectiveTab === "backup" && <BackupSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
-
-      {/* ── Integrations ── */}
-      {effectiveTab === "integrations" && <IntegrationsSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} firebaseUser={firebaseUser} />}
+      {effectiveTab === "backup" && <BackupSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} firebaseUser={firebaseUser} />}
 
       {/* ── Docs ── */}
       {effectiveTab === "docs" && <DocsPage data={data} update={update} />}
@@ -4907,13 +4904,290 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
 }
 
 // ─── BackupSettings ────────────────────────────────────────────────────────────
-function BackupSettings({ data, update, cardStyle, sectionTitle }) {
+function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser }) {
   const importRef = useRef(null);
   const [importStatus, setImportStatus] = useState(null); // null | "success" | "error"
   const [importMsg, setImportMsg]       = useState("");
   const [importing, setImporting]       = useState(false);
   const [showConfirm, setShowConfirm]   = useState(false);
   const [pendingImport, setPendingImport] = useState(null);
+
+  // ── Google Drive Integration State ──────────────────────────────────────────
+  const gdrive = data.gdriveIntegration || { connected: false };
+  const isConnected = !!gdrive.connected;
+  const FOLDER_NAME   = "FinTracker";
+  const BACKUP_FOLDER = "Backup";
+
+  const [status, setStatus]                 = useState(null);
+  const [msg, setMsg]                       = useState({ type: null, text: "" });
+  const [driveFiles, setDriveFiles]         = useState([]);
+  const [showFiles, setShowFiles]           = useState(false);
+  const [loadingFiles, setLoadingFiles]     = useState(false);
+  const [restoreConfirm, setRestoreConfirm] = useState(null);
+  const [tokenExpired, setTokenExpired]     = useState(false);
+  const [lastAutoBackup, setLastAutoBackup] = useState(() =>
+    parseInt(localStorage.getItem("ft_last_auto_backup") || "0")
+  );
+
+  // ── Check token status on component mount and when Drive connects ──────────────
+  useEffect(() => {
+    // Check if we have a valid token when component mounts or Drive connects
+    if (isConnected) {
+      getFreshDriveToken().then(token => {
+        if (token) {
+          setTokenExpired(false);
+        }
+      });
+    }
+  }, [isConnected]);
+
+  function flashMsg(type, text, dur = 5000) {
+    setMsg({ type, text });
+    if (dur) setTimeout(() => setMsg({ type: null, text: "" }), dur);
+  }
+
+  // ── Get OAuth token — silent auto-refresh if expired ─────────────────────────
+  async function getStoredToken() {
+    const token = await getFreshDriveToken();
+    if (token) { setTokenExpired(false); return token; }
+    setTokenExpired(true);
+    return null;
+  }
+
+  // ── Re-authenticate (fallback — only if silent refresh fails) ────────────────
+  async function reAuth() {
+    setStatus("reauth");
+    try {
+      await signInWithGoogle();
+      setTokenExpired(false);
+      flashMsg("success", "✅ Connected! Drive is ready.");
+    } catch (e) {
+      flashMsg("error", `❌ Sign-in failed: ${e.message}`);
+    } finally {
+      setStatus(null);
+    }
+  }
+
+  // ── Drive API wrapper ─────────────────────────────────────────────────────────
+  async function driveRequest(url, opts = {}) {
+    const token = await getStoredToken();
+    if (!token) throw new Error("TOKEN_EXPIRED");
+    const resp = await fetch(url, {
+      ...opts,
+      headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) { setTokenExpired(true); throw new Error("TOKEN_EXPIRED"); }
+      throw new Error(err?.error?.message || `Drive API error ${resp.status}`);
+    }
+    return resp.json();
+  }
+
+  function handleDriveError(e) {
+    if (e.message === "TOKEN_EXPIRED") return;
+    flashMsg("error", `❌ ${e.message}`);
+  }
+
+  // ── Ensure FinTracker/ folder exists, return its id ──────────────────────────
+  async function ensureFinTrackerFolder() {
+    const search = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${FOLDER_NAME}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20trashed%3Dfalse&fields=files(id,name)`
+    );
+    if (search.files?.length > 0) return search.files[0].id;
+    const created = await driveRequest(
+      "https://www.googleapis.com/drive/v3/files",
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" }) }
+    );
+    return created.id;
+  }
+
+  // ── Ensure FinTracker/Backup/ subfolder exists, return its id ────────────────
+  async function ensureBackupFolder(parentFolderId) {
+    if (gdrive.backupFolderId) return gdrive.backupFolderId;
+    const search = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${BACKUP_FOLDER}'%20and%20mimeType%3D'application%2Fvnd.google-apps.folder'%20and%20'${parentFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id,name)`
+    );
+    if (search.files?.length > 0) {
+      const backupFolderId = search.files[0].id;
+      update(() => ({ gdriveIntegration: { ...gdrive, backupFolderId } }));
+      return backupFolderId;
+    }
+    const created = await driveRequest(
+      "https://www.googleapis.com/drive/v3/files",
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: BACKUP_FOLDER, mimeType: "application/vnd.google-apps.folder", parents: [parentFolderId] }) }
+    );
+    update(() => ({ gdriveIntegration: { ...gdrive, backupFolderId: created.id } }));
+    return created.id;
+  }
+
+  // ── Core upload: always overwrites the same fixed file ──────────────────────
+  async function uploadBackup(token, backupFolderId, silent = false) {
+    const { user, ...exportable } = data;
+    const payload  = { _meta: { exportedAt: new Date().toISOString(), appVersion: "fintrack_v2" }, ...exportable };
+    const jsonStr  = JSON.stringify(payload, null, 2);
+    const FILE_NAME = "fintrack_backup.json";
+
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${FILE_NAME}'%20and%20'${backupFolderId}'+in+parents%20and%20trashed%3Dfalse&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!searchRes.ok) {
+      if (searchRes.status === 401) { setTokenExpired(true); return false; }
+      throw new Error(`Search failed (${searchRes.status})`);
+    }
+    const searchData = await searchRes.json();
+    const existingFileId = searchData.files?.[0]?.id || null;
+
+    let uploadRes;
+    
+    if (existingFileId) {
+      const boundary = "fintrack_boundary_xyz";
+      const body = [
+        `--${boundary}`,
+        "Content-Type: application/json; charset=UTF-8",
+        "",
+        JSON.stringify({ name: FILE_NAME }),
+        `--${boundary}`,
+        "Content-Type: application/json",
+        "",
+        jsonStr,
+        `--${boundary}--`,
+      ].join("\r\n");
+      
+      uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart&fields=id,name`,
+        { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` }, body }
+      );
+    } else {
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const formData = new FormData();
+      formData.append("metadata", new Blob([JSON.stringify({ name: FILE_NAME, parents: [backupFolderId] })], { type: "application/json" }));
+      formData.append("file", blob);
+      uploadRes = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name",
+        { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData }
+      );
+    }
+    
+    if (!uploadRes.ok) {
+      if (uploadRes.status === 401) { setTokenExpired(true); return false; }
+      throw new Error(`Upload failed (${uploadRes.status})`);
+    }
+
+    if (!silent) flashMsg("success", `✅ Backup saved → FinTracker/Backup/${FILE_NAME}`);
+    return true;
+  }
+
+  // ── Connect to Google Drive ──────────────────────────────────────────────────
+  async function handleConnect() {
+    setStatus("connecting");
+    try {
+      const folderId = await ensureFinTrackerFolder();
+      const backupFolderId = gdrive.backupFolderId  || await ensureBackupFolder(folderId);
+      await uploadBackup(await getStoredToken(), backupFolderId, false);
+      update(() => ({ gdriveIntegration: { connected: true, email: firebaseUser?.email || "connected", folderId, backupFolderId } }));
+      const now = Date.now();
+      localStorage.setItem("ft_last_auto_backup", now.toString());
+      setLastAutoBackup(now);
+      flashMsg("success", "✅ Drive connected! Initial backup saved.");
+    } catch (e) { handleDriveError(e); }
+    finally { setStatus(null); }
+  }
+
+  // ── Auto-backup every 6 hours (when Drive is connected) ──────────────────────
+  useEffect(() => {
+    if (!isConnected) return;
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    async function runAutoBackup() {
+      try {
+        const token = await getStoredToken();
+        if (!token) return;
+        const folderId = await ensureFinTrackerFolder();
+        const backupFolderId = gdrive.backupFolderId || await ensureBackupFolder(folderId);
+        await uploadBackup(token, backupFolderId, true); // silent = true
+        const now = Date.now();
+        localStorage.setItem("ft_last_auto_backup", now.toString());
+        setLastAutoBackup(now);
+      } catch (e) { console.error("Auto-backup failed:", e); }
+    }
+    if (Date.now() - lastAutoBackup >= SIX_HOURS) runAutoBackup();
+    const interval = setInterval(runAutoBackup, SIX_HOURS);
+    return () => clearInterval(interval);
+  }, [isConnected, lastAutoBackup, data]);
+
+  // ── Disconnect from Drive ────────────────────────────────────────────────────
+  function handleDisconnect() {
+    update(() => ({ gdriveIntegration: { connected: false } }));
+    setShowFiles(false);
+    setDriveFiles([]);
+    flashMsg("success", "✅ Disconnected from Google Drive.");
+  }
+
+  // ── Manual save to Drive ─────────────────────────────────────────────────────
+  async function handleSaveToDrive() {
+    setStatus("saving");
+    try {
+      const token = await getStoredToken();
+      if (!token) { setStatus(null); return; }
+      const folderId = await ensureFinTrackerFolder();
+      const backupFolderId = await ensureBackupFolder(folderId);
+      const ok = await uploadBackup(token, backupFolderId, false);
+      if (ok) {
+        const now = Date.now();
+        localStorage.setItem("ft_last_auto_backup", now.toString());
+        setLastAutoBackup(now);
+      }
+    } catch (e) { handleDriveError(e); }
+    finally { setStatus(null); }
+  }
+
+  // ── Browse backups (lists from FinTracker/Backup/) ────────────────────────────
+  async function handleListFiles() {
+    setLoadingFiles(true);
+    try {
+      const token = await getStoredToken();
+      if (!token) { setLoadingFiles(false); return; }
+      const folderId = await ensureFinTrackerFolder();
+      const backupFolderId = await ensureBackupFolder(folderId);
+      const res = await driveRequest(
+        `https://www.googleapis.com/drive/v3/files?q='${backupFolderId}'+in+parents+and+trashed%3Dfalse&fields=files(id,name,size,createdTime)&orderBy=createdTime desc`
+      );
+      setDriveFiles(res.files || []);
+      setShowFiles(true);
+    } catch (e) { handleDriveError(e); }
+    finally { setLoadingFiles(false); }
+  }
+
+  // ── Restore from Drive ────────────────────────────────────────────────────────
+  async function handleRestore(file) {
+    setStatus("loading");
+    setRestoreConfirm(null);
+    try {
+      const token = await getStoredToken();
+      if (!token) { setStatus(null); return; }
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const text = await res.text();
+      const parsed = JSON.parse(text);
+      if (!parsed._meta || parsed._meta.appVersion !== "fintrack_v2") {
+        throw new Error("Invalid backup format");
+      }
+      const { _meta, ...restored } = parsed;
+      update(prev => ({ ...defaultData, ...restored, user: prev.user }));
+      flashMsg("success", `✅ Restored from Drive: ${file.name}`);
+      setShowFiles(false);
+    } catch (e) { flashMsg("error", `❌ Restore failed: ${e.message}`); }
+    finally { setStatus(null); }
+  }
+
+  const lastBackupStr = lastAutoBackup
+    ? new Date(lastAutoBackup).toLocaleString()
+    : "Never";
+
 
   // ── EXPORT ──────────────────────────────────────────────────────────────────
   function handleExport() {
@@ -4997,6 +5271,160 @@ function BackupSettings({ data, update, cardStyle, sectionTitle }) {
 
   return (
     <div>
+      {/* ── Google Drive Integration Card ────────────────────────────────── */}
+      <div style={cardStyle}>
+        {sectionTitle("🗂️", "Google Drive Integration", "Automatic cloud backup to your Google Drive every 6 hours.")}
+        
+        {/* ── Connection status row ─────────────────────────────────────── */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: isConnected ? "#1a6b3c" : "var(--color-border-primary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
+            🗂️
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Google Drive</div>
+            {isConnected ? (
+              <>
+                <div style={{ fontSize: 12, color: tokenExpired ? "#b45309" : "#1a6b3c", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: tokenExpired ? "#f59e0b" : "#1a6b3c", display: "inline-block" }} />
+                  {tokenExpired ? "Token expired · " : "Connected · "}{gdrive.email}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                  📁 All backups saved inside <strong>FinTracker/Backup/</strong>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                  🕐 Auto-backup every 6 hrs · Last: {lastBackupStr}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                Not connected — sign in with Google or click Connect.
+              </div>
+            )}
+          </div>
+          <div style={{ flexShrink: 0 }}>
+            {isConnected ? (
+              <button style={{ ...btnBase, background: "#fee2e2", color: "#991b1b", padding: "7px 14px", fontSize: 12 }}
+                onClick={handleDisconnect} disabled={!!status}>
+                Disconnect
+              </button>
+            ) : (
+              <button
+                style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "connecting" ? 0.6 : 1, padding: "8px 14px", fontSize: 13 }}
+                onClick={handleConnect}
+                disabled={status === "connecting"}
+              >
+                {status === "connecting" ? "Connecting…" : "Connect"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── How it works hint ────────────────────────────────────────── */}
+        {!isConnected && (
+          <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12, color: "#0369a1", lineHeight: 1.6 }}>
+            💡 <strong>Automatic:</strong> Drive connects when you sign in with Gmail. If it didn't connect, click <strong>Connect</strong> above.
+          </div>
+        )}
+
+        {/* ── Connected actions ─────────────────────────────────────────── */}
+        {isConnected && (
+          <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: showFiles ? 16 : 0 }}>
+              <button
+                style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "saving" ? 0.6 : 1 }}
+                onClick={handleSaveToDrive} disabled={!!status}
+              >
+                <span style={{ fontSize: 16 }}>☁️</span>
+                {status === "saving" ? "Saving…" : "Save Backup to Drive"}
+              </button>
+              <button
+                style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-secondary)", opacity: loadingFiles ? 0.6 : 1 }}
+                onClick={handleListFiles} disabled={loadingFiles || !!status}
+              >
+                <span style={{ fontSize: 16 }}>📂</span>
+                {loadingFiles ? "Loading…" : "Browse Backups"}
+              </button>
+            </div>
+
+            {showFiles && (
+              <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ background: "var(--color-background-secondary)", padding: "10px 14px", fontSize: 13, fontWeight: 600, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>📁 FinTracker / Backup</span>
+                  <button onClick={() => setShowFiles(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1 }}>✕</button>
+                </div>
+                {loadingFiles ? (
+                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>Loading…</div>
+                ) : driveFiles.length === 0 ? (
+                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>No backups found. Save your first backup above.</div>
+                ) : (
+                  driveFiles.map(f => (
+                    <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", fontSize: 13 }}>
+                      <span style={{ fontSize: 18 }}>📄</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                          {f.createdTime ? new Date(f.createdTime).toLocaleString() : ""}
+                          {f.size ? ` · ${(f.size / 1024).toFixed(1)} KB` : ""}
+                        </div>
+                      </div>
+                      <button
+                        style={{ ...btnBase, padding: "5px 12px", fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "0.5px solid #b7dfc8" }}
+                        onClick={() => setRestoreConfirm(f)} disabled={!!status}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Feedback ─────────────────────────────────────────────────── */}
+        {msg.type && (
+          <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 8, fontSize: 13,
+            background: msg.type === "success" ? "#d1fae5" : "#fee2e2",
+            border: `0.5px solid ${msg.type === "success" ? "#6ee7b7" : "#fca5a5"}`,
+            color: msg.type === "success" ? "#065f46" : "#991b1b",
+          }}>
+            {msg.text}
+          </div>
+        )}
+
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+          🔒 FinTrack only accesses files it creates (<code>drive.file</code> scope). It cannot read or modify any other files in your Drive.
+        </p>
+      </div>
+
+      {/* ── Restore from Drive confirm dialog ────────────────────────────── */}
+      {restoreConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.6rem", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>Restore from Drive?</div>
+            <p style={{ fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
+              This will <strong>replace all current data</strong> with:
+            </p>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 500, marginBottom: 16 }}>
+              📄 {restoreConfirm.name}
+            </div>
+            <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#92400e" }}>
+              ⚠️ Export your current data first if you want to keep it.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setRestoreConfirm(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+              <button
+                onClick={() => handleRestore(restoreConfirm)}
+                disabled={status === "loading"}
+                style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "loading" ? 0.6 : 1 }}
+              >
+                {status === "loading" ? "Restoring…" : "Yes, Restore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Export Card ─────────────────────────────────────────────────── */}
       <div style={cardStyle}>
         {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
