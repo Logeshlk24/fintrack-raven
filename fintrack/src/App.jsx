@@ -5082,17 +5082,25 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
   // ── Connect to Google Drive ──────────────────────────────────────────────────
   async function handleConnect() {
     setStatus("connecting");
+    setMsg({ type: null, text: "" });
     try {
-      const folderId = await ensureFinTrackerFolder();
-      const backupFolderId = gdrive.backupFolderId  || await ensureBackupFolder(folderId);
-      await uploadBackup(await getStoredToken(), backupFolderId, false);
-      update(() => ({ gdriveIntegration: { connected: true, email: firebaseUser?.email || "connected", folderId, backupFolderId } }));
-      const now = Date.now();
-      localStorage.setItem("ft_last_auto_backup", now.toString());
-      setLastAutoBackup(now);
-      flashMsg("success", "✅ Drive connected! Initial backup saved.");
-    } catch (e) { handleDriveError(e); }
-    finally { setStatus(null); }
+      const folderId       = await ensureFinTrackerFolder();
+      const backupFolderId = await ensureBackupFolder(folderId);
+      update(() => ({
+        gdriveIntegration: {
+          connected: true,
+          email: firebaseUser?.email || "",
+          folderId,
+          backupFolderId,
+          connectedAt: new Date().toISOString(),
+        }
+      }));
+      flashMsg("success", "✅ Google Drive connected! FinTracker/Backup/ folder is ready.");
+    } catch (e) {
+      handleDriveError(e);
+    } finally {
+      setStatus(null);
+    }
   }
 
   // ── Auto-backup every 6 hours (when Drive is connected) ──────────────────────
