@@ -8416,17 +8416,8 @@ function GoalsPage({ data, update }) {
 
   const PRIORITIES = [["high","🔴 High"],["medium","🟡 Medium"],["low","🟢 Low"]];
 
-  const priorityOrder = { high: 1, medium: 2, low: 3 };
-  const needs = items.filter(i => i.kind === "need").sort((a, b) => {
-    const priorityDiff = (priorityOrder[a.priority || "medium"] || 2) - (priorityOrder[b.priority || "medium"] || 2);
-    if (priorityDiff !== 0) return priorityDiff;
-    return (a.goalNumber || 0) - (b.goalNumber || 0);
-  });
-  const wants = items.filter(i => i.kind === "want").sort((a, b) => {
-    const priorityDiff = (priorityOrder[a.priority || "medium"] || 2) - (priorityOrder[b.priority || "medium"] || 2);
-    if (priorityDiff !== 0) return priorityDiff;
-    return (a.goalNumber || 0) - (b.goalNumber || 0);
-  });
+  const needs = items.filter(i => i.kind === "need").sort((a, b) => (a.goalNumber || 0) - (b.goalNumber || 0));
+  const wants = items.filter(i => i.kind === "want").sort((a, b) => (a.goalNumber || 0) - (b.goalNumber || 0));
   const displayed = activeTab === "needs" ? needs : wants;
 
   // When switching tab, close any open folder
@@ -9348,9 +9339,8 @@ function GoalsPage({ data, update }) {
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
                   {displayed.sort((a, b) => {
-                    const pOrder = { high: 0, medium: 1, low: 2 };
                     if (a.completed !== b.completed) return a.completed ? 1 : -1;
-                    return pOrder[a.priority] - pOrder[b.priority];
+                    return 0;
                   }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
                 </div>
               )}
