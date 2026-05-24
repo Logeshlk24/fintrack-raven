@@ -8416,8 +8416,17 @@ function GoalsPage({ data, update }) {
 
   const PRIORITIES = [["high","🔴 High"],["medium","🟡 Medium"],["low","🟢 Low"]];
 
-  const needs = items.filter(i => i.kind === "need").sort((a, b) => (a.goalNumber || 0) - (b.goalNumber || 0));
-  const wants = items.filter(i => i.kind === "want").sort((a, b) => (a.goalNumber || 0) - (b.goalNumber || 0));
+  const priorityOrder = { high: 1, medium: 2, low: 3 };
+  const needs = items.filter(i => i.kind === "need").sort((a, b) => {
+    const priorityDiff = (priorityOrder[a.priority || "medium"] || 2) - (priorityOrder[b.priority || "medium"] || 2);
+    if (priorityDiff !== 0) return priorityDiff;
+    return (a.goalNumber || 0) - (b.goalNumber || 0);
+  });
+  const wants = items.filter(i => i.kind === "want").sort((a, b) => {
+    const priorityDiff = (priorityOrder[a.priority || "medium"] || 2) - (priorityOrder[b.priority || "medium"] || 2);
+    if (priorityDiff !== 0) return priorityDiff;
+    return (a.goalNumber || 0) - (b.goalNumber || 0);
+  });
   const displayed = activeTab === "needs" ? needs : wants;
 
   // When switching tab, close any open folder
@@ -8749,6 +8758,12 @@ function GoalsPage({ data, update }) {
             + Add another link
           </button>
         </div>
+        {values.goalType === "money" && (
+          <div style={{ marginTop: 10 }}>
+            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>📅 End Date (optional)</label>
+            <input type="date" value={values.dueDate || ""} onChange={e => onChange({ ...values, dueDate: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+        )}
       </div>
     );
   }
@@ -8761,7 +8776,7 @@ function GoalsPage({ data, update }) {
     const accounts = data.banks || [];
     const isTask = item.goalType === "task";
 
-    const dueDateEl = isTask && item.dueDate ? (() => {
+    const dueDateEl = item.dueDate ? (() => {
       const diff = Math.round((new Date(item.dueDate) - new Date()) / 86400000);
       const color = diff < 0 ? "#d44" : diff <= 3 ? "#f0a020" : "#1a6b3c";
       return <span style={{ fontSize: 11, color, fontWeight: 500 }}>📅 {new Date(item.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})} {diff < 0 ? "(overdue)" : diff === 0 ? "(today)" : `(${diff}d left)`}</span>;
