@@ -1914,9 +1914,9 @@ function BudgetTab({ data, update, categories }) {
   }
 
   // Get all expense categories + goal names
-  const baseExpenseCategories = categories.expense || ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"];
   const goalNames = (data.goals || []).map(g => g.name).filter(Boolean);
-  const expenseCategories = [...baseExpenseCategories, ...goalNames.filter(g => !baseExpenseCategories.includes(g))];
+  const baseCategories = categories.expense || ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"];
+  const expenseCategories = [...baseCategories, ...goalNames.filter(g => !baseCategories.includes(g))];
 
   // Get budgets for selected month
   const monthBudgets = budgets.filter(b => b.month === selectedMonth);
