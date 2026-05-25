@@ -1915,8 +1915,8 @@ function BudgetTab({ data, update, categories }) {
 
   // Get all expense categories + goal names
   const moneyGoals = (data.needsWants || []).filter(g => g.goalType === "money").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
-  const needGoals  = (data.needsWants || []).filter(g => g.goalType !== "task" && g.kind === "need").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
-  const wantGoals  = (data.needsWants || []).filter(g => g.goalType !== "task" && g.kind === "want").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
+  const needGoals  = (data.needsWants || []).filter(g => g.goalType === "task" && g.kind === "need").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
+  const wantGoals  = (data.needsWants || []).filter(g => g.goalType === "task" && g.kind === "want").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
   const goalNames  = [...new Set([...moneyGoals, ...needGoals, ...wantGoals])];
   const baseCategories = categories.expense || ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"];
   const expenseCategories = [...baseCategories, ...goalNames.filter(g => !baseCategories.includes(g))];
