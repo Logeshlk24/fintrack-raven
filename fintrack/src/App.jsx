@@ -1914,12 +1914,12 @@ function BudgetTab({ data, update, categories }) {
   }
 
   // Get all expense categories + goal names
-  const moneyGoals = (data.needsWants || []).filter(g => g.goalType === "money").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
-  const needGoals  = (data.needsWants || []).filter(g => g.goalType !== "task" && g.kind === "need").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
-  const wantGoals  = (data.needsWants || []).filter(g => g.goalType !== "task" && g.kind === "want").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
-  const goalNames  = [...new Set([...moneyGoals, ...needGoals, ...wantGoals])];
+  // Goals: exclude tasks, split by kind, sort by goalNumber
+  const moneyNeeds = (data.needsWants || []).filter(g => g.goalType !== "task" && g.kind === "need").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
+  const moneyWants = (data.needsWants || []).filter(g => g.goalType !== "task" && g.kind === "want").sort((a,b) => (a.goalNumber||0)-(b.goalNumber||0)).map(g => g.name).filter(Boolean);
+  const moneyGoals = moneyNeeds; // alias for optgroup rendering
   const baseCategories = categories.expense || ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"];
-  const expenseCategories = [...baseCategories, ...goalNames.filter(g => !baseCategories.includes(g))];
+  const expenseCategories = [...baseCategories, ...moneyNeeds.filter(g => !baseCategories.includes(g)), ...moneyWants.filter(g => !baseCategories.includes(g) && !moneyNeeds.includes(g))];
 
   // Get budgets for selected month
   const monthBudgets = budgets.filter(b => b.month === selectedMonth);
@@ -2000,19 +2000,14 @@ function BudgetTab({ data, update, categories }) {
               <optgroup label="── Expense Categories ──">
                 {baseCategories.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
-              {moneyGoals.filter(g => !baseCategories.includes(g)).length > 0 && (
-                <optgroup label="── Money Goals ──">
-                  {moneyGoals.filter(g => !baseCategories.includes(g)).map(c => <option key={c} value={c}>{c}</option>)}
-                </optgroup>
-              )}
-              {needGoals.filter(g => !baseCategories.includes(g) && !moneyGoals.includes(g)).length > 0 && (
+              {moneyNeeds.filter(g => !baseCategories.includes(g)).length > 0 && (
                 <optgroup label="── Needs ──">
-                  {needGoals.filter(g => !baseCategories.includes(g) && !moneyGoals.includes(g)).map(c => <option key={c} value={c}>{c}</option>)}
+                  {moneyNeeds.filter(g => !baseCategories.includes(g)).map(c => <option key={c} value={c}>{c}</option>)}
                 </optgroup>
               )}
-              {wantGoals.filter(g => !baseCategories.includes(g) && !moneyGoals.includes(g) && !needGoals.includes(g)).length > 0 && (
+              {moneyWants.filter(g => !baseCategories.includes(g)).length > 0 && (
                 <optgroup label="── Wants ──">
-                  {wantGoals.filter(g => !baseCategories.includes(g) && !moneyGoals.includes(g) && !needGoals.includes(g)).map(c => <option key={c} value={c}>{c}</option>)}
+                  {moneyWants.filter(g => !baseCategories.includes(g)).map(c => <option key={c} value={c}>{c}</option>)}
                 </optgroup>
               )}
             </select>
