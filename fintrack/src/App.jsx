@@ -1914,7 +1914,7 @@ function BudgetTab({ data, update, categories }) {
   }
 
   // Get all expense categories + goal names
-  const goalNames = (data.goals || []).map(g => g.name).filter(Boolean);
+  const goalNames = (data.needsWants || []).map(g => g.name).filter(Boolean);
   const baseCategories = categories.expense || ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"];
   const expenseCategories = [...baseCategories, ...goalNames.filter(g => !baseCategories.includes(g))];
 
