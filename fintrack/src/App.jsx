@@ -153,6 +153,7 @@ const defaultData = {
   goals: [],
   snapshots: [],
   scheduledPayments: [],
+  budgets: [],
   needsWants: [],
   commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare", timeLogs: [] },
   commuteLeaves: [],
@@ -1852,6 +1853,215 @@ function AssetPie({ assets }) {
 }
 
 // ─── Money ────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// BUDGET TAB
+// ══════════════════════════════════════════════════════════════════════════════
+
+function BudgetTab({ data, update, categories }) {
+  const budgets = data.budgets || [];
+  const transactions = data.transactions || [];
+  const [form, setForm] = useState({ category: "", amount: "", month: today().slice(0, 7) });
+  const [editBudget, setEditBudget] = useState(null);
+
+  // Get current month or selected month
+  const [selectedMonth, setSelectedMonth] = useState(today().slice(0, 7));
+
+  // Calculate spending per category for selected month
+  function getSpendingForCategory(category, month) {
+    return transactions
+      .filter(t => t.type === "expense" && t.category === category && t.date && t.date.startsWith(month))
+      .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+  }
+
+  // Get budget for a category in selected month
+  function getBudgetForCategory(category, month) {
+    const budget = budgets.find(b => b.category === category && b.month === month);
+    return budget ? parseFloat(budget.amount) || 0 : 0;
+  }
+
+  function addBudget() {
+    if (!form.category || !form.amount || !form.month) return;
+    const existing = budgets.find(b => b.category === form.category && b.month === form.month);
+    if (existing) {
+      // Update existing budget
+      update(p => ({
+        budgets: p.budgets.map(b => b.id === existing.id ? { ...b, amount: parseFloat(form.amount) } : b)
+      }));
+    } else {
+      // Add new budget
+      update(p => ({
+        budgets: [...(p.budgets || []), {
+          id: Date.now(),
+          category: form.category,
+          amount: parseFloat(form.amount),
+          month: form.month
+        }]
+      }));
+    }
+    setForm({ category: "", amount: "", month: selectedMonth });
+  }
+
+  function saveEditBudget() {
+    if (!editBudget || !editBudget.amount) return;
+    update(p => ({
+      budgets: p.budgets.map(b => b.id === editBudget.id ? { ...b, amount: parseFloat(editBudget.amount) } : b)
+    }));
+    setEditBudget(null);
+  }
+
+  function deleteBudget(id) {
+    update(p => ({ budgets: p.budgets.filter(b => b.id !== id) }));
+  }
+
+  // Get all expense categories
+  const expenseCategories = categories.expense || ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"];
+
+  // Get budgets for selected month
+  const monthBudgets = budgets.filter(b => b.month === selectedMonth);
+
+  // Calculate totals for selected month
+  const totalBudgeted = monthBudgets.reduce((sum, b) => sum + (parseFloat(b.amount) || 0), 0);
+  const totalSpent = monthBudgets.reduce((sum, b) => sum + getSpendingForCategory(b.category, selectedMonth), 0);
+  const remaining = totalBudgeted - totalSpent;
+
+  return (
+    <div>
+      {/* Edit Budget Modal */}
+      {editBudget && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Budget</div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
+              <input value={editBudget.category} disabled style={{ width: "100%", boxSizing: "border-box", background: "var(--color-background-secondary)", opacity: 0.7 }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Budget Amount (₹)</label>
+              <input type="number" value={editBudget.amount} onChange={e => setEditBudget(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditBudget(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
+              <button onClick={saveEditBudget} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>💰 Monthly Budget Tracker</h2>
+          <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Track your spending against monthly budgets per category</p>
+        </div>
+        <div>
+          <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Month</label>
+          <input 
+            type="month" 
+            value={selectedMonth} 
+            onChange={e => {
+              setSelectedMonth(e.target.value);
+              setForm(p => ({ ...p, month: e.target.value }));
+            }} 
+            style={{ padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)" }} 
+          />
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      {totalBudgeted > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: 12, marginBottom: 16 }}>
+          <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Budgeted</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>₹{totalBudgeted.toLocaleString("en-IN")}</div>
+          </div>
+          <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Spent</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: totalSpent > totalBudgeted ? "#dc2626" : "#f59e0b" }}>₹{totalSpent.toLocaleString("en-IN")}</div>
+          </div>
+          <div style={{ background: remaining >= 0 ? "#f0fdf4" : "#fee2e2", borderRadius: 12, padding: "14px 16px", border: `0.5px solid ${remaining >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Remaining</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: remaining >= 0 ? "#1a6b3c" : "#dc2626" }}>₹{Math.abs(remaining).toLocaleString("en-IN")}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Budget Form */}
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem", marginBottom: 16, border: "0.5px solid var(--color-border-tertiary)" }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>➕ Add/Update Budget</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
+            <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+              <option value="">Select category</option>
+              {expenseCategories.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Budget Amount (₹)</label>
+            <input type="number" placeholder="e.g. 5000" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+          </div>
+        </div>
+        <button onClick={addBudget} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+          {budgets.find(b => b.category === form.category && b.month === form.month) ? "Update Budget" : "+ Add Budget"}
+        </button>
+      </div>
+
+      {/* Budget List */}
+      {monthBudgets.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>💰</div>
+          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 6 }}>No budgets set for {selectedMonth}</div>
+          <div style={{ fontSize: 13 }}>Add your first budget above to start tracking</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {monthBudgets.map(budget => {
+            const budgetAmt = parseFloat(budget.amount) || 0;
+            const spent = getSpendingForCategory(budget.category, selectedMonth);
+            const percentage = budgetAmt > 0 ? (spent / budgetAmt) * 100 : 0;
+            const isOver = spent > budgetAmt;
+            const remaining = budgetAmt - spent;
+
+            return (
+              <div key={budget.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>{budget.category}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      ₹{spent.toLocaleString("en-IN")} / ₹{budgetAmt.toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => setEditBudget(budget)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, padding: "2px 6px", opacity: 0.7 }} title="Edit">✏️</button>
+                    <button onClick={() => deleteBudget(budget.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "2px 6px", color: "#dc2626", opacity: 0.7 }} title="Delete">🗑️</button>
+                  </div>
+                </div>
+                {/* Progress Bar */}
+                <div style={{ width: "100%", height: 8, background: "var(--color-border-tertiary)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                  <div style={{ width: `${Math.min(percentage, 100)}%`, height: "100%", background: isOver ? "#dc2626" : percentage > 80 ? "#f59e0b" : "#1a6b3c", borderRadius: 4, transition: "width 0.3s ease" }} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                  <div style={{ color: "var(--color-text-secondary)" }}>
+                    {percentage.toFixed(1)}% used
+                  </div>
+                  <div style={{ fontWeight: 600, color: isOver ? "#dc2626" : remaining < budgetAmt * 0.2 ? "#f59e0b" : "#1a6b3c" }}>
+                    {isOver ? `Over by ₹${Math.abs(remaining).toLocaleString("en-IN")}` : `₹${remaining.toLocaleString("en-IN")} left`}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MONEY PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+
 function MoneyPage({ data, update, tab, setTab }) {
   const accounts = data.banks || [];
   const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
@@ -2102,13 +2312,16 @@ function MoneyPage({ data, update, tab, setTab }) {
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle || (tab === "recent" ? "Recent Transactions" : tab)}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
-      <TabBar tabs={["expenses", "income", "transactions", "transfer", "scheduled", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Transactions", "Transfer", "Scheduled", "Liabilities", "Analysis"]} />
+      <TabBar tabs={["expenses", "income", "transactions", "transfer", "scheduled", "budget", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Transactions", "Transfer", "Scheduled", "Budget", "Liabilities", "Analysis"]} />
 
       {/* ── Transfer Tab ── */}
       {tab === "transfer" && <TransferTab data={data} update={update} accounts={accounts} />}
 
       {/* ── Scheduled Payments Tab ── */}
       {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} />}
+
+      {/* ── Budget Tab ── */}
+      {tab === "budget" && <BudgetTab data={data} update={update} categories={categories} />}
 
       {/* ── Income / Expense Tabs ── */}
       {(tab === "income" || tab === "expenses") && (
