@@ -1865,6 +1865,23 @@ function BudgetTab({ data, update, categories }) {
 
   // Get current month or selected month
   const [selectedMonth, setSelectedMonth] = useState(today().slice(0, 7));
+  const [baseAmount, setBaseAmount] = useState(() => {
+    const key = "budgetBase_" + today().slice(0, 7);
+    return parseFloat(localStorage.getItem(key) || "") || 0;
+  });
+
+  function handleBaseAmountChange(val) {
+    const num = parseFloat(val) || 0;
+    setBaseAmount(num);
+    localStorage.setItem("budgetBase_" + selectedMonth, num);
+  }
+
+  function handleMonthChange(val) {
+    setSelectedMonth(val);
+    setForm(p => ({ ...p, month: val }));
+    const saved = parseFloat(localStorage.getItem("budgetBase_" + val) || "") || 0;
+    setBaseAmount(saved);
+  }
 
   // Calculate spending per category for selected month
   function getSpendingForCategory(category, month) {
@@ -1928,6 +1945,7 @@ function BudgetTab({ data, update, categories }) {
   const totalBudgeted = monthBudgets.reduce((sum, b) => sum + (parseFloat(b.amount) || 0), 0);
   const totalSpent = monthBudgets.reduce((sum, b) => sum + getSpendingForCategory(b.category, selectedMonth), 0);
   const remaining = totalBudgeted - totalSpent;
+  const baseRemaining = baseAmount > 0 ? baseAmount - totalBudgeted : null;
 
   return (
     <div>
@@ -1962,22 +1980,48 @@ function BudgetTab({ data, update, categories }) {
           <input 
             type="month" 
             value={selectedMonth} 
-            onChange={e => {
-              setSelectedMonth(e.target.value);
-              setForm(p => ({ ...p, month: e.target.value }));
-            }} 
+            onChange={e => handleMonthChange(e.target.value)} 
             style={{ padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)" }} 
           />
         </div>
       </div>
 
+      {/* Base Amount Input */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
+        <label style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Base Amount (₹)</label>
+        <input
+          type="number"
+          placeholder="e.g. 25000"
+          value={baseAmount || ""}
+          onChange={e => handleBaseAmountChange(e.target.value)}
+          style={{ flex: 1, maxWidth: 180, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", fontSize: 14, fontWeight: 600 }}
+        />
+        {baseAmount > 0 && baseRemaining !== null && (
+          <span style={{ fontSize: 12, color: baseRemaining >= 0 ? "#1a6b3c" : "#dc2626", fontWeight: 600 }}>
+            {baseRemaining >= 0 ? `₹${baseRemaining.toLocaleString("en-IN")} unallocated` : `₹${Math.abs(baseRemaining).toLocaleString("en-IN")} over budget`}
+          </span>
+        )}
+      </div>
+
       {/* Summary Cards */}
       {totalBudgeted > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: 12, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 12, marginBottom: 16 }}>
+          {baseAmount > 0 && (
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
+              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Base Amount</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)" }}>₹{baseAmount.toLocaleString("en-IN")}</div>
+            </div>
+          )}
           <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
             <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Budgeted</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>₹{totalBudgeted.toLocaleString("en-IN")}</div>
           </div>
+          {baseAmount > 0 && baseRemaining !== null && (
+            <div style={{ background: baseRemaining >= 0 ? "#f0fdf4" : "#fee2e2", borderRadius: 12, padding: "14px 16px", border: `0.5px solid ${baseRemaining >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
+              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Base Remaining</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: baseRemaining >= 0 ? "#1a6b3c" : "#dc2626" }}>₹{Math.abs(baseRemaining).toLocaleString("en-IN")}</div>
+            </div>
+          )}
           <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
             <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Spent</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: totalSpent > totalBudgeted ? "#dc2626" : "#f59e0b" }}>₹{totalSpent.toLocaleString("en-IN")}</div>
