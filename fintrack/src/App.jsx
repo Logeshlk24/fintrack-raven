@@ -8469,6 +8469,7 @@ function GoalsPage({ data, update }) {
         priority: editItem.priority,
         urls: (editItem.urls || (editItem.url ? [editItem.url] : [])).filter(u => u.trim()),
         excludeFromNetWorth: editItem.excludeFromNetWorth || false,
+        dueDate: editItem.dueDate || undefined,
       } : x)
     }));
     // Refresh selectedGoal if it's the one being edited
