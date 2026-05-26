@@ -1941,6 +1941,9 @@ function BudgetTab({ data, update, categories }) {
   // Get budgets for selected month
   const monthBudgets = budgets.filter(b => b.month === selectedMonth);
 
+  // Categories already budgeted this month
+  const alreadyBudgeted = new Set(monthBudgets.map(b => b.category));
+
   // Calculate totals for selected month
   const totalBudgeted = monthBudgets.reduce((sum, b) => sum + (parseFloat(b.amount) || 0), 0);
   const totalSpent = monthBudgets.reduce((sum, b) => sum + getSpendingForCategory(b.category, selectedMonth), 0);
@@ -2042,16 +2045,16 @@ function BudgetTab({ data, update, categories }) {
             <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
               <option value="">Select category</option>
               <optgroup label="── Expense Categories ──">
-                {baseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                {baseCategories.map(c => <option key={c} value={c} disabled={alreadyBudgeted.has(c)}>{alreadyBudgeted.has(c) ? `${c} ✓` : c}</option>)}
               </optgroup>
               {moneyNeeds.filter(g => !baseCategories.includes(g)).length > 0 && (
                 <optgroup label="── Needs ──">
-                  {moneyNeeds.filter(g => !baseCategories.includes(g)).map(c => <option key={c} value={c}>{c}</option>)}
+                  {moneyNeeds.filter(g => !baseCategories.includes(g)).map(c => <option key={c} value={c} disabled={alreadyBudgeted.has(c)}>{alreadyBudgeted.has(c) ? `${c} ✓` : c}</option>)}
                 </optgroup>
               )}
               {moneyWants.filter(g => !baseCategories.includes(g)).length > 0 && (
                 <optgroup label="── Wants ──">
-                  {moneyWants.filter(g => !baseCategories.includes(g)).map(c => <option key={c} value={c}>{c}</option>)}
+                  {moneyWants.filter(g => !baseCategories.includes(g)).map(c => <option key={c} value={c} disabled={alreadyBudgeted.has(c)}>{alreadyBudgeted.has(c) ? `${c} ✓` : c}</option>)}
                 </optgroup>
               )}
             </select>
