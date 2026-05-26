@@ -1919,6 +1919,13 @@ function BudgetTab({ data, update, categories }) {
 
   function saveEditBudget() {
     if (!editBudget || !editBudget.amount) return;
+    if (editBudget.sortOrder) {
+      const duplicate = budgets.find(b => b.id !== editBudget.id && b.month === selectedMonth && b.sortOrder === editBudget.sortOrder);
+      if (duplicate) {
+        alert(`Sort order ${editBudget.sortOrder} is already used by "${duplicate.category}". Please choose a different number.`);
+        return;
+      }
+    }
     update(p => ({
       budgets: p.budgets.map(b => b.id === editBudget.id ? { ...b, amount: parseFloat(editBudget.amount), sortOrder: editBudget.sortOrder || b.sortOrder } : b)
     }));
@@ -1966,7 +1973,13 @@ function BudgetTab({ data, update, categories }) {
             </div>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Sort Order (1, 2, 3...)</label>
-              <input type="number" min="1" placeholder="e.g. 1" value={editBudget.sortOrder || ""} onChange={e => setEditBudget(p => ({ ...p, sortOrder: parseInt(e.target.value) || "" }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <input type="number" min="1" placeholder="e.g. 1" value={editBudget.sortOrder || ""} onChange={e => setEditBudget(p => ({ ...p, sortOrder: parseInt(e.target.value) || "" }))}
+                style={{ width: "100%", boxSizing: "border-box", borderColor: editBudget.sortOrder && budgets.find(b => b.id !== editBudget.id && b.month === selectedMonth && b.sortOrder === editBudget.sortOrder) ? "#dc2626" : undefined }} />
+              {editBudget.sortOrder && budgets.find(b => b.id !== editBudget.id && b.month === selectedMonth && b.sortOrder === editBudget.sortOrder) && (
+                <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4 }}>
+                  ⚠️ Already used by "{budgets.find(b => b.id !== editBudget.id && b.month === selectedMonth && b.sortOrder === editBudget.sortOrder).category}"
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setEditBudget(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
