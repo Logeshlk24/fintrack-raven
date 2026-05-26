@@ -1865,25 +1865,21 @@ function BudgetTab({ data, update, categories }) {
 
   // Get current month or selected month
   const [selectedMonth, setSelectedMonth] = useState(today().slice(0, 7));
-  const [baseAmount, setBaseAmount] = useState(() => {
-    const key = "budgetBase_" + today().slice(0, 7);
-    return parseFloat(localStorage.getItem(key) || "") || 0;
-  });
+  // Base amount stored in data.budgetBase keyed by month (syncs across devices)
+  const budgetBase = data.budgetBase || {};
+  const baseAmount = parseFloat(budgetBase[selectedMonth] || "") || 0;
 
   const [editingBase, setEditingBase] = useState(false);
   const [baseInput, setBaseInput] = useState("");
 
   function handleBaseAmountChange(val) {
     const num = parseFloat(val) || 0;
-    setBaseAmount(num);
-    localStorage.setItem("budgetBase_" + selectedMonth, num);
+    update(p => ({ budgetBase: { ...(p.budgetBase || {}), [selectedMonth]: num } }));
   }
 
   function handleMonthChange(val) {
     setSelectedMonth(val);
     setForm(p => ({ ...p, month: val }));
-    const saved = parseFloat(localStorage.getItem("budgetBase_" + val) || "") || 0;
-    setBaseAmount(saved);
   }
 
   // Calculate spending per category for selected month
