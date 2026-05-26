@@ -1870,6 +1870,9 @@ function BudgetTab({ data, update, categories }) {
     return parseFloat(localStorage.getItem(key) || "") || 0;
   });
 
+  const [editingBase, setEditingBase] = useState(false);
+  const [baseInput, setBaseInput] = useState("");
+
   function handleBaseAmountChange(val) {
     const num = parseFloat(val) || 0;
     setBaseAmount(num);
@@ -1989,20 +1992,43 @@ function BudgetTab({ data, update, categories }) {
         </div>
       </div>
 
-      {/* Base Amount Input */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
+      {/* Base Amount - Edit/Save Toggle */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap" }}>
         <label style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Base Amount (₹)</label>
-        <input
-          type="number"
-          placeholder="e.g. 25000"
-          value={baseAmount || ""}
-          onChange={e => handleBaseAmountChange(e.target.value)}
-          style={{ flex: 1, maxWidth: 180, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", fontSize: 14, fontWeight: 600 }}
-        />
-        {baseAmount > 0 && baseRemaining !== null && (
-          <span style={{ fontSize: 12, color: baseRemaining >= 0 ? "#1a6b3c" : "#dc2626", fontWeight: 600 }}>
-            {baseRemaining >= 0 ? `₹${baseRemaining.toLocaleString("en-IN")} unallocated` : `₹${Math.abs(baseRemaining).toLocaleString("en-IN")} over budget`}
-          </span>
+        {editingBase ? (
+          <>
+            <input
+              type="number"
+              placeholder="e.g. 25000"
+              value={baseInput}
+              onChange={e => setBaseInput(e.target.value)}
+              autoFocus
+              style={{ flex: 1, minWidth: 120, maxWidth: 180, padding: "6px 10px", borderRadius: 6, border: "1.5px solid #1a6b3c", fontSize: 14, fontWeight: 600 }}
+            />
+            <button
+              onClick={() => { handleBaseAmountChange(baseInput); setEditingBase(false); }}
+              style={{ padding: "6px 14px", borderRadius: 6, background: "#1a6b3c", color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+            >Save</button>
+            <button
+              onClick={() => setEditingBase(false)}
+              style={{ padding: "6px 10px", borderRadius: 6, background: "transparent", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", fontSize: 12, cursor: "pointer" }}
+            >Cancel</button>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)", flex: 1 }}>
+              {baseAmount > 0 ? `₹${baseAmount.toLocaleString("en-IN")}` : <span style={{ color: "var(--color-text-tertiary)", fontWeight: 400, fontSize: 13 }}>Not set</span>}
+            </span>
+            {baseAmount > 0 && baseRemaining !== null && (
+              <span style={{ fontSize: 12, color: baseRemaining >= 0 ? "#1a6b3c" : "#dc2626", fontWeight: 600, whiteSpace: "nowrap" }}>
+                {baseRemaining >= 0 ? `₹${baseRemaining.toLocaleString("en-IN")} unallocated` : `₹${Math.abs(baseRemaining).toLocaleString("en-IN")} over budget`}
+              </span>
+            )}
+            <button
+              onClick={() => { setBaseInput(baseAmount > 0 ? String(baseAmount) : ""); setEditingBase(true); }}
+              style={{ padding: "6px 14px", borderRadius: 6, background: "transparent", color: "#1a6b3c", border: "1px solid #1a6b3c", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+            >{baseAmount > 0 ? "✏️ Edit" : "+ Set Base"}</button>
+          </>
         )}
       </div>
 
