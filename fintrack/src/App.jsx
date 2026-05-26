@@ -1920,7 +1920,7 @@ function BudgetTab({ data, update, categories }) {
   function saveEditBudget() {
     if (!editBudget || !editBudget.amount) return;
     update(p => ({
-      budgets: p.budgets.map(b => b.id === editBudget.id ? { ...b, amount: parseFloat(editBudget.amount) } : b)
+      budgets: p.budgets.map(b => b.id === editBudget.id ? { ...b, amount: parseFloat(editBudget.amount), sortOrder: editBudget.sortOrder || b.sortOrder } : b)
     }));
     setEditBudget(null);
   }
@@ -1938,7 +1938,7 @@ function BudgetTab({ data, update, categories }) {
   const expenseCategories = [...baseCategories, ...moneyNeeds.filter(g => !baseCategories.includes(g)), ...moneyWants.filter(g => !baseCategories.includes(g) && !moneyNeeds.includes(g))];
 
   // Get budgets for selected month
-  const monthBudgets = budgets.filter(b => b.month === selectedMonth);
+  const monthBudgets = budgets.filter(b => b.month === selectedMonth).sort((a,b) => (a.sortOrder||999)-(b.sortOrder||999));
 
   // Categories already budgeted this month
   const alreadyBudgeted = new Set(monthBudgets.map(b => b.category));
@@ -1963,6 +1963,10 @@ function BudgetTab({ data, update, categories }) {
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Budget Amount (₹)</label>
               <input type="number" value={editBudget.amount} onChange={e => setEditBudget(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Sort Order (1, 2, 3...)</label>
+              <input type="number" min="1" placeholder="e.g. 1" value={editBudget.sortOrder || ""} onChange={e => setEditBudget(p => ({ ...p, sortOrder: parseInt(e.target.value) || "" }))} style={{ width: "100%", boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setEditBudget(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
@@ -2111,6 +2115,7 @@ function BudgetTab({ data, update, categories }) {
               <div key={budget.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {budget.sortOrder && <span style={{ minWidth: 22, height: 22, borderRadius: "50%", background: "#1a6b3c", color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{budget.sortOrder}</span>}
                     <div style={{ fontWeight: 600, fontSize: 15 }}>{budget.category}</div>
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
                       ₹{spent.toLocaleString("en-IN")} / ₹{budgetAmt.toLocaleString("en-IN")}
