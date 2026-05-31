@@ -2263,25 +2263,19 @@ function MoneyPage({ data, update, tab, setTab }) {
     update(p => ({ banks: (p.banks || []).filter(b => b.id !== id) }));
   }
 
-  function applyAdjustment(direction) {
-    if (!adjustAmt || !adjusting) return;
-    const amt = parseFloat(adjustAmt);
-    if (isNaN(amt) || amt <= 0) return;
-    const adjustingId = adjusting.id;
-    const adjustingName = adjusting.name;
-    const note = adjustNote;
-    update(p => {
-      const newTx = {
-        id: Date.now(),
-        type: direction === "add" ? "income" : "expense",
-        amount: amt,
-        category: note || (direction === "add" ? "Balance Top-up" : "Balance Adjustment"),
-        note: `${adjustingName} manual adjustment`,
-        date: today(),
-        bankId: adjustingId
-      };
-      return { transactions: [...p.transactions, newTx] };
-    });
+  function applyAdjustment() {
+    if (adjustAmt === "" || !adjusting) return;
+    const targetBal = parseFloat(adjustAmt);
+    if (isNaN(targetBal)) return;
+    const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(adjusting.id) && !t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount), 0);
+    const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(adjusting.id) && !t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount), 0);
+    const currentBal = adjusting.type === "Credit Card" ? (adjusting.openingBalance || 0) + txExp - txInc : (adjusting.openingBalance || 0) + txInc - txExp;
+    const diff = targetBal - currentBal;
+    if (diff === 0) { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); return; }
+    const isCC = adjusting.type === "Credit Card";
+    const isAdd = isCC ? diff < 0 : diff > 0;
+    const amt = Math.abs(diff);
+    update(p => ({ transactions: [...p.transactions, { id: Date.now(), type: isAdd ? "income" : "expense", amount: amt, category: adjustNote || (isAdd ? "Balance Top-up" : "Balance Adjustment"), note: `${adjusting.name} manual adjustment`, date: today(), bankId: adjusting.id }] }));
     setAdjusting(null); setAdjustAmt(""); setAdjustNote("");
   }
 
@@ -6080,10 +6074,24 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
 
   function reorderAccounts(newList) { update(p => ({ banks: newList })); }
 
-  function applyAdjustment(direction) {
-    if (!adjustAmt || !adjusting) return;
-    const amt = parseFloat(adjustAmt); if (isNaN(amt) || amt <= 0) return;
-    update(p => ({ transactions: [...p.transactions, { id: Date.now(), type: direction === "add" ? "income" : "expense", amount: amt, category: adjustNote || (direction === "add" ? "Balance Top-up" : "Balance Adjustment"), note: `${adjusting.name} manual adjustment`, date: new Date().toISOString().split("T")[0], bankId: adjusting.id }] }));
+  function getAdjustingCurrentBal() {
+    if (!adjusting) return 0;
+    const txInc = data.transactions.filter(t => t.type === "income" && String(t.bankId) === String(adjusting.id) && !t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount), 0);
+    const txExp = data.transactions.filter(t => t.type === "expense" && String(t.bankId) === String(adjusting.id) && !t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount), 0);
+    if (adjusting.type === "Credit Card") return (adjusting.openingBalance || 0) + txExp - txInc;
+    return (adjusting.openingBalance || 0) + txInc - txExp;
+  }
+
+  function applyAdjustment() {
+    if (adjustAmt === "" || !adjusting) return;
+    const targetBal = parseFloat(adjustAmt);
+    if (isNaN(targetBal)) return;
+    const currentBal = getAdjustingCurrentBal();
+    const diff = targetBal - currentBal;
+    if (diff === 0) { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); return; }
+    const isAdd = adjusting.type === "Credit Card" ? diff < 0 : diff > 0;
+    const amt = Math.abs(diff);
+    update(p => ({ transactions: [...p.transactions, { id: Date.now(), type: isAdd ? "income" : "expense", amount: amt, category: adjustNote || (isAdd ? "Balance Top-up" : "Balance Adjustment"), note: `${adjusting.name} manual adjustment`, date: new Date().toISOString().split("T")[0], bankId: adjusting.id }] }));
     setAdjusting(null); setAdjustAmt(""); setAdjustNote("");
   }
 
@@ -6122,27 +6130,41 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
         </div>
       )}
       {/* Adjust Balance Modal */}
-      {adjusting && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Adjust Balance</div>
-            <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>{adjusting.name}</div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
-              <input type="number" placeholder="e.g. 5000" value={adjustAmt} onChange={e => setAdjustAmt(e.target.value)} style={{ width: "100%", boxSizing: "border-box", fontSize: 16, fontWeight: 600 }} autoFocus />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Note (optional)</label>
-              <input placeholder="e.g. Salary credit" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => applyAdjustment("add")} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>+ Add Money</button>
-              <button onClick={() => applyAdjustment("subtract")} style={{ flex: 1, background: "#d44", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>− Deduct</button>
-              <button onClick={() => { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+      {adjusting && (() => {
+        const currentBal = getAdjustingCurrentBal();
+        const targetBal = parseFloat(adjustAmt);
+        const diff = adjustAmt !== "" && !isNaN(targetBal) ? targetBal - currentBal : null;
+        const isCC = adjusting.type === "Credit Card";
+        const diffLabel = diff === null ? null : diff === 0 ? "No change" : (isCC ? (diff < 0 ? `Payment of ${fmtCur(Math.abs(diff))}` : `Charge of ${fmtCur(Math.abs(diff))}`) : (diff > 0 ? `+${fmtCur(diff)}` : `\u2212${fmtCur(Math.abs(diff))}`));
+        const diffColor = diff === null || diff === 0 ? "var(--color-text-secondary)" : (isCC ? (diff < 0 ? "#1a6b3c" : "#d44") : (diff > 0 ? "#1a6b3c" : "#d44"));
+        const isValid = adjustAmt !== "" && !isNaN(targetBal);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
+              <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Adjust Balance</div>
+              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>{adjusting.name}</div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>New Balance (₹)</label>
+                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Current: <strong>{fmtCur(currentBal)}</strong></span>
+                </div>
+                <input type="number" placeholder={String(currentBal)} value={adjustAmt} onChange={e => setAdjustAmt(e.target.value)} style={{ width: "100%", boxSizing: "border-box", fontSize: 16, fontWeight: 600 }} autoFocus />
+                {diffLabel && (
+                  <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: diffColor }}>{diffLabel}</div>
+                )}
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Note (optional)</label>
+                <input placeholder="e.g. Salary credit" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={applyAdjustment} disabled={!isValid} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: isValid ? "pointer" : "not-allowed", fontWeight: 600, fontSize: 14, opacity: isValid ? 1 : 0.5 }}>Set Balance</button>
+                <button onClick={() => { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Add Account */}
       <div style={cardStyle}>
