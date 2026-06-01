@@ -14024,29 +14024,142 @@ function PortfolioHub({ data, update }) {
   const fmtCur = n => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
   const pnlColor = v => v >= 0 ? "#1a6b3c" : "#d44";
 
-  const TABS = [
-    { id: "overall",   label: "🏠 Overall"               },
-    { id: "indian",    label: "📈 Indian Stocks"         },
-    { id: "us",        label: "🇺🇸 US Stocks"            },
-    { id: "mf",        label: "💼 Mutual Funds"          },
-    { id: "analysis",  label: "📊 Analysis"              },
-    { id: "compare",   label: "🔍 Comparative Analysis"  },
-    { id: "pf",        label: "🏦 PF Account"            },
+  // ── Hierarchy: L1 = Overall | Asset Type;  L2 = Equity | Debt;  L3 = leaf tab
+  // "tab" still drives which leaf content to render — unchanged for all consumers
+  const NAV_TREE = [
+    {
+      id: "overall",
+      label: "🏠 Overall",
+      leaf: true,
+    },
+    {
+      id: "assetType",
+      label: "Asset Type",
+      leaf: false,
+      children: [
+        {
+          id: "equity",
+          label: "Equity",
+          leaf: false,
+          children: [
+            { id: "indian",   label: "📈 Indian Stocks"        },
+            { id: "us",       label: "🇺🇸 US Stocks"           },
+            { id: "mf",       label: "💼 Mutual Funds"         },
+            {
+              id: "analyzer",
+              label: "📊 Stock Analyzer",
+              leaf: false,
+              children: [
+                { id: "analysis", label: "📊 Analysis"             },
+                { id: "compare",  label: "🔍 Comparative Analysis" },
+              ],
+            },
+          ],
+        },
+        {
+          id: "debt",
+          label: "Debt",
+          leaf: false,
+          children: [
+            { id: "pf", label: "🏦 PF Account" },
+          ],
+        },
+      ],
+    },
   ];
+
+  // Derive breadcrumb path for current tab
+  function findPath(nodes, targetId, path = []) {
+    for (const node of nodes) {
+      const cur = [...path, node];
+      if (node.id === targetId) return cur;
+      if (node.children) {
+        const found = findPath(node.children, targetId, cur);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  const activePath = findPath(NAV_TREE, tab) || [NAV_TREE[0]];
+
+  // Which node to show children for at each level
+  // L1 selection: Overall or assetType
+  const l1Active = activePath[0];
+  // L2 selection (Equity/Debt): only if l1 = assetType
+  const l2Active = activePath[1] || null;
+  // L3 selection (analyzer sub-tabs): only if l2 = analyzer
+  const l3Active = activePath[2] || null;
+  const l4Active = activePath[3] || null;
+
+  function NavBar({ nodes, activeId, onSelect, indent = 0 }) {
+    const borderColor = "#1a6b3c";
+    return (
+      <div style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content", paddingLeft: indent }}>
+          {nodes.map(t => {
+            const isActive = activeId === t.id;
+            return (
+              <button key={t.id} onClick={() => {
+                // navigate to leaf or first leaf child
+                if (t.leaf !== false) { onSelect(t.id); return; }
+                // find first leaf descendant
+                function firstLeaf(n) {
+                  if (!n.children) return n.id;
+                  return firstLeaf(n.children[0]);
+                }
+                onSelect(firstLeaf(t));
+              }}
+                style={{ padding: "9px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 13,
+                  color: isActive ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                  fontWeight: isActive ? 600 : 400,
+                  borderBottom: isActive ? `2.5px solid ${borderColor}` : "2.5px solid transparent",
+                  marginBottom: -1, whiteSpace: "nowrap" }}>
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* Tab bar — scrollable on mobile */}
-      <div style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", marginBottom: 20 }}>
-        <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content" }}>
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ padding: "10px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, borderBottom: tab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1, whiteSpace: "nowrap" }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* ── L1 nav: Overall | Asset Type ── */}
+      <NavBar nodes={NAV_TREE} activeId={l1Active.id} onSelect={setTab} />
+
+      {/* ── L2 nav: Equity | Debt (only when Asset Type selected) ── */}
+      {l1Active.id === "assetType" && l1Active.children && (() => {
+        const l2ActiveId = l2Active?.id || l1Active.children[0].id;
+        return (
+          <div style={{ marginTop: 2, paddingLeft: 12, background: "var(--color-background-secondary)", borderRadius: "0 0 0 0" }}>
+            <NavBar nodes={l1Active.children} activeId={l2ActiveId} onSelect={setTab} indent={0} />
+          </div>
+        );
+      })()}
+
+      {/* ── L3 nav: Indian | US | MF | Stock Analyzer (only when Equity selected) ── */}
+      {l1Active.id === "assetType" && l2Active?.id === "equity" && l2Active.children && (() => {
+        const l3ActiveId = l3Active?.id || l2Active.children[0].id;
+        return (
+          <div style={{ marginTop: 0, paddingLeft: 24, background: "var(--color-background-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+            <NavBar nodes={l2Active.children} activeId={l3ActiveId} onSelect={setTab} />
+          </div>
+        );
+      })()}
+
+      {/* ── L4 nav: Analysis | Comparative (only when Stock Analyzer selected) ── */}
+      {l1Active.id === "assetType" && l2Active?.id === "equity" && l3Active?.id === "analyzer" && l3Active.children && (() => {
+        const l4ActiveId = l4Active?.id || l3Active.children[0].id;
+        return (
+          <div style={{ marginTop: 0, paddingLeft: 40, background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-secondary)" }}>
+            <NavBar nodes={l3Active.children} activeId={l4ActiveId} onSelect={setTab} />
+          </div>
+        );
+      })()}
+
+      <div style={{ marginTop: 20 }}>
 
       {/* ── OVERALL TAB ── */}
       {tab === "overall" && (
@@ -14221,6 +14334,7 @@ function PortfolioHub({ data, update }) {
       {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
       {tab === "compare"  && <ComparativeAnalysisView data={data} />}
       {tab === "pf"       && <PFAccountPage data={data} update={update} />}
+      </div>
     </div>
   );
 }
