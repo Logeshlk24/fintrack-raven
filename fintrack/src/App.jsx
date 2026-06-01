@@ -150,6 +150,7 @@ const defaultData = {
   lotSizes: { "Nifty 50": 65, "Bank Nifty": 30, "Sensex": 20, "Crude Oil": 100, "Crude Oil M": 10, "Natural Gas": 1250, "Natural Gas M": 250, "Gold": 100, "Gold M": 10 },
   customInstruments: { "Index Options": [], "Stock Options": [], "Commodities": [] },
   portfolioHoldings: [],
+  pfAccount: { contributions: [], withdrawals: [] },
   goals: [],
   snapshots: [],
   scheduledPayments: [],
@@ -14006,6 +14007,13 @@ function PortfolioHub({ data, update }) {
   const mfInvested  = mfs.reduce((s,m) => s + (m.investedAmount||0), 0);
   const mfCurrent   = mfs.reduce((s,m) => s + (m.units||0)*(m.nav||0), 0);
 
+  const pfAcc = data.pfAccount || { contributions: [], withdrawals: [] };
+  const pfContribs   = pfAcc.contributions || [];
+  const pfWithdrawals = pfAcc.withdrawals || [];
+  const pfTotalContrib = pfContribs.reduce((s,c) => s + (c.employee||0) + (c.employer||0), 0);
+  const pfTotalWithdrawn = pfWithdrawals.reduce((s,w) => s + (w.amount||0), 0);
+  const pfBalance = pfTotalContrib - pfTotalWithdrawn;
+
   const totalInvested  = indInvested + usInvested + mfInvested;
   const totalCurrent   = indCurrent  + usCurrent  + mfCurrent;
   const totalReturn    = totalCurrent - totalInvested;
@@ -14023,6 +14031,7 @@ function PortfolioHub({ data, update }) {
     { id: "mf",        label: "💼 Mutual Funds"          },
     { id: "analysis",  label: "📊 Analysis"              },
     { id: "compare",   label: "🔍 Comparative Analysis"  },
+    { id: "pf",        label: "🏦 PF Account"            },
   ];
 
   return (
@@ -14086,12 +14095,13 @@ function PortfolioHub({ data, update }) {
                 { label: "🇮🇳 Indian Stocks", invested: indInvested, current: indCurrent },
                 { label: "🇺🇸 US Stocks",     invested: usInvested,  current: usCurrent  },
                 { label: "💼 Mutual Funds",   invested: mfInvested,  current: mfCurrent  },
+                { label: "🏦 PF Account",     invested: pfTotalContrib, current: pfBalance, isPF: true },
               ].map(c => {
                 const ret = c.current - c.invested;
                 const pct = c.invested > 0 ? (ret / c.invested) * 100 : 0;
                 return (
                   <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", cursor: "pointer" }}
-                    onClick={() => setTab(c.label.includes("Indian") ? "indian" : c.label.includes("US") ? "us" : "mf")}>
+                    onClick={() => setTab(c.label.includes("Indian") ? "indian" : c.label.includes("US") ? "us" : c.label.includes("PF") ? "pf" : "mf")}>
                     <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 4 }}>{c.label}</div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtCur(c.current)}</div>
                     <div style={{ fontSize: 11, color: pnlColor(ret), marginTop: 2 }}>
@@ -14210,6 +14220,263 @@ function PortfolioHub({ data, update }) {
       {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
       {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
       {tab === "compare"  && <ComparativeAnalysisView data={data} />}
+      {tab === "pf"       && <PFAccountPage data={data} update={update} />}
+    </div>
+  );
+}
+
+// ─── PF Account Page ──────────────────────────────────────────────────────────
+function PFAccountPage({ data, update }) {
+  const pf = data.pfAccount || { contributions: [], withdrawals: [] };
+  const contributions = pf.contributions || [];
+  const withdrawals   = pf.withdrawals   || [];
+
+  // ── Add Contribution state ──
+  const [showAddForm,  setShowAddForm]  = useState(false);
+  const [month,        setMonth]        = useState(() => {
+    const d = new Date(); return d.toISOString().slice(0, 7);
+  });
+  const [pfAmount,     setPfAmount]     = useState("");
+  const [addNote,      setAddNote]      = useState("");
+
+  // ── Withdraw state ──
+  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [wdAmount,     setWdAmount]     = useState("");
+  const [wdDate,       setWdDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  const [wdNote,       setWdNote]       = useState("");
+
+  // ── Totals ──
+  const totalEmployee  = contributions.reduce((s, c) => s + (c.employee || 0), 0);
+  const totalEmployer  = contributions.reduce((s, c) => s + (c.employer || 0), 0);
+  const totalContrib   = totalEmployee + totalEmployer;
+  const totalWithdrawn = withdrawals.reduce((s, w) => s + (w.amount || 0), 0);
+  const balance        = totalContrib - totalWithdrawn;
+
+  const fmtR = n => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+  function saveContribution() {
+    const amt = parseFloat(pfAmount);
+    if (!amt || amt <= 0 || !month) return;
+    const employee = amt * 0.5;
+    const employer = amt * 0.5;
+    const entry = { id: Date.now(), month, pfAmount: amt, employee, employer, note: addNote };
+    const updated = { ...pf, contributions: [...contributions, entry].sort((a, b) => a.month.localeCompare(b.month)) };
+    update(d => ({ ...d, pfAccount: updated }));
+    setPfAmount(""); setAddNote(""); setShowAddForm(false);
+  }
+
+  function deleteContribution(id) {
+    const updated = { ...pf, contributions: contributions.filter(c => c.id !== id) };
+    update(d => ({ ...d, pfAccount: updated }));
+  }
+
+  function saveWithdrawal() {
+    const amt = parseFloat(wdAmount);
+    if (!amt || amt <= 0) return;
+    if (amt > balance) { alert("Withdrawal amount exceeds available balance!"); return; }
+    const entry = { id: Date.now(), date: wdDate, amount: amt, note: wdNote };
+    const updated = { ...pf, withdrawals: [...withdrawals, entry].sort((a, b) => a.date.localeCompare(b.date)) };
+    update(d => ({ ...d, pfAccount: updated }));
+    setWdAmount(""); setWdNote(""); setShowWithdraw(false);
+  }
+
+  function deleteWithdrawal(id) {
+    const updated = { ...pf, withdrawals: withdrawals.filter(w => w.id !== id) };
+    update(d => ({ ...d, pfAccount: updated }));
+  }
+
+  const cardStyle = { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginBottom: 16 };
+  const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, boxSizing: "border-box" };
+  const btnPrimary = { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 13, fontWeight: 600 };
+  const btnGhost   = { background: "none", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 };
+
+  const [pfTab, setPfTab] = useState("contributions"); // "contributions" | "withdrawals"
+
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+
+      {/* ── Summary Cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "💰 Total Balance",     val: fmtR(balance),       color: "#1a6b3c" },
+          { label: "👤 Employee Share",    val: fmtR(totalEmployee), color: "var(--color-text-primary)" },
+          { label: "🏢 Employer Share",    val: fmtR(totalEmployer), color: "#4da6ff" },
+          { label: "📤 Total Withdrawn",   val: fmtR(totalWithdrawn), color: "#d44" },
+        ].map(c => (
+          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Action Buttons ── */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <button style={btnPrimary} onClick={() => { setShowAddForm(v => !v); setShowWithdraw(false); }}>
+          {showAddForm ? "✕ Cancel" : "+ Add Monthly Contribution"}
+        </button>
+        <button style={{ ...btnGhost, color: "#d44", borderColor: "#d44" }} onClick={() => { setShowWithdraw(v => !v); setShowAddForm(false); }}>
+          {showWithdraw ? "✕ Cancel" : "📤 Withdraw"}
+        </button>
+      </div>
+
+      {/* ── Add Contribution Form ── */}
+      {showAddForm && (
+        <div style={{ ...cardStyle, border: "1px solid #1a6b3c33" }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14 }}>➕ Add Monthly PF Contribution</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Month</div>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total PF Amount (₹)</div>
+              <input type="number" placeholder="e.g. 5000" value={pfAmount} onChange={e => setPfAmount(e.target.value)} style={inputStyle} min="0" />
+            </div>
+          </div>
+          {pfAmount > 0 && (
+            <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 14px", flex: 1, minWidth: 140 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>👤 Employee (50%)</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#1a6b3c" }}>{fmtR(parseFloat(pfAmount) * 0.5)}</div>
+              </div>
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 14px", flex: 1, minWidth: 140 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>🏢 Employer (50%)</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#4da6ff" }}>{fmtR(parseFloat(pfAmount) * 0.5)}</div>
+              </div>
+            </div>
+          )}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Note (optional)</div>
+            <input type="text" placeholder="e.g. Regular monthly contribution" value={addNote} onChange={e => setAddNote(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={btnPrimary} onClick={saveContribution}>Save Contribution</button>
+            <button style={btnGhost} onClick={() => setShowAddForm(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Withdraw Form ── */}
+      {showWithdraw && (
+        <div style={{ ...cardStyle, border: "1px solid #d4433333" }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>📤 PF Withdrawal</div>
+          <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>
+            Available balance: <strong style={{ color: "#1a6b3c" }}>{fmtR(balance)}</strong>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Withdrawal Date</div>
+              <input type="date" value={wdDate} onChange={e => setWdDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Amount (₹)</div>
+              <input type="number" placeholder="e.g. 10000" value={wdAmount} onChange={e => setWdAmount(e.target.value)} style={inputStyle} min="0" max={balance} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Reason (optional)</div>
+            <input type="text" placeholder="e.g. Medical emergency, Home purchase" value={wdNote} onChange={e => setWdNote(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={{ ...btnPrimary, background: "#d44" }} onClick={saveWithdrawal}>Confirm Withdrawal</button>
+            <button style={btnGhost} onClick={() => setShowWithdraw(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sub-tabs ── */}
+      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+        {[{ id: "contributions", label: `📋 Contributions (${contributions.length})` }, { id: "withdrawals", label: `📤 Withdrawals (${withdrawals.length})` }].map(t => (
+          <button key={t.id} onClick={() => setPfTab(t.id)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: pfTab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: pfTab === t.id ? 600 : 400, borderBottom: pfTab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Contributions List ── */}
+      {pfTab === "contributions" && (
+        <div style={cardStyle}>
+          {contributions.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No contributions yet. Click "Add Monthly Contribution" to get started.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  {["Month", "Total PF", "👤 Employee (50%)", "🏢 Employer (50%)", "Note", ""].map(h => (
+                    <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...contributions].reverse().map(c => (
+                  <tr key={c.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                    <td style={{ padding: "10px 10px", fontWeight: 600 }}>{c.month}</td>
+                    <td style={{ padding: "10px 10px", fontWeight: 600 }}>{fmtR(c.pfAmount)}</td>
+                    <td style={{ padding: "10px 10px", color: "#1a6b3c", fontWeight: 500 }}>{fmtR(c.employee)}</td>
+                    <td style={{ padding: "10px 10px", color: "#4da6ff", fontWeight: 500 }}>{fmtR(c.employer)}</td>
+                    <td style={{ padding: "10px 10px", color: "var(--color-text-secondary)", fontSize: 12 }}>{c.note || "—"}</td>
+                    <td style={{ padding: "10px 10px" }}>
+                      <button onClick={() => deleteContribution(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" }}>🗑</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "1px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+                  <td style={{ padding: "10px 10px", fontWeight: 700 }}>Total</td>
+                  <td style={{ padding: "10px 10px", fontWeight: 700 }}>{fmtR(totalContrib)}</td>
+                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#1a6b3c" }}>{fmtR(totalEmployee)}</td>
+                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#4da6ff" }}>{fmtR(totalEmployer)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Withdrawals List ── */}
+      {pfTab === "withdrawals" && (
+        <div style={cardStyle}>
+          {withdrawals.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              No withdrawals recorded yet.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  {["Date", "Amount", "Reason", ""].map(h => (
+                    <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...withdrawals].reverse().map(w => (
+                  <tr key={w.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                    <td style={{ padding: "10px 10px", fontWeight: 600 }}>{w.date}</td>
+                    <td style={{ padding: "10px 10px", color: "#d44", fontWeight: 600 }}>{fmtR(w.amount)}</td>
+                    <td style={{ padding: "10px 10px", color: "var(--color-text-secondary)", fontSize: 12 }}>{w.note || "—"}</td>
+                    <td style={{ padding: "10px 10px" }}>
+                      <button onClick={() => deleteWithdrawal(w.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" }}>🗑</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "1px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+                  <td style={{ padding: "10px 10px", fontWeight: 700 }}>Total Withdrawn</td>
+                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#d44" }}>{fmtR(totalWithdrawn)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }
