@@ -14351,13 +14351,12 @@ function PFAccountPage({ data, update }) {
     const d = new Date(); return d.toISOString().slice(0, 7);
   });
   const [pfAmount,     setPfAmount]     = useState("");
-  const [addNote,      setAddNote]      = useState("");
 
   // ── Withdraw state ──
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [wdAmount,     setWdAmount]     = useState("");
   const [wdDate,       setWdDate]       = useState(() => new Date().toISOString().slice(0, 10));
-  const [wdNote,       setWdNote]       = useState("");
+  const [wdSource,     setWdSource]     = useState("both"); // "employee" | "employer" | "both"
 
   // ── Totals ──
   const totalEmployee  = contributions.reduce((s, c) => s + (c.employee || 0), 0);
@@ -14365,6 +14364,11 @@ function PFAccountPage({ data, update }) {
   const totalContrib   = totalEmployee + totalEmployer;
   const totalWithdrawn = withdrawals.reduce((s, w) => s + (w.amount || 0), 0);
   const balance        = totalContrib - totalWithdrawn;
+  // Net per-source balances after withdrawals
+  const totalWithdrawnEmployee = withdrawals.reduce((s, w) => s + (w.employeeAmt || (w.source === "employee" ? w.amount : w.source === "both" ? w.amount * 0.5 : 0)), 0);
+  const totalWithdrawnEmployer = withdrawals.reduce((s, w) => s + (w.employerAmt || (w.source === "employer" ? w.amount : w.source === "both" ? w.amount * 0.5 : 0)), 0);
+  const netEmployee    = totalEmployee - totalWithdrawnEmployee;
+  const netEmployer    = totalEmployer - totalWithdrawnEmployer;
 
   const fmtR = n => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
@@ -14373,10 +14377,10 @@ function PFAccountPage({ data, update }) {
     if (!amt || amt <= 0 || !month) return;
     const employee = amt * 0.5;
     const employer = amt * 0.5;
-    const entry = { id: Date.now(), month, pfAmount: amt, employee, employer, note: addNote };
+    const entry = { id: Date.now(), month, pfAmount: amt, employee, employer };
     const updated = { ...pf, contributions: [...contributions, entry].sort((a, b) => a.month.localeCompare(b.month)) };
     update(d => ({ ...d, pfAccount: updated }));
-    setPfAmount(""); setAddNote(""); setShowAddForm(false);
+    setPfAmount(""); setShowAddForm(false);
   }
 
   function deleteContribution(id) {
@@ -14387,11 +14391,21 @@ function PFAccountPage({ data, update }) {
   function saveWithdrawal() {
     const amt = parseFloat(wdAmount);
     if (!amt || amt <= 0) return;
-    if (amt > balance) { alert("Withdrawal amount exceeds available balance!"); return; }
-    const entry = { id: Date.now(), date: wdDate, amount: amt, note: wdNote };
+    // Validate against available balance for chosen source
+    const availableForSource = wdSource === "employee" ? netEmployee : wdSource === "employer" ? netEmployer : balance;
+    if (amt > availableForSource) {
+      const srcLabel = wdSource === "employee" ? "Employee" : wdSource === "employer" ? "Employer" : "Total";
+      alert(`Withdrawal amount exceeds available ${srcLabel} balance of ${fmtR(availableForSource)}!`);
+      return;
+    }
+    let employeeAmt = 0, employerAmt = 0;
+    if (wdSource === "employee") { employeeAmt = amt; employerAmt = 0; }
+    else if (wdSource === "employer") { employeeAmt = 0; employerAmt = amt; }
+    else { employeeAmt = amt * 0.5; employerAmt = amt * 0.5; }
+    const entry = { id: Date.now(), date: wdDate, amount: amt, source: wdSource, employeeAmt, employerAmt };
     const updated = { ...pf, withdrawals: [...withdrawals, entry].sort((a, b) => a.date.localeCompare(b.date)) };
     update(d => ({ ...d, pfAccount: updated }));
-    setWdAmount(""); setWdNote(""); setShowWithdraw(false);
+    setWdAmount(""); setWdSource("both"); setShowWithdraw(false);
   }
 
   function deleteWithdrawal(id) {
@@ -14413,8 +14427,8 @@ function PFAccountPage({ data, update }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
         {[
           { label: "💰 Total Balance",     val: fmtR(balance),       color: "#1a6b3c" },
-          { label: "👤 Employee Share",    val: fmtR(totalEmployee), color: "var(--color-text-primary)" },
-          { label: "🏢 Employer Share",    val: fmtR(totalEmployer), color: "#4da6ff" },
+          { label: "👤 Employee Share",    val: fmtR(netEmployee),   color: "var(--color-text-primary)" },
+          { label: "🏢 Employer Share",    val: fmtR(netEmployer),   color: "#4da6ff" },
           { label: "📤 Total Withdrawn",   val: fmtR(totalWithdrawn), color: "#d44" },
         ].map(c => (
           <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
@@ -14460,10 +14474,6 @@ function PFAccountPage({ data, update }) {
               </div>
             </div>
           )}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Note (optional)</div>
-            <input type="text" placeholder="e.g. Regular monthly contribution" value={addNote} onChange={e => setAddNote(e.target.value)} style={inputStyle} />
-          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button style={btnPrimary} onClick={saveContribution}>Save Contribution</button>
             <button style={btnGhost} onClick={() => setShowAddForm(false)}>Cancel</button>
@@ -14472,32 +14482,94 @@ function PFAccountPage({ data, update }) {
       )}
 
       {/* ── Withdraw Form ── */}
-      {showWithdraw && (
-        <div style={{ ...cardStyle, border: "1px solid #d4433333" }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>📤 PF Withdrawal</div>
-          <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>
-            Available balance: <strong style={{ color: "#1a6b3c" }}>{fmtR(balance)}</strong>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <div>
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Withdrawal Date</div>
-              <input type="date" value={wdDate} onChange={e => setWdDate(e.target.value)} style={inputStyle} />
+      {showWithdraw && (() => {
+        const amt = parseFloat(wdAmount) || 0;
+        const availableForSource = wdSource === "employee" ? netEmployee : wdSource === "employer" ? netEmployer : balance;
+        const previewEmployeeWd = wdSource === "employee" ? amt : wdSource === "both" ? amt * 0.5 : 0;
+        const previewEmployerWd = wdSource === "employer" ? amt : wdSource === "both" ? amt * 0.5 : 0;
+        const postEmployee = netEmployee - previewEmployeeWd;
+        const postEmployer = netEmployer - previewEmployerWd;
+        const postBalance  = balance - amt;
+        return (
+          <div style={{ ...cardStyle, border: "1px solid #d4433333" }}>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>📤 PF Withdrawal</div>
+            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>
+              Available balance: <strong style={{ color: "#1a6b3c" }}>{fmtR(balance)}</strong>
+              {" · "}👤 Employee: <strong>{fmtR(netEmployee)}</strong>
+              {" · "}🏢 Employer: <strong style={{ color: "#4da6ff" }}>{fmtR(netEmployer)}</strong>
             </div>
-            <div>
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Amount (₹)</div>
-              <input type="number" placeholder="e.g. 10000" value={wdAmount} onChange={e => setWdAmount(e.target.value)} style={inputStyle} min="0" max={balance} />
+
+            {/* Withdraw Source */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Withdraw From</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {[
+                  { val: "employee", label: "👤 Employee", color: "#1a6b3c", avail: netEmployee },
+                  { val: "employer", label: "🏢 Employer", color: "#4da6ff", avail: netEmployer },
+                  { val: "both",     label: "👥 Both (50/50)", color: "#7c3aed", avail: balance },
+                ].map(opt => (
+                  <button key={opt.val} onClick={() => setWdSource(opt.val)}
+                    style={{
+                      padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                      border: wdSource === opt.val ? `2px solid ${opt.color}` : "1.5px solid var(--color-border-tertiary)",
+                      background: wdSource === opt.val ? `${opt.color}18` : "var(--color-background-secondary)",
+                      color: wdSource === opt.val ? opt.color : "var(--color-text-secondary)",
+                      transition: "all 0.15s"
+                    }}>
+                    {opt.label}
+                    <span style={{ display: "block", fontSize: 10, fontWeight: 400, marginTop: 1, color: "var(--color-text-secondary)" }}>Avail: {fmtR(opt.avail)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Withdrawal Date</div>
+                <input type="date" value={wdDate} onChange={e => setWdDate(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Amount (₹)</div>
+                <input type="number" placeholder="e.g. 10000" value={wdAmount} onChange={e => setWdAmount(e.target.value)} style={inputStyle} min="0" max={availableForSource} />
+              </div>
+            </div>
+
+            {/* Post-withdrawal preview */}
+            {amt > 0 && amt <= availableForSource && (
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8 }}>📊 Balance After Withdrawal</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                  {[
+                    { label: "💰 Total", val: postBalance, color: "#1a6b3c" },
+                    { label: "👤 Employee", val: postEmployee, color: "var(--color-text-primary)" },
+                    { label: "🏢 Employer", val: postEmployer, color: "#4da6ff" },
+                  ].map(c => (
+                    <div key={c.label} style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 2 }}>{c.label}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: c.val < 0 ? "#d44" : c.color }}>{fmtR(Math.max(0, c.val))}</div>
+                    </div>
+                  ))}
+                </div>
+                {wdSource === "both" && amt > 0 && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center" }}>
+                    Deducting {fmtR(previewEmployeeWd)} from Employee · {fmtR(previewEmployerWd)} from Employer
+                  </div>
+                )}
+              </div>
+            )}
+            {amt > availableForSource && amt > 0 && (
+              <div style={{ background: "#fff0f0", border: "1px solid #d44", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#d44", fontWeight: 500 }}>
+                ⚠ Amount exceeds available {wdSource === "employee" ? "Employee" : wdSource === "employer" ? "Employer" : "Total"} balance of {fmtR(availableForSource)}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...btnPrimary, background: "#d44" }} onClick={saveWithdrawal}>Confirm Withdrawal</button>
+              <button style={btnGhost} onClick={() => { setShowWithdraw(false); setWdAmount(""); setWdSource("both"); }}>Cancel</button>
             </div>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Reason (optional)</div>
-            <input type="text" placeholder="e.g. Medical emergency, Home purchase" value={wdNote} onChange={e => setWdNote(e.target.value)} style={inputStyle} />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button style={{ ...btnPrimary, background: "#d44" }} onClick={saveWithdrawal}>Confirm Withdrawal</button>
-            <button style={btnGhost} onClick={() => setShowWithdraw(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Sub-tabs ── */}
       <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
@@ -14519,7 +14591,7 @@ function PFAccountPage({ data, update }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                  {["Month", "Total PF", "👤 Employee (50%)", "🏢 Employer (50%)", "Note", ""].map(h => (
+                  {["Month", "Total PF", "👤 Employee (50%)", "🏢 Employer (50%)", ""].map(h => (
                     <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>{h}</th>
                   ))}
                 </tr>
@@ -14531,7 +14603,6 @@ function PFAccountPage({ data, update }) {
                     <td style={{ padding: "10px 10px", fontWeight: 600 }}>{fmtR(c.pfAmount)}</td>
                     <td style={{ padding: "10px 10px", color: "#1a6b3c", fontWeight: 500 }}>{fmtR(c.employee)}</td>
                     <td style={{ padding: "10px 10px", color: "#4da6ff", fontWeight: 500 }}>{fmtR(c.employer)}</td>
-                    <td style={{ padding: "10px 10px", color: "var(--color-text-secondary)", fontSize: 12 }}>{c.note || "—"}</td>
                     <td style={{ padding: "10px 10px" }}>
                       <button onClick={() => deleteContribution(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" }}>🗑</button>
                     </td>
@@ -14544,7 +14615,7 @@ function PFAccountPage({ data, update }) {
                   <td style={{ padding: "10px 10px", fontWeight: 700 }}>{fmtR(totalContrib)}</td>
                   <td style={{ padding: "10px 10px", fontWeight: 700, color: "#1a6b3c" }}>{fmtR(totalEmployee)}</td>
                   <td style={{ padding: "10px 10px", fontWeight: 700, color: "#4da6ff" }}>{fmtR(totalEmployer)}</td>
-                  <td colSpan={2}></td>
+                  <td></td>
                 </tr>
               </tfoot>
             </table>
@@ -14563,27 +14634,39 @@ function PFAccountPage({ data, update }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                  {["Date", "Amount", "Reason", ""].map(h => (
+                  {["Date", "Amount", "👤 Employee", "🏢 Employer", "Source", ""].map(h => (
                     <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {[...withdrawals].reverse().map(w => (
-                  <tr key={w.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                    <td style={{ padding: "10px 10px", fontWeight: 600 }}>{w.date}</td>
-                    <td style={{ padding: "10px 10px", color: "#d44", fontWeight: 600 }}>{fmtR(w.amount)}</td>
-                    <td style={{ padding: "10px 10px", color: "var(--color-text-secondary)", fontSize: 12 }}>{w.note || "—"}</td>
-                    <td style={{ padding: "10px 10px" }}>
-                      <button onClick={() => deleteWithdrawal(w.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" }}>🗑</button>
-                    </td>
-                  </tr>
-                ))}
+                {[...withdrawals].reverse().map(w => {
+                  const empWd = w.employeeAmt != null ? w.employeeAmt : w.source === "employee" ? w.amount : w.source === "both" ? w.amount * 0.5 : 0;
+                  const erpWd = w.employerAmt != null ? w.employerAmt : w.source === "employer" ? w.amount : w.source === "both" ? w.amount * 0.5 : 0;
+                  const srcLabel = w.source === "employee" ? "👤 Employee" : w.source === "employer" ? "🏢 Employer" : "👥 Both";
+                  const srcColor = w.source === "employee" ? "#1a6b3c" : w.source === "employer" ? "#4da6ff" : "#7c3aed";
+                  return (
+                    <tr key={w.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                      <td style={{ padding: "10px 10px", fontWeight: 600 }}>{w.date}</td>
+                      <td style={{ padding: "10px 10px", color: "#d44", fontWeight: 600 }}>{fmtR(w.amount)}</td>
+                      <td style={{ padding: "10px 10px", color: empWd > 0 ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: 500 }}>{empWd > 0 ? fmtR(empWd) : "—"}</td>
+                      <td style={{ padding: "10px 10px", color: erpWd > 0 ? "#4da6ff" : "var(--color-text-secondary)", fontWeight: 500 }}>{erpWd > 0 ? fmtR(erpWd) : "—"}</td>
+                      <td style={{ padding: "10px 10px" }}>
+                        <span style={{ background: `${srcColor}18`, color: srcColor, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>{srcLabel}</span>
+                      </td>
+                      <td style={{ padding: "10px 10px" }}>
+                        <button onClick={() => deleteWithdrawal(w.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" }}>🗑</button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: "1px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
                   <td style={{ padding: "10px 10px", fontWeight: 700 }}>Total Withdrawn</td>
                   <td style={{ padding: "10px 10px", fontWeight: 700, color: "#d44" }}>{fmtR(totalWithdrawn)}</td>
+                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#1a6b3c" }}>{fmtR(totalWithdrawnEmployee)}</td>
+                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#4da6ff" }}>{fmtR(totalWithdrawnEmployer)}</td>
                   <td colSpan={2}></td>
                 </tr>
               </tfoot>
