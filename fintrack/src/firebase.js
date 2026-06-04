@@ -70,18 +70,7 @@ export const signInWithGoogle = async () => {
   }
 };
 
-// ── getFreshDriveToken: Returns a valid Drive access token, or null ──────────
-//
-// Strategy:
-//  1. Return cached token if it has >5 min left.
-//  2. Otherwise, probe the cached token against the Drive API — Google OAuth
-//     tokens often outlive their stated 1-hour window in practice.
-//  3. If the probe fails (401), the token is truly expired → return null so
-//     the UI can prompt the user to re-authenticate via signInWithGoogle().
-//
-// Why no silent signInWithPopup(prompt:'none')?
-//  It's unreliable in deployed apps (popup blocked, cross-origin restrictions)
-//  and always throws, causing confusing fallback behaviour. Skip it entirely.
+// ── getFreshDriveToken: Uses Firebase's permanent token refresh ──────────────
 export async function getFreshDriveToken() {
   const user = auth.currentUser;
   if (!user) {
@@ -92,38 +81,74 @@ export async function getFreshDriveToken() {
   const savedAccessToken = localStorage.getItem("ft_drv_access_tok");
   const accessExpiry = parseInt(localStorage.getItem("ft_drv_access_exp") || "0");
 
-  // ── Step 1: Return cached token if still fresh (>5 min remaining) ───────────
+  // ── Step 1: Return cached access token if still fresh ───────────────────────
   if (savedAccessToken && Date.now() < accessExpiry - 5 * 60 * 1000) {
     return savedAccessToken;
   }
 
-  // ── Step 2: Token may be expired — probe it against the Drive API ───────────
-  if (savedAccessToken) {
-    console.log("🔄 Token near/past expiry — probing Drive API...");
+  // ── Step 2: Access token expired - get fresh one using Firebase ─────────────
+  console.log("🔄 Access token expired - getting fresh token...");
+
+  try {
+    // Firebase Auth maintains a session with Google
+    // We can force it to give us a fresh token
+    const idTokenResult = await user.getIdTokenResult(true); // Force refresh
+    
+    // Now try to get a fresh access token by re-authenticating silently
+    const refreshProvider = new GoogleAuthProvider();
+    refreshProvider.addScope("https://www.googleapis.com/auth/drive.file");
+    refreshProvider.setCustomParameters({
+      login_hint: user.email,
+      prompt: 'none' // Silent - no popup if session still valid
+    });
+
     try {
-      const probeRes = await fetch(
-        "https://www.googleapis.com/drive/v3/about?fields=user",
-        { headers: { Authorization: `Bearer ${savedAccessToken}` } }
-      );
+      const result = await signInWithPopup(auth, refreshProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const newAccessToken = credential?.accessToken;
 
-      if (probeRes.ok) {
-        // Still valid — extend the local expiry by 30 minutes
-        const newExpiry = Date.now() + 30 * 60 * 1000;
+      if (newAccessToken) {
+        const newExpiry = Date.now() + 55 * 60 * 1000;
+        localStorage.setItem("ft_drv_access_tok", newAccessToken);
         localStorage.setItem("ft_drv_access_exp", String(newExpiry));
-        console.log("✅ Token still valid — extended expiry by 30 min");
-        return savedAccessToken;
+        console.log("✅ Fresh access token obtained silently!");
+        return newAccessToken;
       }
-
-      // 401 = truly expired
-      console.log("❌ Token expired (401) — user must re-authenticate");
-    } catch (probeError) {
-      console.log("❌ Token probe network error:", probeError.message);
+    } catch (silentError) {
+      // Silent refresh failed - this is normal if session expired
+      console.log("⚠️ Silent refresh unavailable, testing old token...");
+      
+      // ── Step 3: Test if old access token still works ──────────────────────
+      if (savedAccessToken) {
+        try {
+          const testRes = await fetch(
+            'https://www.googleapis.com/drive/v3/about?fields=user',
+            { headers: { Authorization: `Bearer ${savedAccessToken}` } }
+          );
+          
+          if (testRes.ok) {
+            // Old token works! Extend its expiry
+            const newExpiry = Date.now() + 30 * 60 * 1000; // 30 more minutes
+            localStorage.setItem("ft_drv_access_exp", String(newExpiry));
+            console.log("✅ Old access token still valid - extended expiry");
+            return savedAccessToken;
+          }
+        } catch (testError) {
+          console.log("❌ Old token test failed:", testError.message);
+        }
+      }
+      
+      // ── Step 4: All refresh attempts failed ─────────────────────────────────
+      console.log("❌ Token expired - user needs to re-authenticate");
+      return null;
     }
-  }
 
-  // ── Step 3: No valid token — caller must trigger re-auth ────────────────────
-  console.log("❌ No valid Drive token — re-authentication required");
-  return null;
+    return null;
+    
+  } catch (error) {
+    console.error("❌ Token refresh error:", error);
+    return null;
+  }
 }
 
 // ── Re-authenticate Drive (shows popup with consent) ──────────────────────────
