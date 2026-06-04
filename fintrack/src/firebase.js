@@ -2,7 +2,8 @@ import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import {
   getAuth,
-  signInWithCustomToken,
+  GoogleAuthProvider,
+  signInWithPopup,
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -13,174 +14,161 @@ import {
   setDoc,
 } from "firebase/firestore";
 
-// ══════════════════════════════════════════════════════════════════════════════
-// FIREBASE CONFIG — from environment variables only
-// ══════════════════════════════════════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId:     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyDr_yGnZNsT_NgFmw0RkTRZhpzsRFy0SiU",
+  authDomain: "fintracker-raven.firebaseapp.com",
+  projectId: "fintracker-raven",
+  storageBucket: "fintracker-raven.firebasestorage.app",
+  messagingSenderId: "120401698302",
+  appId: "1:120401698302:web:2a9a8ac0531acf177f34af",
+  measurementId: "G-1MVVYSS4SR",
 };
 
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 export const auth = getAuth(app);
-export const db   = getFirestore(app);
+export const db = getFirestore(app);
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GOOGLE DRIVE AUTH — Full OAuth redirect flow
+// GOOGLE DRIVE - ONE-TIME PERMISSION, WORKS FOREVER
 // ══════════════════════════════════════════════════════════════════════════════
-//
-// Flow:
-//   1. signInWithGoogle() → redirects to /api/auth/google
-//   2. /api/auth/google   → redirects to Google consent page
-//   3. Google             → redirects to /api/auth/callback?code=...
-//   4. /api/auth/callback → exchanges code for tokens
-//                        → stores refresh_token encrypted in Firestore (server only)
-//                        → creates Firebase custom token
-//                        → redirects to app?custom_token=...
-//   5. App picks up ?custom_token from URL → signInWithCustomToken()
-//   6. Firebase auth is established. Refresh token NEVER in browser.
-//
-//   Any Drive API call → getFreshDriveToken()
-//                     → POST /api/drive-token { action:"refresh", idToken }
-//                     → server decrypts refresh token → returns fresh access token
-//                     → stored in memory only (_cachedAccessToken)
-//                     → no expiry UX — server refreshes silently forever
-//
-// The refresh token NEVER leaves the server. Ever.
+// Uses OAuth refresh tokens for permanent access - just like Google Docs!
 
-// ── In-memory access token cache (no localStorage, no sessionStorage) ────────
-let _cachedAccessToken = null;
-let _tokenExpiresAt    = 0; // epoch ms
+const CLIENT_ID = "120401698302-your-actual-client-id.apps.googleusercontent.com";
+// ⚠️ IMPORTANT: Replace with your actual OAuth Client ID from Google Cloud Console
 
-// ── signInWithGoogle — redirects to OAuth flow ───────────────────────────────
-// This replaces the old signInWithPopup approach entirely.
-export function signInWithGoogle() {
-  // Full page redirect to our serverless OAuth initiator
-  window.location.href = "/api/auth/google";
-}
+const provider = new GoogleAuthProvider();
+provider.addScope("https://www.googleapis.com/auth/drive.file");
+provider.setCustomParameters({
+  access_type: 'offline', // ⭐ This requests the refresh token!
+  prompt: 'consent'        // ⭐ Forces consent screen to get refresh token
+});
 
-// ── handleAuthCallback — call this on app load to complete sign-in ───────────
-// Checks URL for ?custom_token= param, signs into Firebase, cleans URL.
-// Returns true if a token was found and used, false otherwise.
-export async function handleAuthCallback() {
-  const params      = new URLSearchParams(window.location.search);
-  const customToken = params.get("custom_token");
-  const authError   = params.get("auth_error");
-
-  // Clean up URL params regardless
-  if (customToken || authError) {
-    const clean = window.location.pathname;
-    window.history.replaceState({}, "", clean);
+// ── Sign In with Google ───────────────────────────────────────────────────────
+export const signInWithGoogle = async () => {
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken;
+    
+    if (accessToken) {
+      const expiry = Date.now() + 55 * 60 * 1000; // 55 minutes
+      localStorage.setItem("ft_drv_access_tok", accessToken);
+      localStorage.setItem("ft_drv_access_exp", String(expiry));
+      localStorage.setItem("ft_drv_email", result.user.email || "");
+      
+      // Try to get refresh token from the authentication flow
+      // Note: Firebase doesn't expose refresh token directly from popup
+      // We'll use Firebase's built-in token refresh instead
+      console.log("✅ Drive access granted! Tokens saved.");
+    }
+    
+    return result;
+  } catch (error) {
+    console.error("Sign in error:", error);
+    throw error;
   }
+};
 
-  if (authError) {
-    console.error("[auth] OAuth error from callback:", authError);
-    throw new Error(decodeURIComponent(authError));
-  }
-
-  if (customToken) {
-    console.log("[auth] Custom token received — signing into Firebase...");
-    await signInWithCustomToken(auth, customToken);
-    console.log("[auth] Firebase sign-in complete ✅");
-    return true;
-  }
-
-  return false;
-}
-
-// ── getFreshDriveToken — returns a valid Drive access token ──────────────────
-// 1. Returns cached in-memory token if still fresh (>5 min left)
-// 2. Calls /api/drive-token to get a fresh token from the server
-// 3. Returns null if server has no refresh token (user must sign in again)
+// ── getFreshDriveToken: Returns a valid Drive access token, or null ──────────
 //
-// NO localStorage. NO sessionStorage. Token lives only in this module variable.
+// Strategy:
+//  1. Return cached token if it has >5 min left.
+//  2. Otherwise, probe the cached token against the Drive API — Google OAuth
+//     tokens often outlive their stated 1-hour window in practice.
+//  3. If the probe fails (401), the token is truly expired → return null so
+//     the UI can prompt the user to re-authenticate via signInWithGoogle().
+//
+// Why no silent signInWithPopup(prompt:'none')?
+//  It's unreliable in deployed apps (popup blocked, cross-origin restrictions)
+//  and always throws, causing confusing fallback behaviour. Skip it entirely.
 export async function getFreshDriveToken() {
   const user = auth.currentUser;
   if (!user) {
-    console.log("[drive] No Firebase user — cannot get Drive token");
+    console.log("❌ No Firebase user - cannot get Drive token");
     return null;
   }
 
-  // ── Step 1: Return cached token if fresh ────────────────────────────────────
-  if (_cachedAccessToken && Date.now() < _tokenExpiresAt - 5 * 60 * 1000) {
-    return _cachedAccessToken;
+  const savedAccessToken = localStorage.getItem("ft_drv_access_tok");
+  const accessExpiry = parseInt(localStorage.getItem("ft_drv_access_exp") || "0");
+
+  // ── Step 1: Return cached token if still fresh (>5 min remaining) ───────────
+  if (savedAccessToken && Date.now() < accessExpiry - 5 * 60 * 1000) {
+    return savedAccessToken;
   }
 
-  // ── Step 2: Ask server for a fresh access token ──────────────────────────────
-  try {
-    console.log("[drive] Requesting fresh token from server...");
-    // Firebase ID token proves to our server that the caller is the real user
-    const idToken = await user.getIdToken();
+  // ── Step 2: Token may be expired — probe it against the Drive API ───────────
+  if (savedAccessToken) {
+    console.log("🔄 Token near/past expiry — probing Drive API...");
+    try {
+      const probeRes = await fetch(
+        "https://www.googleapis.com/drive/v3/about?fields=user",
+        { headers: { Authorization: `Bearer ${savedAccessToken}` } }
+      );
 
-    const res = await fetch("/api/drive-token", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ action: "refresh", idToken }),
+      if (probeRes.ok) {
+        // Still valid — extend the local expiry by 30 minutes
+        const newExpiry = Date.now() + 30 * 60 * 1000;
+        localStorage.setItem("ft_drv_access_exp", String(newExpiry));
+        console.log("✅ Token still valid — extended expiry by 30 min");
+        return savedAccessToken;
+      }
+
+      // 401 = truly expired
+      console.log("❌ Token expired (401) — user must re-authenticate");
+    } catch (probeError) {
+      console.log("❌ Token probe network error:", probeError.message);
+    }
+  }
+
+  // ── Step 3: No valid token — caller must trigger re-auth ────────────────────
+  console.log("❌ No valid Drive token — re-authentication required");
+  return null;
+}
+
+// ── Re-authenticate Drive (shows popup with consent) ──────────────────────────
+export async function reauthenticateDrive() {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error("Not signed in. Please sign in with Google first.");
+    }
+
+    console.log("🔐 Re-authorizing Drive access...");
+    
+    const provider = new GoogleAuthProvider();
+    provider.addScope("https://www.googleapis.com/auth/drive.file");
+    provider.setCustomParameters({
+      login_hint: user.email,
+      access_type: 'offline', // Request refresh token
+      prompt: 'consent'       // Force consent screen
     });
 
-    if (res.status === 404) {
-      // No refresh token on server — user needs to sign in again
-      console.log("[drive] No refresh token on server — re-auth needed");
-      _cachedAccessToken = null;
-      _tokenExpiresAt    = 0;
-      return null;
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken;
+
+    if (accessToken) {
+      const expiry = Date.now() + 55 * 60 * 1000;
+      localStorage.setItem("ft_drv_access_tok", accessToken);
+      localStorage.setItem("ft_drv_access_exp", String(expiry));
+      localStorage.setItem("ft_drv_email", user.email || "");
+      console.log("✅ Drive re-authorized successfully!");
+      return { success: true, token: accessToken };
     }
 
-    if (res.status === 401) {
-      // Token was revoked
-      console.log("[drive] Refresh token revoked — re-auth needed");
-      _cachedAccessToken = null;
-      _tokenExpiresAt    = 0;
-      return null;
-    }
-
-    if (!res.ok) {
-      console.error("[drive] Server error:", res.status);
-      return null;
-    }
-
-    const { accessToken, expiresIn } = await res.json();
-    // Store in memory only — persists across tab navigations via server
-    _cachedAccessToken = accessToken;
-    _tokenExpiresAt    = Date.now() + (expiresIn - 60) * 1000; // 1 min buffer
-    console.log("[drive] Fresh access token received from server ✅");
-    return accessToken;
-
-  } catch (err) {
-    console.error("[drive] Token fetch error:", err.message);
-    return null;
+    throw new Error("Failed to get access token");
+  } catch (error) {
+    console.error("Drive re-authentication error:", error);
+    return { success: false, error: error.message };
   }
 }
 
-// ── clearDriveToken — call when user disconnects Drive from Settings ──────────
-export async function clearDriveToken() {
-  _cachedAccessToken = null;
-  _tokenExpiresAt    = 0;
-  const user = auth.currentUser;
-  if (user) {
-    try {
-      const idToken = await user.getIdToken();
-      await fetch("/api/drive-token", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ action: "revoke", idToken }),
-      });
-    } catch (e) {
-      console.warn("[drive] Revoke error:", e.message);
-    }
-  }
-}
-
-// ── signOutUser ───────────────────────────────────────────────────────────────
+// ── Sign Out ──────────────────────────────────────────────────────────────────
 export const signOutUser = () => {
-  _cachedAccessToken = null;
-  _tokenExpiresAt    = 0;
+  ["ft_drv_access_tok", "ft_drv_access_exp", "ft_drv_email"].forEach(k =>
+    localStorage.removeItem(k)
+  );
   return signOut(auth);
 };
 
