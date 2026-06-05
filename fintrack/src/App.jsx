@@ -136,6 +136,1448 @@ function migrateLocalStorage() {
 }
 
 
+// ── Hoisted static style objects (Issue #10) ─────────────────────────
+// Stable references so identical inline styles don't allocate a new object on
+// every render. Only fully-static styles (literal values) were extracted.
+const STYLES = {
+  s0: { display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" },
+  s1: { fontFamily: "'DM Serif Display', serif", fontSize: 20, color: "var(--color-text-primary)", whiteSpace: "nowrap" },
+  s2: {
+            background: "none", border: "none", cursor: "pointer",
+            color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1,
+            padding: "2px 4px", borderRadius: 6, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center"
+          },
+  s3: { fontSize: 16, flexShrink: 0 },
+  s4: { paddingLeft: 6, color: "var(--color-border-primary)", cursor: "grab", fontSize: 13, userSelect: "none" },
+  s5: { marginTop: "auto", padding: "0 0 0.5rem" },
+  s6: { fontSize: 16 },
+  s7: { padding: "0.6rem 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 },
+  s8: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 },
+  s9: { width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 },
+  s10: { width: 26, height: 26, borderRadius: "50%", background: "#1a6b3c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 },
+  s11: { minWidth: 0 },
+  s12: { fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s13: { width: "100%", background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" },
+  s14: { marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0.5rem 0" },
+  s15: { width: 28, height: 28, borderRadius: "50%", objectFit: "cover" },
+  s16: { width: 28, height: 28, borderRadius: "50%", background: "#1a6b3c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600 },
+  s17: {
+              position: "fixed", inset: 0, zIndex: 998, background: "rgba(0,0,0,0.3)"
+            },
+  s18: {
+                position: "fixed", bottom: 64, left: 0, right: 0, zIndex: 999,
+                background: "var(--color-background-primary)",
+                borderTop: "0.5px solid var(--color-border-tertiary)",
+                borderRadius: "16px 16px 0 0",
+                padding: "1rem",
+                display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8,
+              },
+  s19: { fontSize: 22 },
+  s20: {
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
+            background: "var(--color-background-primary)",
+            borderTop: "0.5px solid var(--color-border-tertiary)",
+            display: "flex", alignItems: "stretch",
+            height: 64,
+            paddingBottom: "env(safe-area-inset-bottom)",
+          },
+  s21: { fontSize: 22, letterSpacing: 2 },
+  s22: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f5f5f5", fontFamily: "'DM Sans', sans-serif" },
+  s23: { fontFamily: "'DM Serif Display', serif", fontSize: 30, marginBottom: 12, color: "#111" },
+  s24: { fontSize: 13, color: "#6b7280" },
+  s25: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--color-background-tertiary)", fontFamily: "'DM Sans', sans-serif" },
+  s26: { background: "var(--color-background-primary)", borderRadius: 20, border: "0.5px solid var(--color-border-tertiary)", padding: "2.5rem 2rem", width: "min(400px, 90vw)", textAlign: "center", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" },
+  s27: { fontFamily: "'DM Serif Display', serif", fontSize: 32, marginBottom: 6 },
+  s28: { color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 28, lineHeight: 1.5 },
+  s29: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 28 },
+  s30: { border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "0.9rem 0.5rem", fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.5 },
+  s31: { fontSize: 22, color: "#1a6b3c", marginBottom: 6 },
+  s32: { color: "#d44", fontSize: 13, marginTop: 12 },
+  s33: { fontSize: 11, color: "var(--color-text-secondary)", marginTop: 20, lineHeight: 1.7 },
+  s34: { fontFamily: "'DM Serif Display', serif", fontSize: 28, marginBottom: 8 },
+  s35: { display: "flex", gap: 6, marginBottom: 28 },
+  s36: { background: "var(--color-background-primary)", borderRadius: 16, border: "0.5px solid var(--color-border-tertiary)", padding: "2rem", width: "min(480px, 90vw)" },
+  s37: { textAlign: "center", marginBottom: 8, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 22 },
+  s38: { textAlign: "center", color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 24 },
+  s39: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 },
+  s40: { border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, padding: "1rem", textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)" },
+  s41: { fontSize: 20, color: "#1a6b3c", marginBottom: 6 },
+  s42: { color: "#d44", fontSize: 13, textAlign: "center", marginTop: 10 },
+  s43: { marginBottom: 14 },
+  s44: { display: "block", fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 4 },
+  s45: { width: "100%", boxSizing: "border-box" },
+  s46: { display: "flex", justifyContent: "space-between", marginTop: 20 },
+  s47: { background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)" },
+  s48: { display: "flex", gap: 10 },
+  s49: { background: "none", border: "0.5px solid var(--color-border-secondary)", padding: "0.4rem 1rem", borderRadius: 8, cursor: "pointer", color: "var(--color-text-secondary)" },
+  s50: { border: "1.5px dashed var(--color-border-secondary)", borderRadius: 10, padding: "1rem", display: "flex", alignItems: "center", gap: 12, marginBottom: 20, cursor: "pointer" },
+  s51: { fontSize: 20 },
+  s52: { fontWeight: 500, fontSize: 14 },
+  s53: { fontSize: 12, color: "var(--color-text-secondary)" },
+  s54: { marginLeft: "auto" },
+  s55: { textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)", margin: "10px 0" },
+  s56: { marginBottom: 10 },
+  s57: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4, display: "block" },
+  s58: { display: "flex", flexWrap: "wrap", gap: 6 },
+  s59: { width: "100%", marginBottom: 8, boxSizing: "border-box" },
+  s60: { background: "#e8f5ee", color: "#1a6b3c", border: "0.5px solid #1a6b3c", borderRadius: 8, padding: "6px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500 },
+  s61: { fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 },
+  s62: { color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 20 },
+  s63: { display: "flex", alignItems: "center", gap: 8, marginBottom: 16 },
+  s64: { fontSize: 18 },
+  s65: { fontWeight: 600, fontSize: 15 },
+  s66: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 },
+  s67: { marginTop: 12, padding: "10px 14px", background: "#f0f9f4", borderRadius: 8, border: "0.5px solid #b7dfc8", display: "inline-flex", alignItems: "center", gap: 8 },
+  s68: { fontSize: 14, fontWeight: 600, color: "#1a6b3c" },
+  s69: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6 },
+  s70: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 },
+  s71: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 },
+  s72: { fontSize: 11, color: "var(--color-text-secondary)" },
+  s73: { fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 },
+  s74: { fontSize: 26, fontWeight: 400, fontFamily: "'DM Serif Display', serif", color: "var(--color-text-primary)", whiteSpace: "nowrap", lineHeight: 1 },
+  s75: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+  s76: { fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 },
+  s77: { display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 },
+  s78: { display: "flex", justifyContent: "flex-end" },
+  s79: { display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 2, gap: 1 },
+  s80: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+  s81: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem", display: "flex", flexDirection: "column", gap: 4 },
+  s82: { fontSize: 18, fontWeight: 700, color: "#1a6b3c" },
+  s83: { fontSize: 10, color: "var(--color-text-secondary)" },
+  s84: { fontSize: 18, fontWeight: 700, color: "#d44" },
+  s85: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 },
+  s86: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 },
+  s87: { display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 },
+  s88: { fontSize: 22, fontWeight: 700, color: "#1a6b3c" },
+  s89: { fontSize: 22, fontWeight: 700, color: "#d44" },
+  s90: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" },
+  s91: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 },
+  s92: { fontWeight: 500, fontSize: 15 },
+  s93: { fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" },
+  s94: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" },
+  s95: { fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 },
+  s96: { fontSize: 10, color: "var(--color-text-secondary)", marginTop: 8, textAlign: "center" },
+  s97: { display: "flex", gap: 6, marginBottom: 6 },
+  s98: { flex: 1, fontSize: 13, padding: "6px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" },
+  s99: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" },
+  s100: { marginBottom: 8 },
+  s101: { display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" },
+  s102: { display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" },
+  s103: { fontSize: 10, color: "var(--color-text-secondary)", marginLeft: 2 },
+  s104: { textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12, padding: "1rem 0", fontStyle: "italic" },
+  s105: { display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" },
+  s106: { display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" },
+  s107: { width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" },
+  s108: { flex: 1, fontSize: 13, color: "var(--color-text-primary)", wordBreak: "break-word" },
+  s109: { fontSize: 10, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 },
+  s110: { background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.45, padding: "0 2px", lineHeight: 1, flexShrink: 0 },
+  s111: { display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: "transparent", border: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 },
+  s112: { width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 11 },
+  s113: { flex: 1, fontSize: 13, color: "var(--color-text-secondary)", textDecoration: "line-through", wordBreak: "break-word" },
+  s114: { fontSize: 10, background: "#f0fdf4", color: "#4a9a6a", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 },
+  s115: { marginBottom: 12 },
+  s116: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 },
+  s117: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" },
+  s118: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 },
+  s119: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "1.2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 },
+  s120: { background: "none", border: "none", color: "#1a6b3c", cursor: "pointer", fontWeight: 500, fontSize: 13 },
+  s121: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 },
+  s122: { textAlign: "center" },
+  s123: { fontWeight: 500 },
+  s124: { fontWeight: 500, color: "#1a6b3c" },
+  s125: { color: "var(--color-text-secondary)", fontSize: 13, padding: "1rem 0" },
+  s126: { display: "flex", flexDirection: "column", gap: 6, marginTop: 8 },
+  s127: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 },
+  s128: { flex: 1, color: "var(--color-text-secondary)" },
+  s129: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" },
+  s130: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" },
+  s131: { fontWeight: 600, fontSize: 16, marginBottom: 16 },
+  s132: { fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 },
+  s133: { width: "100%", boxSizing: "border-box", background: "var(--color-background-secondary)", opacity: 0.7 },
+  s134: { marginBottom: 16 },
+  s135: { fontSize: 11, color: "#dc2626", marginTop: 4 },
+  s136: { display: "flex", gap: 8, justifyContent: "flex-end" },
+  s137: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" },
+  s138: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 },
+  s139: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  s140: { fontSize: 20, fontWeight: 600, marginBottom: 4 },
+  s141: { fontSize: 13, color: "var(--color-text-secondary)" },
+  s142: { padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)" },
+  s143: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap" },
+  s144: { fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" },
+  s145: { flex: 1, minWidth: 120, maxWidth: 180, padding: "6px 10px", borderRadius: 6, border: "1.5px solid #1a6b3c", fontSize: 14, fontWeight: 600 },
+  s146: { padding: "6px 14px", borderRadius: 6, background: "#1a6b3c", color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  s147: { padding: "6px 10px", borderRadius: 6, background: "transparent", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", fontSize: 12, cursor: "pointer" },
+  s148: { fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)", flex: 1 },
+  s149: { color: "var(--color-text-tertiary)", fontWeight: 400, fontSize: 13 },
+  s150: { padding: "6px 14px", borderRadius: 6, background: "transparent", color: "#1a6b3c", border: "1px solid #1a6b3c", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  s151: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 12, marginBottom: 16 },
+  s152: { background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" },
+  s153: { fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 },
+  s154: { fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)" },
+  s155: { background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem", marginBottom: 16, border: "0.5px solid var(--color-border-tertiary)" },
+  s156: { fontWeight: 600, fontSize: 14, marginBottom: 12 },
+  s157: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: 10, marginBottom: 10 },
+  s158: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 },
+  s159: { textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)" },
+  s160: { fontSize: 48, marginBottom: 12 },
+  s161: { fontWeight: 500, fontSize: 15, marginBottom: 6 },
+  s162: { fontSize: 13 },
+  s163: { display: "flex", flexDirection: "column", gap: 10 },
+  s164: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  s165: { display: "flex", alignItems: "center", gap: 10 },
+  s166: { minWidth: 22, height: 22, borderRadius: "50%", background: "#1a6b3c", color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" },
+  s167: { display: "flex", gap: 6 },
+  s168: { background: "none", border: "none", cursor: "pointer", fontSize: 18, padding: "2px 6px", opacity: 0.7 },
+  s169: { background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "2px 6px", color: "#dc2626", opacity: 0.7 },
+  s170: { width: "100%", height: 8, background: "var(--color-border-tertiary)", borderRadius: 4, overflow: "hidden", marginBottom: 8 },
+  s171: { display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 },
+  s172: { color: "var(--color-text-secondary)" },
+  s173: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(420px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" },
+  s174: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 },
+  s175: { fontWeight: 400, opacity: 0.6 },
+  s176: { width: "100%", boxSizing: "border-box", fontWeight: 600 },
+  s177: { gridColumn: "span 2" },
+  s178: { display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 },
+  s179: { fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 },
+  s180: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 },
+  s181: { fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 },
+  s182: { fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 },
+  s183: { background: "none", border: "none", color: "#1a6b3c", cursor: "pointer", fontSize: 11, padding: 0 },
+  s184: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "2rem 1.2rem", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 260 },
+  s185: { fontSize: 36 },
+  s186: { fontWeight: 600, fontSize: 15, color: "var(--color-text-primary)" },
+  s187: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" },
+  s188: { marginLeft: "auto", fontSize: 12, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" },
+  s189: { display: "flex", gap: 20, alignItems: "center", marginBottom: 16 },
+  s190: { transform: "rotate(-90deg)" },
+  s191: { cursor: "pointer", transition: "stroke-width 0.15s" },
+  s192: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" },
+  s193: { fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s194: { flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 },
+  s195: { flex: 1, fontSize: 12, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s196: { fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 },
+  s197: { display: "flex", flexDirection: "column", gap: 7 },
+  s198: { cursor: "pointer" },
+  s199: { display: "flex", justifyContent: "space-between", marginBottom: 3 },
+  s200: { height: 5, borderRadius: 4, background: "var(--color-background-secondary)", overflow: "hidden" },
+  s201: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 },
+  s202: { width: "100%", boxSizing: "border-box", fontSize: 12 },
+  s203: { width: "100%", boxSizing: "border-box", fontSize: 12, fontWeight: 600 },
+  s204: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" },
+  s205: { width: 44, height: 44, borderRadius: 13, background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, border: "0.5px solid #b6ddc233" },
+  s206: { flex: 1, minWidth: 0 },
+  s207: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 },
+  s208: { textAlign: "right", flexShrink: 0 },
+  s209: { marginBottom: 3 },
+  s210: { background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.45 },
+  s211: { background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 },
+  s212: { marginTop: 16 },
+  s213: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 },
+  s214: { background: "linear-gradient(135deg,#e8f5ee,#d1ead9)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #b6ddc2" },
+  s215: { fontSize: 11, color: "#4a9a6a", marginTop: 4 },
+  s216: { background: "linear-gradient(135deg,#fef2f2,#fde8e8)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #f5c0c0" },
+  s217: { fontSize: 11, color: "#cc2222", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 },
+  s218: { fontWeight: 800, fontSize: 20, color: "#cc2222" },
+  s219: { fontSize: 11, color: "#e05a5a", marginTop: 4 },
+  s220: { display: "flex", gap: 10, alignItems: "center", marginBottom: 12 },
+  s221: { fontSize: 15, color: "var(--color-text-secondary)" },
+  s222: { flex: 1, background: "none !important", border: "none !important", outline: "none", fontSize: 14, color: "var(--color-text-primary)", padding: "0 !important" },
+  s223: { background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", padding: 0 },
+  s224: { position: "absolute", top: -3, right: -3, background: "#ef4444", color: "#fff", borderRadius: "50%", width: 16, height: 16, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" },
+  s225: { position: "relative", flexShrink: 0 },
+  s226: { position: "fixed", inset: 0, zIndex: 498 },
+  s227: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 },
+  s228: { background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:11, padding:0 },
+  s229: { textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 14 },
+  s230: { fontSize: 40, marginBottom: 12 },
+  s231: { display: "flex", flexDirection: "column", gap: 12 },
+  s232: { fontWeight: 700, fontSize: 15, color: "var(--color-text-primary)" },
+  s233: { fontWeight: 600, fontSize: 14, color: "var(--color-text-primary)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s234: { display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--color-text-secondary)" },
+  s235: { fontSize: 11 },
+  s236: { color: "var(--color-border-primary)" },
+  s237: { display: "flex", alignItems: "center", gap: 10, flexShrink: 0 },
+  s238: { textAlign: "right" },
+  s239: { marginBottom: 4 },
+  s240: { marginTop: 28 },
+  s241: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12 },
+  s242: { flex: 1, height: "0.5px", background: "var(--color-border-tertiary)" },
+  s243: { fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" },
+  s244: { position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.25)" },
+  s245: { display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 2 },
+  s246: { width: 36, height: 4, borderRadius: 2, background: "var(--color-border-primary)" },
+  s247: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px" },
+  s248: { fontWeight: 700, fontSize: 18, color: "var(--color-text-primary)" },
+  s249: { display: "flex", gap: 8 },
+  s250: { padding: "0 20px 32px", display: "flex", flexDirection: "column", gap: 24 },
+  s251: { display: "flex", gap: 20, marginBottom: 14 },
+  s252: { display: "flex", gap: 8, flexWrap: "wrap" },
+  s253: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+  s254: { fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 },
+  s255: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  s256: { display: "flex", flexWrap: "wrap", gap: 8 },
+  s257: { display: "flex", gap: 10, alignItems: "center", marginBottom: 14 },
+  s258: { background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 },
+  s259: { display: "flex", gap: 10, marginBottom: 16 },
+  s260: { flex: 1, background: "linear-gradient(135deg,#e8f5ee,#d1ead9)", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #b6ddc2" },
+  s261: { flex: 1, background: "linear-gradient(135deg,#fef2f2,#fde8e8)", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #f5c0c0" },
+  s262: { fontSize: 11, color: "#cc2222", fontWeight: 600, marginBottom: 2 },
+  s263: { fontWeight: 800, fontSize: 16, color: "#cc2222" },
+  s264: { display: "flex", flexDirection: "column", gap: 14 },
+  s265: { fontWeight: 700, fontSize: 15 },
+  s266: { fontWeight: 600, fontSize: 14, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s267: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-text-secondary)" },
+  s268: { position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2px)" },
+  s269: { display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 4 },
+  s270: { fontWeight: 700, fontSize: 18 },
+  s271: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(480px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" },
+  s272: { fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 8 },
+  s273: { margin: "12px 0 0", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "12px 16px" },
+  s274: { fontSize: 13, color: "var(--color-text-secondary)", whiteSpace: "nowrap" },
+  s275: { flex: 1, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 10px", fontSize: 14, fontWeight: 500, background: "var(--color-background-secondary)" },
+  s276: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  s277: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "7px 14px", fontSize: 13 },
+  s278: { fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 },
+  s279: { fontWeight: 600 },
+  s280: { fontSize: 18, color: "var(--color-text-secondary)" },
+  s281: { marginLeft: "auto", textAlign: "right" },
+  s282: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, margin: "10px 0" },
+  s283: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16 },
+  s284: { marginTop: 8 },
+  s285: { marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)" },
+  s286: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 },
+  s287: { color: "#1a6b3c", fontSize: 10 },
+  s288: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 12px", marginTop: 8, fontSize: 12 },
+  s289: { fontSize: 11, color: "#1a6b3c", marginBottom: 6, fontWeight: 500 },
+  s290: { display: "flex", justifyContent: "space-between", borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 4 },
+  s291: { overflowX: "auto" },
+  s292: { width: "100%", fontSize: 12, borderCollapse: "collapse", minWidth: 500 },
+  s293: { textAlign: "left", padding: "4px 6px", color: "var(--color-text-secondary)", fontWeight: 500, borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap" },
+  s294: { borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s295: { padding: "5px 6px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" },
+  s296: { padding: "5px 6px", fontWeight: 500 },
+  s297: { padding: "5px 6px", color: "var(--color-text-secondary)" },
+  s298: { padding: "5px 6px" },
+  s299: { background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 500 },
+  s300: { padding: "2px 4px" },
+  s301: { marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16 },
+  s302: { fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 },
+  s303: { display: "flex", gap: 8, marginTop: 4 },
+  s304: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" },
+  s305: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  s306: { fontWeight: 600, fontSize: 14 },
+  s307: { background: "#e8f5ee", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 },
+  s308: { background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14 },
+  s309: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" },
+  s310: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 },
+  s311: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" },
+  s312: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.2rem", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s313: { background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 16, color: "var(--color-text-primary)", display: "flex", alignItems: "center", justifyContent: "center" },
+  s314: { fontFamily: "'DM Serif Display', serif", fontSize: 20, fontWeight: 400 },
+  s315: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s316: { textAlign: "center", padding: "8px 0", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 },
+  s317: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)" },
+  s318: { minHeight: 80, borderRight: "0.5px solid var(--color-border-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-tertiary)", opacity: 0.4 },
+  s319: { display: "flex", flexDirection: "column", gap: 3 },
+  s320: {
+                          fontSize: 10, fontWeight: 500, color: "#888",
+                          background: "var(--color-background-secondary)",
+                          borderRadius: 4, padding: "1px 5px", display: "inline-block"
+                        },
+  s321: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem", display: "flex", flexDirection: "column", gap: 12 },
+  s322: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  s323: { fontFamily: "'DM Serif Display', serif", fontSize: 18 },
+  s324: { fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 },
+  s325: { background: "none", border: "none", color: "var(--color-text-secondary)", cursor: "pointer", fontSize: 18 },
+  s326: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
+  s327: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" },
+  s328: { fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 },
+  s329: { borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 10 },
+  s330: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8, fontWeight: 500 },
+  s331: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", marginBottom: 6, fontSize: 12 },
+  s332: { display: "flex", justifyContent: "space-between", marginBottom: 2 },
+  s333: { color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 12 },
+  s334: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 },
+  s335: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12 },
+  s336: { background: "#fef9e7", border: "0.5px solid #f0c040", borderRadius: 8, padding: "1rem", textAlign: "center" },
+  s337: { fontSize: 20, marginBottom: 6 },
+  s338: { fontWeight: 500, marginBottom: 4, fontSize: 14 },
+  s339: { textAlign: "center", padding: "2rem", color: "var(--color-text-secondary)", marginBottom: 20 },
+  s340: { fontSize: 32, marginBottom: 8 },
+  s341: { fontWeight: 500, marginBottom: 4 },
+  s342: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12, marginBottom: 20 },
+  s343: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 },
+  s344: { background: "var(--color-background-secondary)", borderRadius: 4, height: 6, marginBottom: 6, overflow: "hidden" },
+  s345: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)" },
+  s346: { marginTop: 8, background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 12 },
+  s347: { fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 },
+  s348: { width: "100%" },
+  s349: { display: "flex", alignItems: "center", gap: 8, marginBottom: 2 },
+  s350: { fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 24 },
+  s351: { color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 16 },
+  s352: { display: "flex", flexDirection: "column", gap: 24 },
+  s353: { background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 },
+  s354: { flex: 1 },
+  s355: { fontWeight: 600, fontSize: 13, color: "#92400e" },
+  s356: { fontSize: 12, color: "#b45309", marginTop: 2 },
+  s357: { fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 },
+  s358: { flexShrink: 0 },
+  s359: { background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12, color: "#0369a1", lineHeight: 1.6 },
+  s360: { borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 16 },
+  s361: { border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, overflow: "hidden" },
+  s362: { background: "var(--color-background-secondary)", padding: "10px 14px", fontSize: 13, fontWeight: 600, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  s363: { background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1 },
+  s364: { padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" },
+  s365: { display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", fontSize: 13 },
+  s366: { fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s367: { fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 },
+  s368: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 },
+  s369: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.6rem", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" },
+  s370: { fontWeight: 700, fontSize: 17, marginBottom: 8 },
+  s371: { fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 },
+  s372: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 500, marginBottom: 16 },
+  s373: { background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#92400e" },
+  s374: { display: "flex", gap: 10, justifyContent: "flex-end" },
+  s375: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14 },
+  s376: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 },
+  s377: { fontSize: 22, marginBottom: 4 },
+  s378: { fontSize: 10, color: "#1a6b3c", marginTop: 3, fontWeight: 600 },
+  s379: { fontSize: 12, color: "var(--color-text-secondary)", marginTop: 10, lineHeight: 1.5 },
+  s380: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" },
+  s381: { display: "flex", alignItems: "center", gap: 12 },
+  s382: { display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 },
+  s383: { display: "flex", alignItems: "center", gap: 12, marginBottom: 12 },
+  s384: { fontSize: 24 },
+  s385: { fontWeight: 600, fontSize: 14, color: "#92400e" },
+  s386: { fontSize: 12, color: "#92400e", marginTop: 2 },
+  s387: { fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 },
+  s388: { fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 },
+  s389: { background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#92400e" },
+  s390: { display: "none" },
+  s391: { marginTop: 12, background: "#d1fae5", border: "0.5px solid #6ee7b7", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#065f46" },
+  s392: { marginTop: 12, background: "#fee2e2", border: "0.5px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#991b1b" },
+  s393: {
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 9999, padding: 16,
+        },
+  s394: {
+            background: "var(--color-background-primary)", borderRadius: 16,
+            padding: "1.6rem", maxWidth: 420, width: "100%",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+          },
+  s395: { fontSize: 28, marginBottom: 8, textAlign: "center" },
+  s396: { fontWeight: 700, fontSize: 16, marginBottom: 8, textAlign: "center" },
+  s397: { fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center", lineHeight: 1.6 },
+  s398: { fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center", marginBottom: 16 },
+  s399: { display: "flex", gap: 10, justifyContent: "center" },
+  s400: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 },
+  s401: { display: "flex", alignItems: "center", gap: 6, background: "#e8f5ee", border: "0.5px solid #1a6b3c33", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 },
+  s402: { background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2, opacity: 0.7 },
+  s403: { display: "flex", gap: 10, alignItems: "flex-end" },
+  s404: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" },
+  s405: { color: "#1a6b3c", fontSize: 13, fontWeight: 500 },
+  s406: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 },
+  s407: { fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 },
+  s408: { display: "flex", alignItems: "center", gap: 6 },
+  s409: { width: "100%", boxSizing: "border-box", fontWeight: 600, fontSize: 15 },
+  s410: { fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "nowrap" },
+  s411: { fontSize: 11, color: "#f0a020", marginTop: 3 },
+  s412: { display: "flex", gap: 10, alignItems: "center", marginBottom: 24 },
+  s413: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "9px 24px", cursor: "pointer", fontSize: 14, fontWeight: 500 },
+  s414: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "9px 20px", cursor: "pointer", fontSize: 14, color: "var(--color-text-secondary)" },
+  s415: { display: "grid", gridTemplateColumns: "1.2fr 1.5fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 20 },
+  s416: { color: "#aaa" },
+  s417: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" },
+  s418: { fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" },
+  s419: { display: "flex", alignItems: "center", gap: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 10px", fontSize: 13 },
+  s420: { fontSize: 11, color: "#1a6b3c", fontWeight: 600 },
+  s421: { background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2 },
+  s422: { fontSize: 13, color: "var(--color-text-secondary)", fontStyle: "italic" },
+  s423: { background: "#fef9e7", border: "0.5px solid #f0c040", borderRadius: 10, padding: "0.8rem 1rem", fontSize: 13, color: "#7a5a00" },
+  s424: { fontWeight: 600, fontSize: 16, marginBottom: 4 },
+  s425: { fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 },
+  s426: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  s427: { width: "100%", boxSizing: "border-box", fontSize: 16, fontWeight: 600 },
+  s428: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" },
+  s429: { display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "flex-end" },
+  s430: { boxSizing: "border-box" },
+  s431: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 },
+  s432: { fontSize: 10, background: "#fff3e0", color: "#e65100", borderRadius: 4, padding: "1px 6px", fontWeight: 600 },
+  s433: { fontSize: 10, background: "#f0fdf4", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 600 },
+  s434: { fontSize: 10, background: "#f1f5f9", color: "#64748b", borderRadius: 4, padding: "1px 6px", fontWeight: 600 },
+  s435: { display: "flex", alignItems: "center", gap: 12, padding: "9px 12px 9px 0" },
+  s436: { display: "flex", alignItems: "center", gap: 6, marginBottom: 2 },
+  s437: { display: "flex", gap: 10, fontSize: 12, alignItems: "center" },
+  s438: { color: "#1a6b3c", fontSize: 11 },
+  s439: { color: "#d44", fontSize: 11 },
+  s440: { color: "var(--color-text-secondary)", fontSize: 11 },
+  s441: { display: "flex", gap: 6, flexShrink: 0 },
+  s442: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" },
+  s443: { marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 },
+  s444: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(340px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" },
+  s445: { fontWeight: 600, fontSize: 15, marginBottom: 12 },
+  s446: { width: "100%", boxSizing: "border-box", marginBottom: 14, fontSize: 14 },
+  s447: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px 7px 0" },
+  s448: { fontSize: 13, fontWeight: 500 },
+  s449: { flex: 1, boxSizing: "border-box" },
+  s450: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" },
+  s451: { display: "flex", flexDirection: "column", gap: 4 },
+  s452: { display: "flex", alignItems: "center", gap: 6, background: "#fff3e0", border: "0.5px solid #e6520033", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 },
+  s453: { fontWeight: 500, color: "#b45309" },
+  s454: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(400px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" },
+  s455: { display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, marginTop: 16 },
+  s456: { fontWeight: 600, fontSize: 15, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 },
+  s457: { background: "#fef9c3", border: "0.5px solid #fbbf24", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#92400e", marginBottom: 14 },
+  s458: { textAlign: "center", fontSize: 22, color: "#1a6b3c", margin: "2px 0 10px", fontWeight: 700 },
+  s459: { fontSize: 12, color: "#d44", marginBottom: 10, background: "#fdf0f0", borderRadius: 6, padding: "6px 10px" },
+  s460: { background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 14 },
+  s461: { fontSize: 11, fontWeight: 600, color: "#0369a1", marginBottom: 6 },
+  s462: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  s463: { fontWeight: 700, color: "#0369a1", fontSize: 16 },
+  s464: { marginLeft: "auto", fontWeight: 700, color: "#0369a1", fontSize: 14 },
+  s465: { fontSize: 10, color: "#64748b", marginTop: 6 },
+  s466: { fontWeight: 600, fontSize: 15, marginBottom: 14 },
+  s467: { fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)", marginLeft: 8 },
+  s468: { textAlign: "center", padding: "3.5rem 1rem", color: "var(--color-text-secondary)", fontSize: 13 },
+  s469: { fontSize: 40, marginBottom: 10 },
+  s470: { margin: "0 -1.2rem -1.2rem" },
+  s471: {textAlign:"center",padding:"4rem",color:"var(--color-text-secondary)"},
+  s472: {fontSize:40,marginBottom:8},
+  s473: {position:"relative"},
+  s474: {display:"block",overflow:"visible",cursor:"crosshair"},
+  s475: {transition:"r 0.1s"},
+  s476: {fontWeight:700,fontSize:13,marginBottom:8,borderBottom:"0.5px solid rgba(255,255,255,0.15)",paddingBottom:6},
+  s477: {display:"flex",alignItems:"center",gap:8,marginBottom:5},
+  s478: {width:8,height:8,borderRadius:"50%",background:"#1a6b3c",display:"inline-block"},
+  s479: {color:"#94a3b8",flex:1},
+  s480: {fontWeight:700,color:"#4ade80"},
+  s481: {width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"},
+  s482: {fontWeight:700,color:"#f87171"},
+  s483: {borderTop:"0.5px solid rgba(255,255,255,0.15)",paddingTop:6,display:"flex",alignItems:"center",gap:8},
+  s484: {marginTop:12,overflowX:"auto"},
+  s485: {width:"100%",borderCollapse:"collapse",fontSize:12},
+  s486: {background:"var(--color-background-secondary)"},
+  s487: {padding:"6px 12px",textAlign:"left",fontSize:11,color:"var(--color-text-secondary)",fontWeight:500},
+  s488: {padding:"7px 12px",color:"#1a6b3c",fontWeight:600},
+  s489: {padding:"7px 12px",color:"#ef4444",fontWeight:600},
+  s490: {display:"flex",gap:0,background:"var(--color-background-secondary)",borderRadius:8,padding:3,width:"fit-content",marginBottom:20},
+  s491: {display:"flex",gap:32,alignItems:"flex-start",flexWrap:"wrap"},
+  s492: {flexShrink:0,maxWidth:"100%"},
+  s493: {cursor:"pointer",transition:"opacity 0.15s"},
+  s494: {flex:1,minWidth:180},
+  s495: {flex:1,fontSize:13,fontWeight:500},
+  s496: {fontSize:11,color:"var(--color-text-secondary)",minWidth:36,textAlign:"right"},
+  s497: {display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"},
+  s498: {flex:"1 1 auto",minWidth:0,maxWidth:"100%"},
+  s499: {display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12},
+  s500: {background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"},
+  s501: {fontWeight:700,fontSize:15},
+  s502: {display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4},
+  s503: {textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600,padding:"4px 0"},
+  s504: {display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2},
+  s505: {marginTop:10,display:"flex",gap:16,fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:10},
+  s506: {color:"#1a6b3c",fontWeight:600},
+  s507: {color:"#ef4444",fontWeight:600},
+  s508: {flex:1,minWidth:220},
+  s509: {fontWeight:700,fontSize:14,marginBottom:8},
+  s510: {fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8},
+  s511: {color:"var(--color-text-secondary)",fontSize:13},
+  s512: {display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,marginBottom:6,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"},
+  s513: {flex:1},
+  s514: {fontSize:13,fontWeight:500},
+  s515: {fontSize:11,color:"var(--color-text-secondary)"},
+  s516: {color:"var(--color-text-secondary)",fontSize:13,paddingTop:8,display:"flex",flexDirection:"column",gap:8},
+  s517: {fontSize:28,marginBottom:4},
+  s518: {marginTop:16},
+  s519: {display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"},
+  s520: {marginLeft:"auto",display:"flex",gap:4},
+  s521: {background:"var(--color-background-primary)",borderRadius:14,border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"},
+  s522: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.32)", zIndex: 200 },
+  s523: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", zIndex: 201, width: 360, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" },
+  s524: { fontWeight: 700, fontSize: 16, marginBottom: 16 },
+  s525: { display: "flex", borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)" },
+  s526: { display: "flex", gap: 8, alignItems: "center", marginTop: 8 },
+  s527: { width: 60, textAlign: "center" },
+  s528: { fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 },
+  s529: { display: "flex", gap: 6, flexWrap: "wrap" },
+  s530: { display: "flex", gap: 10, marginTop: 16 },
+  s531: { flex: 1, background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" },
+  s532: { flex: 2, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 13, fontWeight: 600 },
+  s533: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start" },
+  s534: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 },
+  s535: { display: "flex", gap: 8, alignItems: "center" },
+  s536: { width: 60, boxSizing: "border-box", textAlign: "center" },
+  s537: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" },
+  s538: { padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" },
+  s539: { display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, overflow: "hidden" },
+  s540: { padding: "0.8rem 1.1rem", display: "flex", flexDirection: "column", gap: 8, minHeight: 180 },
+  s541: { fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s542: { fontSize: 10, color: "#1a6b3c", marginTop: 2, opacity: 0.8 },
+  s543: { display: "flex", gap: 4, flexShrink: 0 },
+  s544: { width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#4da6ff", display: "flex", alignItems: "center", justifyContent: "center" },
+  s545: { width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#d44", display: "flex", alignItems: "center", justifyContent: "center" },
+  s546: { padding: "0.8rem 1.1rem" },
+  s547: { fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8, paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between" },
+  s548: { color: "#1a6b3c" },
+  s549: { display: "flex", flexDirection: "column", gap: 6 },
+  s550: { flex: 1, fontSize: 13, fontWeight: 500 },
+  s551: { fontSize: 12, fontWeight: 600 },
+  s552: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, marginBottom: 16 },
+  s553: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" },
+  s554: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(480px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" },
+  s555: { display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 },
+  s556: { color: "#f59e0b", marginLeft: 6 },
+  s557: { fontSize: 11, color: "#f59e0b", fontWeight: 600, marginTop: 3 },
+  s558: { gridColumn: "span 2", background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" },
+  s559: { fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 8 },
+  s560: { fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 },
+  s561: { width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" },
+  s562: { fontSize: 11, color: "#92400e", marginTop: 6 },
+  s563: { position: "relative" },
+  s564: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, marginBottom: 10 },
+  s565: { marginBottom: 10, background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" },
+  s566: { marginTop: 16, background: "#e8f5ee", border: "0.5px solid #1a6b3c", borderRadius: 10, padding: "0.8rem 1rem", fontSize: 13, color: "#1a6b3c" },
+  s567: { marginTop: 20 },
+  s568: { fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" },
+  s569: { display: "grid", gap: 12 },
+  s570: { background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1rem" },
+  s571: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
+  s572: { fontSize: 15, fontWeight: 600, marginBottom: 4 },
+  s573: { marginTop: 4, fontSize: 11 },
+  s574: { marginLeft: 8, color: "var(--color-text-secondary)" },
+  s575: { display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 },
+  s576: { background: "var(--color-background-secondary)", borderRadius: 4, height: 8, overflow: "hidden" },
+  s577: { display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--color-text-secondary)" },
+  s578: { 
+                        background: "var(--color-background-secondary)", 
+                        border: "0.5px solid var(--color-border-secondary)", 
+                        borderRadius: 8, 
+                        padding: "7px 12px", 
+                        cursor: "pointer", 
+                        fontSize: 13, 
+                        color: "var(--color-text-secondary)" 
+                      },
+  s579: { display: "flex", gap: 8, marginTop: 8 },
+  s580: {
+                            background: "none",
+                            border: "0.5px solid #d44",
+                            borderRadius: 8, padding: "7px 12px",
+                            cursor: "pointer", fontSize: 12,
+                            color: "#d44", whiteSpace: "nowrap",
+                          },
+  s581: { marginTop: 10, padding: "8px", background: "var(--color-background-secondary)", borderRadius: 6, fontSize: 12, color: "var(--color-text-secondary)" },
+  s582: { display: "grid", gap: 10 },
+  s583: { fontWeight: 500, fontSize: 13, marginBottom: 10, color: "#1a6b3c" },
+  s584: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 8 },
+  s585: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 },
+  s586: { fontSize: 14, fontWeight: 500, marginBottom: 2 },
+  s587: { display: "flex", gap: 6, alignItems: "center" },
+  s588: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 4 },
+  s589: { background: "none", border: "0.5px solid #f0a020", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "#f0a020", display: "flex", alignItems: "center", gap: 4 },
+  s590: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 },
+  s591: { background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "#d44" },
+  s592: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", marginTop: 4 },
+  s593: { fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 },
+  s594: { display: "flex", borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", marginBottom: 8 },
+  s595: { display: "flex", gap: 6, marginBottom: 8 },
+  s596: { flex: 1, fontSize: 12, padding: "5px 8px", boxSizing: "border-box" },
+  s597: { width: "100%", fontSize: 12, marginBottom: 8, boxSizing: "border-box" },
+  s598: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" },
+  s599: { display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" },
+  s600: { width: 60, boxSizing: "border-box", textAlign: "center", fontWeight: 700 },
+  s601: { marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px", border: "0.5px solid var(--color-border-secondary)" },
+  s602: { fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" },
+  s603: { marginTop: 10 },
+  s604: { display: "flex", gap: 6, marginBottom: 6, alignItems: "center" },
+  s605: { flex: 1, boxSizing: "border-box", fontSize: 12 },
+  s606: { background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#d44", fontSize: 12, flexShrink: 0 },
+  s607: { fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", border: "0.5px solid #1a6b3c44", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 },
+  s608: { display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 },
+  s609: { display: "flex", alignItems: "center", gap: 5, marginBottom: 4 },
+  s610: { fontSize: 12 },
+  s611: { fontSize: 10, background: "#e8f0ff", color: "#4da6ff", borderRadius: 4, padding: "1px 6px", fontWeight: 600 },
+  s612: { display: "flex", alignItems: "center", gap: 4 },
+  s613: { fontWeight: 600, fontSize: 14, lineHeight: 1.3 },
+  s614: { color: "#1a6b3c", marginRight: 4 },
+  s615: { fontSize: 11, color: "#4da6ff", marginTop: 2, display: "flex", alignItems: "center", gap: 3, overflow: "hidden", maxWidth: "100%" },
+  s616: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s617: { marginTop: 4 },
+  s618: { display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 },
+  s619: { fontWeight: 600, color: "var(--color-text-primary)" },
+  s620: { background: "var(--color-background-secondary)", borderRadius: 6, height: 7, overflow: "hidden" },
+  s621: { display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, color: "var(--color-text-secondary)" },
+  s622: { color: "#1a6b3c", fontWeight: 500 },
+  s623: { marginTop: 6, display: "inline-flex", alignItems: "center", gap: 4, background: "#fef2f2", border: "0.5px solid #fecaca", borderRadius: 5, padding: "2px 7px", fontSize: 10, color: "#ef4444", fontWeight: 500 },
+  s624: { marginTop: "auto", paddingTop: 8 },
+  s625: { width: "100%", background: "#e8f5ee", border: "1px solid #1a6b3c", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 },
+  s626: { display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" },
+  s627: { display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", transition: "opacity 0.15s", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" },
+  s628: { display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", background: "#e8f5ee", color: "#1a6b3c" },
+  s629: { display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20, gap: 0 },
+  s630: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 },
+  s631: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px,100%),1fr))", gap: 10, marginBottom: 16 },
+  s632: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
+  s633: { background: "var(--color-background-secondary)" },
+  s634: { padding: "9px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s635: { padding: "9px 12px", color: "var(--color-text-secondary)", fontSize: 12 },
+  s636: { width: "100%", fontSize: 12, padding: "4px 6px" },
+  s637: { padding: "9px 12px" },
+  s638: { fontSize: 11, padding: "4px 6px", width: "100%" },
+  s639: { padding: "9px 12px", fontWeight: 600, color: "#1a6b3c" },
+  s640: { padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" },
+  s641: { display: "flex", gap: 4 },
+  s642: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 },
+  s643: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" },
+  s644: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" },
+  s645: { background: "none", border: "0.5px solid #fecaca", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "#ef4444" },
+  s646: { display: "flex", flexDirection: "column", gap: 16 },
+  s647: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px,100%),1fr))", gap: 10 },
+  s648: { background: "#e8f5ee", borderRadius: 12, padding: "1.2rem 1.4rem", border: "0.5px solid #bbf7d0", textAlign: "center", fontWeight: 600, color: "#1a6b3c", fontSize: 15 },
+  s649: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" },
+  s650: { fontWeight: 600, fontSize: 13, marginBottom: 12 },
+  s651: { display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" },
+  s652: { flex: 1, minWidth: 140 },
+  s653: { width: "100%", boxSizing: "border-box", fontSize: 14, padding: "8px 10px" },
+  s654: { background: "#e8f5ee", borderRadius: 10, padding: "10px 18px", border: "0.5px solid #bbf7d0", minWidth: 160 },
+  s655: { fontSize: 11, color: "#1a6b3c", marginBottom: 2 },
+  s656: { fontSize: 11, color: "#1a6b3c", marginTop: 2 },
+  s657: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
+  s658: { padding: "7px 10px", fontWeight: 500 },
+  s659: { padding: "7px 10px", color: "#1a6b3c", fontWeight: 600 },
+  s660: { padding: "7px 10px" },
+  s661: { flex: 1, height: 5, borderRadius: 3, background: "var(--color-border-tertiary)", overflow: "hidden", minWidth: 60 },
+  s662: { fontSize: 10, color: "var(--color-text-secondary)", minWidth: 34 },
+  s663: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(520px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" },
+  s664: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  s665: { fontWeight: 600, fontSize: 16 },
+  s666: { background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--color-text-secondary)" },
+  s667: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px", marginBottom: 16, border: "0.5px solid var(--color-border-tertiary)" },
+  s668: { fontSize: 13, fontWeight: 600, marginBottom: 10 },
+  s669: { width: "100%", boxSizing: "border-box", fontSize: 13, padding: "6px 10px" },
+  s670: { flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 13, fontWeight: 500 },
+  s671: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" },
+  s672: { fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8 },
+  s673: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12, border: "0.5px dashed var(--color-border-secondary)" },
+  s674: { display: "flex", flexDirection: "column", gap: 8 },
+  s675: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "12px 14px", border: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" },
+  s676: { fontWeight: 600, fontSize: 13, color: "var(--color-text-primary)" },
+  s677: { marginTop: 16, padding: "10px 12px", background: "#eff6ff", border: "0.5px solid #bfdbfe", borderRadius: 8, fontSize: 11, color: "#1e40af" },
+  s678: { background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(460px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" },
+  s679: { display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 },
+  s680: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" },
+  s681: { background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 },
+  s682: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" },
+  s683: { fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 },
+  s684: { marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, width: "100%" },
+  s685: { display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 },
+  s686: { fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: 4, color: "var(--color-text-secondary)" },
+  s687: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" },
+  s688: { display: "flex", flexDirection: "column", height: "100%" },
+  s689: { marginTop: 28, background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.3rem 1.4rem" },
+  s690: { display: "flex", alignItems: "center", gap: 10, marginBottom: 16 },
+  s691: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 14, alignItems: "start" },
+  s692: { width: "100%", boxSizing: "border-box", fontSize: 15, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", outline: "none", color: "var(--color-text-primary)" },
+  s693: { fontSize: 11, color: "#1a6b3c", marginBottom: 3, fontWeight: 500 },
+  s694: { fontSize: 10, color: "var(--color-text-secondary)", marginTop: 3 },
+  s695: { fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center" },
+  s696: { marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" },
+  s697: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "6px 14px", fontSize: 12 },
+  s698: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1.1rem", marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
+  s699: { width: 120, boxSizing: "border-box", fontSize: 14, fontWeight: 600 },
+  s700: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 },
+  s701: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" },
+  s702: { fontSize: 20, fontWeight: 700, color: "#1a6b3c" },
+  s703: { color: "var(--color-text-secondary)", fontSize: 14 },
+  s704: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" },
+  s705: { background: "#e8f5ee", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#1a6b3c" },
+  s706: { display: "block" },
+  s707: { cursor: "crosshair" },
+  s708: { transition: "r 0.1s" },
+  s709: { fontWeight: 700, fontSize: 13, marginBottom: 5 },
+  s710: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 },
+  s711: { width: 7, height: 7, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" },
+  s712: { color: "#1a6b3c", fontWeight: 600 },
+  s713: { display: "flex", alignItems: "center", gap: 6, fontSize: 12 },
+  s714: { width: 7, height: 7, borderRadius: "50%", background: "#4da6ff", display: "inline-block" },
+  s715: { color: "#4da6ff", fontWeight: 600 },
+  s716: { fontWeight: 700, fontSize: 13, marginBottom: 5, color: "var(--color-text-primary)" },
+  s717: { width: 8, height: 8, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" },
+  s718: { width: 8, height: 8, borderRadius: "50%", background: "#4da6ff", display: "inline-block" },
+  s719: { fontSize: 11, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 4, marginTop: 2 },
+  s720: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 },
+  s721: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" },
+  s722: { background: "var(--color-background-primary)", borderRadius: 16, width: "min(900px, 95vw)", maxHeight: "90vh", overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" },
+  s723: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.5rem", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s724: { background: "none", border: "none", cursor: "pointer", fontSize: 24, color: "var(--color-text-secondary)", padding: "0 8px" },
+  s725: { flex: 1, overflow: "auto", padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb" },
+  s726: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 8 },
+  s727: { width: "100%", height: "600px", border: "none", borderRadius: 8 },
+  s728: { textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)" },
+  s729: { fontSize: 48, marginBottom: 16 },
+  s730: { fontSize: 16, fontWeight: 500, marginBottom: 8 },
+  s731: { fontSize: 13, marginBottom: 20 },
+  s732: {
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          background: "#1a6b3c",
+                          color: "#fff",
+                          padding: "10px 20px",
+                          borderRadius: 8,
+                          textDecoration: "none",
+                          fontWeight: 500
+                        },
+  s733: { display: "flex", gap: 8, justifyContent: "flex-end", padding: "1rem 1.5rem", borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s734: {
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "#1a6b3c",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 18px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  textDecoration: "none"
+                },
+  s735: {
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "#4da6ff",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 18px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  textDecoration: "none"
+                },
+  s736: {
+                  background: "none",
+                  border: "0.5px solid var(--color-border-secondary)",
+                  borderRadius: 8,
+                  padding: "8px 18px",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  color: "var(--color-text-secondary)"
+                },
+  s737: { fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 },
+  s738: { fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 },
+  s739: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" },
+  s740: { display: "flex", alignItems: "center", gap: 8 },
+  s741: { fontSize: 16, fontFamily: "'DM Serif Display', serif", border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "2px 8px", outline: "none", background: "var(--color-background-secondary)" },
+  s742: { background: "#1a6b3c", border: "none", borderRadius: 6, padding: "3px 12px", cursor: "pointer", fontSize: 13, color: "#fff", fontWeight: 600 },
+  s743: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" },
+  s744: { fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 8, padding: "6px 13px", fontWeight: 500 },
+  s745: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" },
+  s746: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 },
+  s747: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 },
+  s748: { position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 },
+  s749: { position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, opacity: 0.6, padding: 2 },
+  s750: { fontSize: 32, marginBottom: 6 },
+  s751: { width: "100%", boxSizing: "border-box", fontSize: 18, fontWeight: 700, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "'DM Serif Display', serif", background: "var(--color-background-secondary)" },
+  s752: { fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 },
+  s753: { fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 },
+  s754: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 },
+  s755: { display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 },
+  s756: { borderTop: "0.5px dashed var(--color-border-tertiary)", margin: "6px 0" },
+  s757: { color: "#c0392b" },
+  s758: { color: "#c0392b", fontWeight: 600 },
+  s759: { color: "#f59e0b" },
+  s760: { color: "#f59e0b", fontWeight: 500 },
+  s761: { display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 5, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 2 },
+  s762: { fontWeight: 700, color: "var(--color-text-primary)" },
+  s763: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid #f5c0c0", padding: "1.25rem 1.4rem", marginBottom: 16, borderTop: "3px solid #c0392b" },
+  s764: { fontWeight: 700, fontSize: 16 },
+  s765: { fontSize: 11, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "3px 9px" },
+  s766: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 },
+  s767: { textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, padding: "1.5rem 0", borderTop: "0.5px dashed var(--color-border-tertiary)", borderBottom: "0.5px dashed var(--color-border-tertiary)", marginBottom: 16 },
+  s768: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 },
+  s769: { display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s770: { fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" },
+  s771: { fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" },
+  s772: { fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" },
+  s773: { background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 0 },
+  s774: { display: "flex", justifyContent: "flex-end", gap: 16, fontSize: 12, paddingTop: 8, borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s775: { borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 },
+  s776: { fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--color-text-secondary)" },
+  s777: { flex: 2, boxSizing: "border-box" },
+  s778: { background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" },
+  s779: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 },
+  s780: { position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 },
+  s781: { fontSize: 28, marginBottom: 4 },
+  s782: { fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 },
+  s783: { display: "flex", justifyContent: "space-between", fontSize: 12 },
+  s784: { color: "#4da6ff" },
+  s785: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 },
+  s786: { fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 },
+  s787: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12, marginTop: 8, display: "flex", alignItems: "center", gap: 6 },
+  s788: { background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 },
+  s789: { marginTop: 12 },
+  s790: { display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 4, alignItems: "center" },
+  s791: { fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 },
+  s792: { fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, textAlign: "right" },
+  s793: { display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 6, alignItems: "center" },
+  s794: { flexShrink: 0, background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 13, fontWeight: 700 },
+  s795: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  s796: { fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 },
+  s797: { padding: "6px 14px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 700 },
+  s798: { marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 },
+  s799: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 },
+  s800: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginBottom: 16 },
+  s801: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 },
+  s802: { background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0 },
+  s803: { fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" },
+  s804: { background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 },
+  s805: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" },
+  s806: { fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" },
+  s807: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" },
+  s808: { background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 },
+  s809: { background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 },
+  s810: { background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 },
+  s811: { fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" },
+  s812: { display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 },
+  s813: { fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 },
+  s814: { fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 },
+  s815: { display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" },
+  s816: { width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#1a6b3c",outline:"none" },
+  s817: { width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#9b59b6",outline:"none" },
+  s818: { background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:5,padding:"4px 9px",cursor:"pointer",fontSize:13,fontWeight:700 },
+  s819: {width:28},
+  s820: { display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4 },
+  s821: { fontSize:12,background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontWeight:600 },
+  s822: {fontSize:13,fontWeight:700,color:"#1a6b3c"},
+  s823: { borderRadius:8,overflow:"hidden",border:"0.5px solid var(--color-border-tertiary)" },
+  s824: { display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0 },
+  s825: { padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)" },
+  s826: { padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"center" },
+  s827: { padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"right" },
+  s828: { padding:"8px 10px",fontSize:13,fontWeight:600,color:"#1a6b3c",borderTop:"0.5px solid var(--color-border-tertiary)" },
+  s829: {fontSize:11,fontWeight:400,color:"var(--color-text-secondary)"},
+  s830: { padding:"8px 10px",fontSize:13,fontWeight:600,color:"#9b59b6",textAlign:"center",borderTop:"0.5px solid var(--color-border-tertiary)" },
+  s831: { padding:"8px 10px",fontSize:13,fontWeight:700,color:"#1a6b3c",textAlign:"right",borderTop:"0.5px solid var(--color-border-tertiary)" },
+  s832: { display:"flex",flexDirection:"column",gap:8,fontSize:13 },
+  s833: { display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#e8f5ee",borderRadius:8 },
+  s834: {color:"#1a6b3c",fontWeight:700,fontSize:16},
+  s835: { display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 12px" },
+  s836: {color:"var(--color-text-secondary)"},
+  s837: {width:110,padding:"5px 10px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:7,background:"var(--color-background-secondary)",color:"#e55",outline:"none",textAlign:"right"},
+  s838: { display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 },
+  s839: {color:"#4da6ff",fontWeight:600},
+  s840: {color:"#4da6ff",fontWeight:700,fontSize:16},
+  s841: { marginTop: 16, paddingTop: 16, borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s842: { fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)" },
+  s843: { textAlign: "center", padding: "1.5rem", color: "var(--color-text-secondary)", fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 8 },
+  s844: {
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "8px 12px",
+                                  background: "var(--color-background-secondary)",
+                                  borderRadius: 6,
+                                  border: "0.5px solid var(--color-border-tertiary)"
+                                },
+  s845: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 },
+  s846: { fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s847: {
+                                      background: "#4da6ff",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: 4,
+                                      padding: "4px 10px",
+                                      fontSize: 11,
+                                      fontWeight: 500,
+                                      cursor: "pointer"
+                                    },
+  s848: {
+                                      background: "#1a6b3c",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: 4,
+                                      padding: "4px 10px",
+                                      fontSize: 11,
+                                      fontWeight: 500,
+                                      textDecoration: "none",
+                                      display: "inline-flex",
+                                      alignItems: "center"
+                                    },
+  s849: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10 },
+  s850: {
+                            width: "100%",
+                            boxSizing: "border-box",
+                            resize: "vertical",
+                            fontSize: 13,
+                            color: "var(--color-text-primary)",
+                            background: "var(--color-background-secondary)",
+                            border: "0.5px solid var(--color-border-secondary)",
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                            fontFamily: "inherit",
+                            lineHeight: 1.5,
+                            outline: "none",
+                          },
+  s851: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, marginBottom: 16 },
+  s852: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: "pointer", borderTop: "3px solid #4da6ff", position: "relative" },
+  s853: { fontWeight: 700, fontSize: 18, fontFamily: "'DM Serif Display', serif", marginBottom: 6 },
+  s854: { fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", display: "inline-block", marginBottom: 8, fontWeight: 500 },
+  s855: { display: "flex", flexDirection: "column", gap: 4, fontSize: 12 },
+  s856: { display: "flex", justifyContent: "space-between" },
+  s857: { color: "#e55", fontWeight: 600 },
+  s858: { marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 },
+  s859: { display: "flex", flexDirection: "column", gap: 6, fontSize: 12, marginTop: 4 },
+  s860: { color: "#1a6b3c", fontWeight: 700, fontSize: 16 },
+  s861: { color: "#4da6ff", fontWeight: 700, fontSize: 16 },
+  s862: { marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, textAlign: "center" },
+  s863: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginTop: 4 },
+  s864: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginTop: 4 },
+  s865: { background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 },
+  s866: { width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" },
+  s867: { width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" },
+  s868: { background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "4px 9px", cursor: "pointer", fontSize: 13, fontWeight: 700 },
+  s869: { width: 28 },
+  s870: { fontSize: 13, fontWeight: 700, color: "#1a6b3c" },
+  s871: { borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" },
+  s872: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 },
+  s873: { padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" },
+  s874: { padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" },
+  s875: { padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" },
+  s876: { padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s877: { fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" },
+  s878: { padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s879: { padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s880: { display: "flex", flexDirection: "column", gap: 8, fontSize: 13 },
+  s881: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 },
+  s882: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" },
+  s883: { width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" },
+  s884: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 },
+  s885: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 },
+  s886: { fontSize: 18, fontWeight: 600, color: "#e55", border: "none", background: "transparent", outline: "none", width: "100%", padding: 0 },
+  s887: { padding: "0.75rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  s888: { fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 },
+  s889: { fontSize: 11, color: "#e55", background: "#fff0f0", borderRadius: 6, padding: "2px 8px" },
+  s890: { marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" },
+  s891: { padding: "4px 12px", borderRadius: 7, border: "0.5px solid #1a6b3c", background: "#e8f5ee", color: "#1a6b3c", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 },
+  s892: { padding: "4px 12px", borderRadius: 7, border: "0.5px solid #e55", background: "#fff0f0", color: "#e55", cursor: "pointer", fontSize: 12, fontWeight: 600 },
+  s893: { padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" },
+  s894: { padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 },
+  s895: { padding: "4px 8px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, minWidth: 90 },
+  s896: { border: "none", background: "transparent", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", width: "100%", outline: "none", cursor: "text", padding: "2px 4px", borderRadius: 4 },
+  s897: { padding: "4px 8px", width: 100 },
+  s898: { borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" },
+  s899: { padding: "9px 14px", fontWeight: 600 },
+  s900: { padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" },
+  s901: { position: "relative", padding: "18px 16px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, cursor: "pointer", userSelect: "none" },
+  s902: { fontSize: 30, marginBottom: 8 },
+  s903: { width: "100%", fontSize: 13, fontWeight: 600, padding: "2px 4px", borderRadius: 4, border: "1px solid #1a6b3c", background: "var(--color-background-primary)", color: "var(--color-text-primary)" },
+  s904: { fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s905: { fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 },
+  s906: { position: "absolute", top: 8, right: 8, display: "flex", gap: 2 },
+  s907: { background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2, opacity: 0.5 },
+  s908: { display: "flex", gap: 8, marginBottom: 16, padding: "12px 14px", background: "var(--color-background-secondary)", borderRadius: 10 },
+  s909: { flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--color-border-primary)", fontSize: 14, background: "var(--color-background-primary)", color: "var(--color-text-primary)" },
+  s910: { maxWidth: 900, margin: "0 auto" },
+  s911: { margin: 0, fontSize: 20, fontWeight: 700 },
+  s912: { margin: "3px 0 0", fontSize: 13, color: "var(--color-text-secondary)" },
+  s913: { textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 },
+  s914: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 },
+  s915: { margin: 0, fontSize: 18, fontWeight: 700 },
+  s916: { display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--color-background-secondary)", borderRadius: 10, border: "0.5px solid var(--color-border-tertiary)" },
+  s917: { fontSize: 22, flexShrink: 0 },
+  s918: { marginTop: 16, fontSize: 11, color: "var(--color-text-secondary)" },
+  s919: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 },
+  s920: { background: "var(--color-background-primary)", borderRadius: 14, width: "100%", maxWidth: 760, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" },
+  s921: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "0.5px solid var(--color-border-secondary)" },
+  s922: { fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 },
+  s923: { display: "flex", gap: 8, flexShrink: 0, marginLeft: 12 },
+  s924: { flex: 1, overflow: "hidden" },
+  s925: { width: "100%", height: "100%", objectFit: "contain" },
+  s926: { width: "100%", height: "100%", border: "none", minHeight: 420 },
+  s927: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" },
+  s928: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 },
+  s929: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 },
+  s930: { position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 },
+  s931: { position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.55, padding: 2 },
+  s932: { fontSize: 28, marginBottom: 6 },
+  s933: { width: "100%", boxSizing: "border-box", fontSize: 15, fontWeight: 600, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)" },
+  s934: { fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 },
+  s935: { background: "var(--color-background-secondary)", borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 4 },
+  s936: { display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px", flexShrink: 0 },
+  s937: { fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 },
+  s938: { padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s939: { width: "100%", background: "none", border: "1px dashed var(--color-border-secondary)", borderRadius: 8, padding: "7px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "left" },
+  s940: { width: "100%", boxSizing: "border-box", fontSize: 13 },
+  s941: { fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 5 },
+  s942: { color: "var(--color-text-secondary)", fontWeight: 400 },
+  s943: { marginLeft: 6, color: "#1a6b3c", fontWeight: 600 },
+  s944: { display: "flex", flexWrap: "wrap", gap: 5 },
+  s945: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 },
+  s946: { padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 },
+  s947: { padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s948: { padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7, background: "var(--color-background-secondary)" },
+  s949: { fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 },
+  s950: { marginLeft: 5, color: "#1a6b3c", fontWeight: 600 },
+  s951: { display: "flex", flexWrap: "wrap", gap: 4 },
+  s952: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 },
+  s953: { fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 },
+  s954: { display: "flex", gap: 6, justifyContent: "flex-end" },
+  s955: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 },
+  s956: { display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px" },
+  s957: { fontSize: 13, fontWeight: 500, marginBottom: 4, wordBreak: "break-word" },
+  s958: { marginBottom: 6 },
+  s959: { display: "flex", borderRadius: 4, overflow: "hidden", height: 5, marginBottom: 5 },
+  s960: { marginTop: 5 },
+  s961: { display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 },
+  s962: { background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" },
+  s963: { fontSize: 10, color: "#4da6ff", fontWeight: 500 },
+  s964: { display: "flex", alignItems: "center", gap: 3 },
+  s965: { background: "#fde8e8", color: "#d44", borderRadius: 3, padding: "0px 4px", fontWeight: 700, fontSize: 8, letterSpacing: 0.3 },
+  s966: { background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "2px 4px" },
+  s967: { background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" },
+  s968: { padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" },
+  s969: { fontSize: 10, color: "#1a6b3c" },
+  s970: { display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" },
+  s971: { width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 },
+  s972: { fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word", marginBottom: 3 },
+  s973: { display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 2 },
+  s974: { fontSize: 9, color: "var(--color-text-secondary)", opacity: 0.7 },
+  s975: { background: "none", border: "0.5px solid #1a6b3c44", borderRadius: 5, cursor: "pointer", fontSize: 10, color: "#1a6b3c", padding: "2px 7px", fontWeight: 500 },
+  s976: { display: "flex", flex: 1, minHeight: 0, overflow: "hidden" },
+  s977: { width: 200, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" },
+  s978: { padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" },
+  s979: { fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" },
+  s980: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 },
+  s981: { flex: 1, overflowY: "auto" },
+  s982: { padding: "2rem 1rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12 },
+  s983: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", flexDirection: "column", gap: 10 },
+  s984: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.1rem 1.2rem" },
+  s985: { fontWeight: 500, fontSize: 14, marginBottom: 12 },
+  s986: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 },
+  s987: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" },
+  s988: { fontSize: 22, fontWeight: 600, color: "#4da6ff" },
+  s989: { background: "#e8f5ee", borderRadius: 10, padding: "0.8rem", textAlign: "center" },
+  s990: { fontSize: 22, fontWeight: 600, color: "#1a6b3c" },
+  s991: { fontSize: 22, fontWeight: 600, color: "var(--color-text-secondary)" },
+  s992: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 },
+  s993: { fontWeight: 500, color: "var(--color-text-primary)" },
+  s994: { background: "var(--color-background-secondary)", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 6 },
+  s995: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 },
+  s996: { background: "var(--color-background-secondary)", borderRadius: 4, height: 4, overflow: "hidden" },
+  s997: { padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" },
+  s998: { padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 },
+  s999: { flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" },
+  s1000: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" },
+  s1001: { padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 },
+  s1002: { display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s1003: { width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0 },
+  s1004: { flex: 1, fontSize: 13 },
+  s1005: { background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" },
+  s1006: { display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 },
+  s1007: { width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 },
+  s1008: { flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" },
+  s1009: { maxHeight: 400, overflowY: "auto" },
+  s1010: { background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s1011: { background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px", flexShrink: 0 },
+  s1012: { flex: 1, fontSize: 13, fontWeight: 600, border: "none", background: "transparent", outline: "none", color: "var(--color-text-primary)", padding: 0 },
+  s1013: { position: "fixed", inset: 0, zIndex: 99 },
+  s1014: { position: "absolute", right: 0, top: 22, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 6, zIndex: 100, display: "flex", gap: 5, flexWrap: "wrap", width: 114 },
+  s1015: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" },
+  s1016: { background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "0 2px" },
+  s1017: { width: "100%", boxSizing: "border-box", border: "none", background: "transparent", resize: "vertical", outline: "none", fontSize: 13, padding: "8px 10px", lineHeight: 1.6, fontFamily: "inherit", color: "var(--color-text-primary)" },
+  s1018: { padding: "8px 10px", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap", cursor: "text", minHeight: 32 },
+  s1019: { padding: "8px 10px", fontSize: 12, color: "var(--color-text-secondary)", fontStyle: "italic", cursor: "text" },
+  s1020: { padding: "4px 10px 6px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s1021: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px 4px", borderBottom: "1px solid rgba(0,0,0,0.06)", cursor: "grab" },
+  s1022: { display: "flex", gap: 4, alignItems: "center" },
+  s1023: { fontSize: 9, color: "rgba(0,0,0,0.25)", marginRight: 2, letterSpacing: 1 },
+  s1024: {
+          background: "transparent", border: "none", outline: "none",
+          resize: "none", fontSize: 12.5, lineHeight: 1.65,
+          color: "#333", fontFamily: "inherit",
+          width: "100%", boxSizing: "border-box",
+          userSelect: "text", cursor: "text",
+          padding: "7px 10px 2px",
+          minHeight: 60,
+        },
+  s1025: { alignSelf: "flex-end", cursor: "ew-resize", fontSize: 10, color: "rgba(0,0,0,0.22)", padding: "0 6px 2px", lineHeight: 1 },
+  s1026: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 },
+  s1027: { padding: "6px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.97)", flexShrink: 0, flexWrap: "wrap" },
+  s1028: { width: 1, height: 16, background: "var(--color-border-secondary)" },
+  s1029: { display: "flex", gap: 3 },
+  s1030: { marginLeft: "auto", display: "flex", gap: 6 },
+  s1031: { flex: 1, minHeight: 0, overflow: "auto", position: "relative" },
+  s1032: { position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" },
+  s1033: { position:"absolute", right:-11, top:"50%", transform:"translateY(-50%)", width:20, height:20, borderRadius:"50%", background:"#1a6b3c", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, cursor:"pointer", zIndex:20, boxShadow:"0 1px 4px rgba(0,0,0,0.18)", lineHeight:1 },
+  s1034: { display: "flex", gap: 3, alignItems: "center" },
+  s1035: { fontSize: 9, border: "0.5px solid #ccc", borderRadius: 3, padding: "0 2px", cursor: "pointer", background: "#fff", height: 14 },
+  s1036: { background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#d44", padding: 0, lineHeight: 1, marginLeft: 4 },
+  s1037: { position:"absolute", bottom:10, right:14, fontSize:10, color:"#c0bedd", pointerEvents:"none", textAlign:"right", lineHeight:1.7 },
+  s1038: {color:"#6d28d9"},
+  s1039: {color:"#7c3aed"},
+  s1040: {color:"#a78bfa"},
+  s1041: { borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", flexShrink: 0, padding: "8px 16px" },
+  s1042: { display:"block", width:"100%", boxSizing:"border-box", border:"none", outline:"none", background:"transparent", fontSize:14, fontWeight:600, fontFamily:"inherit", color:"var(--color-text-primary)" },
+  s1043: { padding: "0 4px 0 10px", color: "#bbb", fontSize: 16, cursor: "grab", flexShrink: 0, lineHeight: 1 },
+  s1044: { fontSize: 14, color: "#1a6b3c", marginBottom: 4 },
+  s1045: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 },
+  s1046: { overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", marginBottom: 4 },
+  s1047: { display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content" },
+  s1048: { display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" },
+  s1049: { display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 },
+  s1050: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, marginTop: 6 },
+  s1051: { display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 13 },
+  s1052: { background: "var(--color-background-secondary)", borderRadius: 4, height: 6, overflow: "hidden" },
+  s1053: { color: "var(--color-text-secondary)", fontSize: 13, textAlign: "center", padding: "1.5rem 0" },
+  s1054: { position: "relative", display: "inline-block" },
+  s1055: { background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "var(--color-text-secondary)", padding: "2px 6px", borderRadius: 4, lineHeight: 1 },
+  s1056: { position: "fixed", inset: 0, zIndex: 199 },
+  s1057: { position: "absolute", right: 0, top: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 200, minWidth: 110, overflow: "hidden" },
+  s1058: { display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text-primary)" },
+  s1059: { display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#d44" },
+  s1060: { overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" },
+  s1061: { marginTop: 2, paddingLeft: 12, background: "var(--color-background-secondary)", borderRadius: "0 0 0 0" },
+  s1062: { marginTop: 0, paddingLeft: 24, background: "var(--color-background-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s1063: { marginTop: 0, paddingLeft: 40, background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-secondary)" },
+  s1064: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" },
+  s1065: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s1066: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 },
+  s1067: { marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 },
+  s1068: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", cursor: "pointer" },
+  s1069: { fontSize: 11, fontWeight: 500, marginBottom: 4 },
+  s1070: { fontSize: 13, fontWeight: 600 },
+  s1071: { fontSize: 12, color: "#d44", marginBottom: 10 },
+  s1072: { display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" },
+  s1073: { fontSize: 28, fontWeight: 700, letterSpacing: "-1px" },
+  s1074: { fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" },
+  s1075: { fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" },
+  s1076: { borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 16, paddingTop: 16 },
+  s1077: { fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 },
+  s1078: { fontSize: 10, fontWeight: 400 },
+  s1079: { fontSize: 12, color: "#d44", marginBottom: 8 },
+  s1080: { display: "flex", flexDirection: "row", gap: 24, flexWrap: "wrap" },
+  s1081: { flex: 1, minWidth: 260, background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" },
+  s1082: { minWidth: 120 },
+  s1083: { fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--color-text-primary)" },
+  s1084: { fontSize: 10, color: "var(--color-text-secondary)", width: "100%" },
+  s1085: { maxWidth: 720, margin: "0 auto" },
+  s1086: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 },
+  s1087: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" },
+  s1088: { display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" },
+  s1089: { fontWeight: 600, fontSize: 14, marginBottom: 14 },
+  s1090: { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" },
+  s1091: { background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 14px", flex: 1, minWidth: 140 },
+  s1092: { fontSize: 16, fontWeight: 700, color: "#1a6b3c" },
+  s1093: { fontSize: 16, fontWeight: 700, color: "#4da6ff" },
+  s1094: { fontWeight: 600, fontSize: 14, marginBottom: 6 },
+  s1095: { display: "block", fontSize: 10, fontWeight: 400, marginTop: 1, color: "var(--color-text-secondary)" },
+  s1096: { background: "var(--color-background-secondary)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 },
+  s1097: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 },
+  s1098: { fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 2 },
+  s1099: { marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center" },
+  s1100: { background: "#fff0f0", border: "1px solid #d44", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#d44", fontWeight: 500 },
+  s1101: { textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 13 },
+  s1102: { padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 },
+  s1103: { padding: "10px 10px", fontWeight: 600 },
+  s1104: { padding: "10px 10px", color: "#1a6b3c", fontWeight: 500 },
+  s1105: { padding: "10px 10px", color: "#4da6ff", fontWeight: 500 },
+  s1106: { padding: "10px 10px" },
+  s1107: { background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" },
+  s1108: { borderTop: "1px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" },
+  s1109: { padding: "10px 10px", fontWeight: 700 },
+  s1110: { padding: "10px 10px", fontWeight: 700, color: "#1a6b3c" },
+  s1111: { padding: "10px 10px", fontWeight: 700, color: "#4da6ff" },
+  s1112: { padding: "10px 10px", color: "#d44", fontWeight: 600 },
+  s1113: { padding: "10px 10px", fontWeight: 700, color: "#d44" },
+  s1114: { display: "flex", flexDirection: "column", gap: 16, marginTop: 4 },
+  s1115: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 },
+  s1116: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  s1117: { fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 10 },
+  s1118: { height: 4, background: "var(--color-border-tertiary)", borderRadius: 4, overflow: "hidden" },
+  s1119: { fontSize: 13, color: "#d44", marginBottom: 10 },
+  s1120: { textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 14 },
+  s1121: { padding: "8px 10px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", width: 32 },
+  s1122: { padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s1123: { padding: "8px 10px", textAlign: "center" },
+  s1124: { padding: "8px 10px" },
+  s1125: { padding: "8px 10px", textAlign: "right", color: "var(--color-text-secondary)" },
+  s1126: { padding: "8px 10px", textAlign: "right", fontWeight: 500, color: "#1a6b3c" },
+  s1127: { padding: "8px 10px", textAlign: "right" },
+  s1128: { padding: "8px 10px", textAlign: "right", fontWeight: 600, color: "#1a6b3c" },
+  s1129: { padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" },
+  s1130: { fontSize: 11, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 },
+  s1131: { width: "100%", height: "auto", display: "block", cursor: "crosshair" },
+  s1132: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 },
+  s1133: { display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 2, gap: 1 },
+  s1134: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" },
+  s1135: { fontWeight: 700, marginLeft: 2 },
+  s1136: { fontWeight: 500, marginLeft: 2 },
+  s1137: { fontSize: 11, color: "var(--color-text-secondary)", marginTop: 8 },
+  s1138: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" },
+  s1139: { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem", marginBottom: 16 },
+  s1140: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10 },
+  s1141: { marginTop: 10, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", cursor: "pointer", fontSize: 13, fontWeight: 500 },
+  s1142: { textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)", fontSize: 13 },
+  s1143: { overflowX: "auto", WebkitOverflowScrolling: "touch" },
+  s1144: { padding: "9px 14px", fontWeight: 500 },
+  s1145: { padding: "9px 14px", textAlign: "right" },
+  s1146: { padding: "9px 14px", textAlign: "right", color: "#1a6b3c", fontWeight: 600 },
+  s1147: { background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#d44" },
+  s1148: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem" },
+  s1149: { margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 20 },
+  s1150: { marginBottom: 20 },
+  s1151: { fontSize: 14, fontWeight: 600, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 10px" },
+  s1152: { width: "100%", accentColor: "#1a6b3c", cursor: "pointer" },
+  s1153: { display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 },
+  s1154: { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem", marginBottom: 12 },
+  s1155: { margin: "0 0 16px", fontSize: 14, color: "var(--color-text-secondary)", fontWeight: 500 },
+  s1156: { position: "relative", width: 160, height: 160, margin: "0 auto 20px" },
+  s1157: { width: "100%", height: "100%", transform: "rotate(-90deg)" },
+  s1158: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
+  s1159: { fontSize: 13, fontWeight: 700 },
+  s1160: { display: "flex", gap: 12, justifyContent: "center", marginBottom: 20, fontSize: 11 },
+  s1161: { display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#1a6b3c", marginRight: 4 },
+  s1162: { display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#4da6ff", marginRight: 4 },
+  s1163: { display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s1164: { background: "#fef9c3", borderRadius: 12, border: "0.5px solid #fbbf24", padding: "1rem 1.1rem" },
+  s1165: { fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 6 },
+  s1166: { fontSize: 20, fontWeight: 700, color: "#78350f" },
+  s1167: { fontSize: 11, color: "#92400e", marginTop: 4 },
+  s1168: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
+  s1169: { display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 3, gap: 2 },
+  s1170: { display: "flex", alignItems: "center", gap: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 9px" },
+  s1171: { fontSize: 11, color: "#1a6b3c", animation: "spin 1s linear infinite", display: "inline-block" },
+  s1172: { width: 52, fontSize: 12, padding: "2px 5px", borderRadius: 5, border: "0.5px solid #1a6b3c", outline: "none", fontFamily: "inherit" },
+  s1173: { fontSize: 12, fontWeight: 700, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer", padding: "0 2px" },
+  s1174: { background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 },
+  s1175: { fontSize: 12, color: "#92400e", background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 8, padding: "6px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 },
+  s1176: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 },
+  s1177: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 },
+  s1178: { background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 },
+  s1179: { fontWeight: 500, fontSize: 15, marginBottom: 14 },
+  s1180: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 },
+  s1181: { position: "absolute", top: "100%", left: 0, right: 0, zIndex: 300, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,0.12)", marginTop: 2, maxHeight: 220, overflowY: "auto" },
+  s1182: { padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "0.5px solid var(--color-border-tertiary)" },
+  s1183: { fontSize: 12, color: "var(--color-text-secondary)", maxWidth: 180, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  s1184: { fontWeight: 400, color: "#94a3b8" },
+  s1185: { fontSize: 11, color: "var(--color-text-secondary)", margin: "8px 0 8px" },
+  s1186: { background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 12 },
+  s1187: { fontSize: 11, color: "#0369a1", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  s1188: { background: "#e0f2fe", borderRadius: 4, padding: "1px 6px", fontSize: 12 },
+  s1189: { fontWeight: 400, color: "#64748b" },
+  s1190: { display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 7 },
+  s1191: { fontSize: 10, color: "#64748b", alignSelf: "center" },
+  s1192: { fontSize: 10, background: "#e0f2fe", border: "0.5px solid #7dd3fc", borderRadius: 4, padding: "2px 8px", cursor: "pointer", color: "#0369a1", fontFamily: "monospace" },
+  s1193: { fontSize: 10, background: "#fffbeb", border: "0.5px solid #fcd34d", borderRadius: 4, padding: "2px 8px", color: "#92400e", textDecoration: "none" },
+  s1194: { flex: 1, fontSize: 11, padding: "5px 8px", border: "0.5px solid #bae6fd", borderRadius: 6, outline: "none", fontFamily: "monospace" },
+  s1195: { background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12 },
+  s1196: { fontSize: 10, color: "#64748b", marginTop: 4, lineHeight: 1.5 },
+  s1197: { color: "#0369a1" },
+  s1198: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 },
+  s1199: { background: "var(--color-background-primary)", border: "0.5px solid #b6ddc2", borderRadius: 12, padding: "1.2rem", marginBottom: 20 },
+  s1200: { fontWeight: 500, fontSize: 15, marginBottom: 14, color: "#1a6b3c" },
+  s1201: { fontSize: 11, fontWeight: 400, marginLeft: 8 },
+  s1202: { display: "flex", gap: 8, marginTop: 12 },
+  s1203: { textAlign: "center", padding: "4rem 1rem", background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)" },
+  s1204: { fontWeight: 500, fontSize: 16, marginBottom: 6 },
+  s1205: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap", gap: 8 },
+  s1206: { fontSize: 11, color: "#92400e", background: "#fef9c3", borderRadius: 4, padding: "1px 6px", marginLeft: 6 },
+  s1207: { display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 },
+  s1208: { padding: "12px 14px", borderTop: "0.5px solid var(--color-border-tertiary)" },
+  s1209: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 },
+  s1210: { fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" },
+  s1211: { fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" },
+  s1212: { fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600 },
+  s1213: { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },
+  s1214: { background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer", fontSize: 13, padding: "4px 8px", color: "var(--color-text-secondary)" },
+  s1215: { background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#d44", padding: "2px 4px" },
+  s1216: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" },
+  s1217: { fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" },
+  s1218: { display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 },
+  s1219: { fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" },
+  s1220: { fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600, cursor: "help" },
+  s1221: { fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 },
+  s1222: { fontSize: 9, color: "#1d4ed8", background: "#dbeafe", borderRadius: 3, padding: "1px 5px", marginTop: 2, display: "inline-block" },
+  s1223: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 },
+  s1224: { fontSize: 10, color: "#d44", fontWeight: 500 },
+  s1225: { fontSize: 9, color: "#94a3b8", fontFamily: "monospace" },
+  s1226: { display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" },
+  s1227: { fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "2px 7px", cursor: "pointer", color: "#92400e", whiteSpace: "nowrap" },
+  s1228: { fontSize: 9, background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 4, padding: "2px 7px", color: "#1d4ed8", textDecoration: "none", whiteSpace: "nowrap" },
+  s1229: { padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 },
+  s1230: { color: "#f0a020" },
+  s1231: { marginTop: 24 },
+  s1232: { fontWeight: 600, fontSize: 15, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 },
+  s1233: { fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" },
+  s1234: { background: "#e8f5ee", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #b6ddc2" },
+  s1235: { fontWeight: 700, fontSize: 18, color: "#1a6b3c" },
+  s1236: { background: "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #f5c0c0" },
+  s1237: { fontWeight: 700, fontSize: 18, color: "#cc2222" },
+  s1238: { background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)" },
+  s1239: { padding: "8px 12px", textAlign: "left", fontWeight: 600 },
+  s1240: { padding: "8px 12px", textAlign: "right", fontWeight: 600 },
+  s1241: { padding: "9px 12px", fontWeight: 600 },
+  s1242: { fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 400 },
+  s1243: { padding: "9px 12px", textAlign: "right" },
+  s1244: { padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)" },
+  s1245: { padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)", fontSize: 12 },
+  s1246: { background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, padding: "2px 4px" },
+  s1247: {cursor:"pointer", transition:"stroke-width 0.15s"},
+  s1248: {background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"},
+  s1249: {fontWeight:600,fontSize:14,marginBottom:12},
+  s1250: {display:"flex",gap:16,alignItems:"center"},
+  s1251: {flex:1,display:"flex",flexDirection:"column",gap:5,maxHeight:180,overflowY:"auto"},
+  s1252: {display:"flex",alignItems:"center",gap:6,fontSize:12},
+  s1253: {flex:1,color:"var(--color-text-secondary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},
+  s1254: {fontWeight:600,fontSize:11},
+  s1255: {background:"var(--color-background-secondary)",borderRadius:10,padding:"0.8rem 1rem",textAlign:"center"},
+  s1256: {fontSize:11,color:"var(--color-text-secondary)",marginBottom:4},
+  s1257: {fontSize:10,color:"var(--color-text-secondary)",marginTop:2},
+  s1258: {textAlign:"center",padding:"3rem",color:"var(--color-text-secondary)"},
+  s1259: {fontSize:36,marginBottom:10},
+  s1260: {fontWeight:500,marginBottom:6},
+  s1261: {fontSize:13},
+  s1262: {display:"flex",flexDirection:"column",gap:16},
+  s1263: {display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10},
+  s1264: {fontSize:12,color:"var(--color-text-secondary)"},
+  s1265: {fontSize:12,color:"#1a6b3c"},
+  s1266: {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(280px,100%),1fr))",gap:14},
+  s1267: {flex:1,display:"flex",flexDirection:"column",gap:10},
+  s1268: {display:"flex",alignItems:"center",gap:6,marginBottom:2},
+  s1269: {width:10,height:10,borderRadius:2,background:"#1a6b3c"},
+  s1270: {fontSize:18,fontWeight:700,color:"#1a6b3c"},
+  s1271: {width:10,height:10,borderRadius:2,background:"#4da6ff"},
+  s1272: {fontSize:18,fontWeight:700,color:"#4da6ff"},
+  s1273: {background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--color-text-secondary)",fontSize:13},
+  s1274: {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10},
+  s1275: {fontSize:11,color:"var(--color-text-secondary)",marginTop:10},
+  s1276: {fontWeight:600,fontSize:14,marginBottom:10},
+  s1277: {overflowX:"auto"},
+  s1278: {background:"var(--color-background-primary)"},
+  s1279: {padding:"7px 10px",textAlign:"center",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"},
+  s1280: {padding:"7px 10px",textAlign:"left",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"},
+  s1281: {borderBottom:"0.5px solid var(--color-border-tertiary)"},
+  s1282: {padding:"7px 10px",textAlign:"center"},
+  s1283: {padding:"7px 10px",fontWeight:600},
+  s1284: {padding:"7px 10px",color:"var(--color-text-secondary)",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},
+  s1285: {padding:"7px 10px"},
+  s1286: {background:"var(--color-background-primary)",borderRadius:4,padding:"2px 6px",fontSize:10},
+  s1287: {padding:"7px 10px",textAlign:"right"},
+  s1288: {display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"},
+  s1289: {width:60,height:5,borderRadius:3,background:"var(--color-border-tertiary)",overflow:"hidden"},
+  s1290: { fontSize: 44, lineHeight: 1, marginBottom: "0.5rem" },
+  s1291: { margin: "0 0 0.5rem", fontSize: 20, color: "#0f172a" },
+  s1292: { margin: 0, color: "#64748b", fontSize: 14, lineHeight: 1.5 },
+  s1293: {
+              marginTop: "1rem", padding: "0.75rem", background: "#fef2f2",
+              color: "#b91c1c", borderRadius: 8, fontSize: 12, textAlign: "left",
+              whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 140, overflow: "auto",
+            },
+};
+
 const defaultData = {
   user: null,
   profile: { age: "", income: "", expense: "", savings: "" },
@@ -723,7 +2165,7 @@ function App() {
   const moreItems = navItems.filter(n => !["money","goals","portfolio"].includes(n.id));
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)" }}>
+    <div style={STYLES.s0}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
 
@@ -741,13 +2183,8 @@ function App() {
       }}>
         {/* Logo + toggle row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: sidebarCollapsed ? "center" : "space-between", padding: sidebarCollapsed ? "0 0 1rem" : "0 0.75rem 1rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: "0.5rem" }}>
-          {!sidebarCollapsed && <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>FinTrack</span>}
-          <button onClick={() => setSidebarCollapsed(c => !c)} style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1,
-            padding: "2px 4px", borderRadius: 6, flexShrink: 0,
-            display: "flex", alignItems: "center", justifyContent: "center"
-          }} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
+          {!sidebarCollapsed && <span style={STYLES.s1}>FinTrack</span>}
+          <button onClick={() => setSidebarCollapsed(c => !c)} style={STYLES.s2} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
             {sidebarCollapsed ? "›" : "‹"}
           </button>
         </div>
@@ -765,7 +2202,7 @@ function App() {
           borderLeft: page === "overview" ? "2px solid #1a6b3c" : "2px solid transparent",
           width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
         }}>
-          <span style={{ fontSize: 16, flexShrink: 0 }}>⊞</span>
+          <span style={STYLES.s3}>⊞</span>
           {!sidebarCollapsed && "Overview"}
         </button>
 
@@ -780,7 +2217,7 @@ function App() {
             style={{ display: "flex", alignItems: "center", borderLeft: navDragOver === i ? "2px solid #1a6b3c" : page === item.id ? "2px solid #1a6b3c" : "2px solid transparent", background: navDragOver === i ? "#e8f5ee" : page === item.id ? "var(--color-background-secondary)" : "transparent" }}
           >
             {!sidebarCollapsed && navEditMode && (
-              <span style={{ paddingLeft: 6, color: "var(--color-border-primary)", cursor: "grab", fontSize: 13, userSelect: "none" }}>⠿</span>
+              <span style={STYLES.s4}>⠿</span>
             )}
             <button onClick={() => { if (!navEditMode) setPage(item.id); }} title={sidebarCollapsed ? item.label : undefined} style={{
               flex: 1, display: "flex", alignItems: "center",
@@ -792,14 +2229,14 @@ function App() {
               fontWeight: page === item.id ? 500 : 400, fontSize: 14,
               width: "100%", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden"
             }}>
-              <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
+              <span style={STYLES.s3}>{item.icon}</span>
               {!sidebarCollapsed && item.label}
             </button>
           </div>
         ))}
 
         {!sidebarCollapsed && (
-          <div style={{ marginTop: "auto", padding: "0 0 0.5rem" }}>
+          <div style={STYLES.s5}>
             <button onClick={() => setPage("settings")} title="Settings" style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "0.6rem 1rem",
@@ -810,27 +2247,27 @@ function App() {
               borderLeft: page === "settings" ? "2px solid #1a6b3c" : "2px solid transparent",
               width: "100%", textAlign: "left"
             }}>
-              <span style={{ fontSize: 16 }}>⚙️</span> Settings
+              <span style={STYLES.s6}>⚙️</span> Settings
             </button>
-            <div style={{ padding: "0.6rem 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={STYLES.s7}>
+              <div style={STYLES.s8}>
                 {data.user?.photo
-                  ? <img src={data.user.photo} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-                  : <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#1a6b3c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>{(data.user?.name || "U")[0]}</div>
+                  ? <img src={data.user.photo} alt="" style={STYLES.s9} />
+                  : <div style={STYLES.s10}>{(data.user?.name || "U")[0]}</div>
                 }
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.user?.name || "User"}</div>
+                <div style={STYLES.s11}>
+                  <div style={STYLES.s12}>{data.user?.name || "User"}</div>
 
                 </div>
               </div>
-              <button onClick={signOutUser} style={{ width: "100%", background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>
+              <button onClick={signOutUser} style={STYLES.s13}>
                 Sign out
               </button>
             </div>
           </div>
         )}
         {sidebarCollapsed && (
-          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0.5rem 0" }}>
+          <div style={STYLES.s14}>
             <button onClick={() => setPage("settings")} title="Settings" style={{
               background: page === "settings" ? "var(--color-background-secondary)" : "none",
               border: "none", cursor: "pointer", fontSize: 18,
@@ -838,8 +2275,8 @@ function App() {
               borderLeft: page === "settings" ? "2px solid #1a6b3c" : "2px solid transparent",
             }}>⚙️</button>
             {data.user?.photo
-              ? <img src={data.user.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} title={data.user.name} />
-              : <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1a6b3c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600 }}>
+              ? <img src={data.user.photo} alt="" style={STYLES.s15} title={data.user.name} />
+              : <div style={STYLES.s16}>
                   {(data.user?.name || "U")[0]}
                 </div>
             }
@@ -864,17 +2301,8 @@ function App() {
         <>
           {/* More menu overlay */}
           {showMoreMenu && (
-            <div onClick={() => setShowMoreMenu(false)} style={{
-              position: "fixed", inset: 0, zIndex: 998, background: "rgba(0,0,0,0.3)"
-            }}>
-              <div onClick={e => e.stopPropagation()} style={{
-                position: "fixed", bottom: 64, left: 0, right: 0, zIndex: 999,
-                background: "var(--color-background-primary)",
-                borderTop: "0.5px solid var(--color-border-tertiary)",
-                borderRadius: "16px 16px 0 0",
-                padding: "1rem",
-                display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8,
-              }}>
+            <div onClick={() => setShowMoreMenu(false)} style={STYLES.s17}>
+              <div onClick={e => e.stopPropagation()} style={STYLES.s18}>
                 {moreItems.map(item => (
                   <button key={item.id} onClick={() => { setPage(item.id); setShowMoreMenu(false); }} style={{
                     display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
@@ -882,7 +2310,7 @@ function App() {
                     background: page === item.id ? "var(--color-background-secondary)" : "transparent",
                     cursor: "pointer", fontSize: 12, color: "var(--color-text-primary)",
                   }}>
-                    <span style={{ fontSize: 22 }}>{item.icon}</span>
+                    <span style={STYLES.s19}>{item.icon}</span>
                     <span>{item.label}</span>
                   </button>
                 ))}
@@ -893,7 +2321,7 @@ function App() {
                   background: page === "settings" ? "var(--color-background-secondary)" : "transparent",
                   cursor: "pointer", fontSize: 12, color: "var(--color-text-primary)",
                 }}>
-                  <span style={{ fontSize: 22 }}>⚙️</span>
+                  <span style={STYLES.s19}>⚙️</span>
                   <span>Settings</span>
                 </button>
               </div>
@@ -901,14 +2329,7 @@ function App() {
           )}
 
           {/* Bottom bar */}
-          <nav style={{
-            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
-            background: "var(--color-background-primary)",
-            borderTop: "0.5px solid var(--color-border-tertiary)",
-            display: "flex", alignItems: "stretch",
-            height: 64,
-            paddingBottom: "env(safe-area-inset-bottom)",
-          }}>
+          <nav style={STYLES.s20}>
             {/* Overview */}
             <button onClick={() => { setPage("overview"); setShowMoreMenu(false); }} style={{
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
@@ -916,7 +2337,7 @@ function App() {
               cursor: "pointer", fontSize: 10, fontWeight: 500,
               color: page === "overview" ? "#1a6b3c" : "var(--color-text-secondary)",
             }}>
-              <span style={{ fontSize: 22 }}>⊞</span>
+              <span style={STYLES.s19}>⊞</span>
               <span>Overview</span>
             </button>
             {/* Money */}
@@ -926,7 +2347,7 @@ function App() {
               cursor: "pointer", fontSize: 10, fontWeight: 500,
               color: page === "money" ? "#1a6b3c" : "var(--color-text-secondary)",
             }}>
-              <span style={{ fontSize: 22 }}>⊕</span>
+              <span style={STYLES.s19}>⊕</span>
               <span>Money</span>
             </button>
             {/* Goals */}
@@ -936,7 +2357,7 @@ function App() {
               cursor: "pointer", fontSize: 10, fontWeight: 500,
               color: page === "goals" ? "#1a6b3c" : "var(--color-text-secondary)",
             }}>
-              <span style={{ fontSize: 22 }}>◎</span>
+              <span style={STYLES.s19}>◎</span>
               <span>Goals</span>
             </button>
             {/* Portfolio */}
@@ -946,7 +2367,7 @@ function App() {
               cursor: "pointer", fontSize: 10, fontWeight: 500,
               color: page === "portfolio" ? "#1a6b3c" : "var(--color-text-secondary)",
             }}>
-              <span style={{ fontSize: 22 }}>📈</span>
+              <span style={STYLES.s19}>📈</span>
               <span>Portfolio</span>
             </button>
             {/* More */}
@@ -957,7 +2378,7 @@ function App() {
               color: showMoreMenu || !["overview","money","goals","portfolio"].includes(page)
                 ? "#1a6b3c" : "var(--color-text-secondary)",
             }}>
-              <span style={{ fontSize: 22, letterSpacing: 2 }}>•••</span>
+              <span style={STYLES.s21}>•••</span>
               <span>More</span>
             </button>
           </nav>
@@ -970,11 +2391,11 @@ function App() {
 // ─── Splash / Loading screen ──────────────────────────────────────────────────
 function SplashScreen({ msg }) {
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f5f5f5", fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={STYLES.s22}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
-      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 30, marginBottom: 12, color: "#111" }}>FinTrack</div>
-      <div style={{ fontSize: 13, color: "#6b7280" }}>{msg}</div>
+      <div style={STYLES.s23}>FinTrack</div>
+      <div style={STYLES.s24}>{msg}</div>
     </div>
   );
 }
@@ -998,23 +2419,23 @@ function SignInPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--color-background-tertiary)", fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={STYLES.s25}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
 
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 20, border: "0.5px solid var(--color-border-tertiary)", padding: "2.5rem 2rem", width: "min(400px, 90vw)", textAlign: "center", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
+      <div style={STYLES.s26}>
 
         {/* Logo */}
-        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 32, marginBottom: 6 }}>FinTrack</div>
-        <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 28, lineHeight: 1.5 }}>
+        <div style={STYLES.s27}>FinTrack</div>
+        <p style={STYLES.s28}>
           Your private net worth &amp; F&amp;O tracker
         </p>
 
         {/* Feature pills */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 28 }}>
+        <div style={STYLES.s29}>
           {[["◈", "Assets &\nNet Worth"], ["◉", "F&O P&L\nTracker"], ["☁", "Cloud\nSync"]].map(([icon, label]) => (
-            <div key={label} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "0.9rem 0.5rem", fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-              <div style={{ fontSize: 22, color: "#1a6b3c", marginBottom: 6 }}>{icon}</div>
+            <div key={label} style={STYLES.s30}>
+              <div style={STYLES.s31}>{icon}</div>
               {label}
             </div>
           ))}
@@ -1041,9 +2462,9 @@ function SignInPage() {
           {loading ? "Signing in…" : "Continue with Google"}
         </button>
 
-        {error && <p style={{ color: "#d44", fontSize: 13, marginTop: 12 }}>{error}</p>}
+        {error && <p style={STYLES.s32}>{error}</p>}
 
-        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 20, lineHeight: 1.7 }}>
+        <p style={STYLES.s33}>
           Your data is stored privately in your own account.<br />
           No broker connections. No third-party tracking.
         </p>
@@ -1083,43 +2504,43 @@ function Onboarding({ step, setStep, data, update, done }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--color-background-tertiary)", fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={STYLES.s25}>
       <style>{LIGHT_MODE_STYLE}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet" />
-      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, marginBottom: 8 }}>FinTrack</div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 28 }}>
+      <div style={STYLES.s34}>FinTrack</div>
+      <div style={STYLES.s35}>
         {steps.map((_, i) => <div key={i} style={{ width: i === step ? 28 : 8, height: 8, borderRadius: 4, background: i === step ? "#1a6b3c" : i < step ? "#1a6b3c80" : "var(--color-border-tertiary)", transition: "all 0.3s" }} />)}
       </div>
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 16, border: "0.5px solid var(--color-border-tertiary)", padding: "2rem", width: "min(480px, 90vw)" }}>
-        <h2 style={{ textAlign: "center", marginBottom: 8, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 22 }}>{steps[step].title}</h2>
-        <p style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 24 }}>{steps[step].sub}</p>
+      <div style={STYLES.s36}>
+        <h2 style={STYLES.s37}>{steps[step].title}</h2>
+        <p style={STYLES.s38}>{steps[step].sub}</p>
 
         {step === 0 && (
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
+            <div style={STYLES.s39}>
               {[["◈", "Track assets & liabilities"], ["⊕", "Multi-currency support"], ["✓", "Private & secure"]].map(([icon, label]) => (
-                <div key={label} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, padding: "1rem", textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)" }}>
-                  <div style={{ fontSize: 20, color: "#1a6b3c", marginBottom: 6 }}>{icon}</div>{label}
+                <div key={label} style={STYLES.s40}>
+                  <div style={STYLES.s41}>{icon}</div>{label}
                 </div>
               ))}
             </div>
             <GoogleBtn onClick={handleGoogle} disabled={authLoading} label={authLoading ? "Signing in…" : undefined} />
-            {authError && <p style={{ color: "#d44", fontSize: 13, textAlign: "center", marginTop: 10 }}>{authError}</p>}
+            {authError && <p style={STYLES.s42}>{authError}</p>}
           </div>
         )}
 
         {step === 1 && (
           <div>
             {[["age", "Age", "e.g. 30", "number"], ["income", "Monthly Income (₹ INR)", "e.g. 1,00,000", "text"], ["expense", "Avg. Monthly Family Expense (₹ INR)", "e.g. 50,000", "text"], ["savings", "Monthly Savings / Investments (₹ INR)", "e.g. 30,000", "text"]].map(([key, label, ph, type]) => (
-              <div key={key} style={{ marginBottom: 14 }}>
-                <label style={{ display: "block", fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 4 }}>{label}</label>
-                <input type={type} placeholder={ph} value={form[key] || ""} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <div key={key} style={STYLES.s43}>
+                <label style={STYLES.s44}>{label}</label>
+                <input type={type} placeholder={ph} value={form[key] || ""} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))} style={STYLES.s45} />
               </div>
             ))}
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
-              <button onClick={() => setStep(0)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)" }}>Back</button>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setStep(2)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", padding: "0.4rem 1rem", borderRadius: 8, cursor: "pointer", color: "var(--color-text-secondary)" }}>Skip</button>
+            <div style={STYLES.s46}>
+              <button onClick={() => setStep(0)} style={STYLES.s47}>Back</button>
+              <div style={STYLES.s48}>
+                <button onClick={() => setStep(2)} style={STYLES.s49}>Skip</button>
                 <GreenBtn onClick={handleProfile} label="Continue →" />
               </div>
             </div>
@@ -1128,17 +2549,17 @@ function Onboarding({ step, setStep, data, update, done }) {
 
         {step === 2 && (
           <div>
-            <div style={{ border: "1.5px dashed var(--color-border-secondary)", borderRadius: 10, padding: "1rem", display: "flex", alignItems: "center", gap: 12, marginBottom: 20, cursor: "pointer" }}>
-              <span style={{ fontSize: 20 }}>⬆</span>
-              <div><div style={{ fontWeight: 500, fontSize: 14 }}>Import from Broker</div><div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Upload CSV/Excel from Zerodha, Groww, or any broker</div></div>
-              <span style={{ marginLeft: "auto" }}>→</span>
+            <div style={STYLES.s50}>
+              <span style={STYLES.s51}>⬆</span>
+              <div><div style={STYLES.s52}>Import from Broker</div><div style={STYLES.s53}>Upload CSV/Excel from Zerodha, Groww, or any broker</div></div>
+              <span style={STYLES.s54}>→</span>
             </div>
-            <div style={{ textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)", margin: "10px 0" }}>or add manually</div>
+            <div style={STYLES.s55}>or add manually</div>
             <AddAssetMini update={update} />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
-              <button onClick={() => setStep(1)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)" }}>Back</button>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={done} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", padding: "0.4rem 1rem", borderRadius: 8, cursor: "pointer", color: "var(--color-text-secondary)" }}>Skip</button>
+            <div style={STYLES.s46}>
+              <button onClick={() => setStep(1)} style={STYLES.s47}>Back</button>
+              <div style={STYLES.s48}>
+                <button onClick={done} style={STYLES.s49}>Skip</button>
                 <GreenBtn onClick={done} label="Save →" />
               </div>
             </div>
@@ -1155,18 +2576,18 @@ function AddAssetMini({ update }) {
   const [value, setValue] = useState("");
   return (
     <div>
-      <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4, display: "block" }}>Asset Type</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <div style={STYLES.s56}>
+        <label style={STYLES.s57}>Asset Type</label>
+        <div style={STYLES.s58}>
           {ASSET_TYPES.slice(0, 6).map(t => (
             <button key={t} onClick={() => setType(t)} style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: type === t ? "#1a6b3c" : "var(--color-border-secondary)", background: type === t ? "#e8f5ee" : "transparent", fontSize: 12, cursor: "pointer", color: type === t ? "#1a6b3c" : "var(--color-text-secondary)" }}>{t}</button>
           ))}
         </div>
       </div>
-      <input placeholder="Name (e.g. HDFC Balanced Advantage Fund)" value={name} onChange={e => setName(e.target.value)} style={{ width: "100%", marginBottom: 8, boxSizing: "border-box" }} />
-      <input placeholder="Current Value (INR)" value={value} onChange={e => setValue(e.target.value)} style={{ width: "100%", marginBottom: 8, boxSizing: "border-box" }} />
+      <input placeholder="Name (e.g. HDFC Balanced Advantage Fund)" value={name} onChange={e => setName(e.target.value)} style={STYLES.s59} />
+      <input placeholder="Current Value (INR)" value={value} onChange={e => setValue(e.target.value)} style={STYLES.s59} />
       <button onClick={() => { if (name && value) { update(p => ({ assets: [...p.assets, { id: Date.now(), type, name, value: parseFloat(value.replace(/,/g, "")), date: new Date().toISOString() }] })); setName(""); setValue(""); } }}
-        style={{ background: "#e8f5ee", color: "#1a6b3c", border: "0.5px solid #1a6b3c", borderRadius: 8, padding: "6px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>+ Add Asset</button>
+        style={STYLES.s60}>+ Add Asset</button>
     </div>
   );
 }
@@ -1214,16 +2635,16 @@ function ProfilePage({ data, update }) {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 }}>Profile</h1>
-      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 20 }}>Personalise your FinTrack experience.</p>
+      <h1 style={STYLES.s61}>Profile</h1>
+      <p style={STYLES.s62}>Personalise your FinTrack experience.</p>
 
       {/* Personal Info */}
       <div style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-          <span style={{ fontSize: 18 }}>👤</span>
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Personal Info</span>
+        <div style={STYLES.s63}>
+          <span style={STYLES.s64}>👤</span>
+          <span style={STYLES.s65}>Personal Info</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={STYLES.s66}>
           <div>
             <label style={labelStyle}>Display Name</label>
             <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
@@ -1234,9 +2655,9 @@ function ProfilePage({ data, update }) {
           </div>
         </div>
         {age !== null && (
-          <div style={{ marginTop: 12, padding: "10px 14px", background: "#f0f9f4", borderRadius: 8, border: "0.5px solid #b7dfc8", display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 18 }}>🎂</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "#1a6b3c" }}>Age: {age} years old</span>
+          <div style={STYLES.s67}>
+            <span style={STYLES.s64}>🎂</span>
+            <span style={STYLES.s68}>Age: {age} years old</span>
           </div>
         )}
       </div>
@@ -1245,12 +2666,12 @@ function ProfilePage({ data, update }) {
 
       {/* Overview Widget */}
       <div style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{ fontSize: 18 }}>🧩</span>
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Overview Widget</span>
+        <div style={STYLES.s69}>
+          <span style={STYLES.s64}>🧩</span>
+          <span style={STYLES.s65}>Overview Widget</span>
         </div>
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>Choose what to display in the widget area on the right side of your Overview.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+        <p style={STYLES.s70}>Choose what to display in the widget area on the right side of your Overview.</p>
+        <div style={STYLES.s71}>
           {WIDGET_OPTIONS.map(opt => (
             <button key={opt.id} onClick={() => setWidgetType(opt.id)} style={{
               padding: "12px 14px", borderRadius: 10, textAlign: "left",
@@ -1259,7 +2680,7 @@ function ProfilePage({ data, update }) {
               cursor: "pointer"
             }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: widgetType === opt.id ? "#1a6b3c" : "var(--color-text-primary)", marginBottom: 3 }}>{opt.label}</div>
-              <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{opt.desc}</div>
+              <div style={STYLES.s72}>{opt.desc}</div>
             </button>
           ))}
         </div>
@@ -1331,32 +2752,32 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
       : { background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.2rem", display: "flex", flexDirection: "column", justifyContent: "center" };
     if (widgetType === "clock") return (
       <div style={box}>
-        <span style={{ fontSize: 18 }}>🕐</span>
+        <span style={STYLES.s64}>🕐</span>
         <div>
           <div style={{ fontSize: compact ? 16 : 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "var(--color-text-primary)", letterSpacing: 1 }}>
             {clockTime.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </div>
-          {!compact && <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>{clockTime.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</div>}
-          {compact && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{clockTime.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</div>}
+          {!compact && <div style={STYLES.s73}>{clockTime.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</div>}
+          {compact && <div style={STYLES.s72}>{clockTime.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</div>}
         </div>
       </div>
     );
     if (widgetType === "greeting") return (
       <div style={box}>
-        <div style={{ fontSize: 26, fontWeight: 400, fontFamily: "'DM Serif Display', serif", color: "var(--color-text-primary)", whiteSpace: "nowrap", lineHeight: 1 }}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
+        <div style={STYLES.s74}>{getGreeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""}! 👋</div>
       </div>
     );
     if (widgetType === "quote") return (
       <div style={box}>
-        <span style={{ fontSize: 16, flexShrink: 0 }}>💬</span>
+        <span style={STYLES.s3}>💬</span>
         <div style={{ fontSize: compact ? 12 : 13, fontStyle: "italic", color: "var(--color-text-primary)", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: compact ? 2 : 10, WebkitBoxOrient: "vertical" }}>"{dailyQuote}"</div>
       </div>
     );
     if (widgetType === "networth") return (
       <div style={box}>
-        <span style={{ fontSize: 16 }}>📊</span>
+        <span style={STYLES.s6}>📊</span>
         <div>
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Net Worth</div>
+          <div style={STYLES.s72}>Net Worth</div>
           <div style={{ fontSize: compact ? 16 : 26, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(netWorth)}</div>
         </div>
       </div>
@@ -1474,19 +2895,19 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
   return (
     <div>
       {/* Overview Header row: title left, widget pill right */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, margin: 0 }}>Overview</h1>
+      <div style={STYLES.s75}>
+        <h1 style={STYLES.s76}>Overview</h1>
         {widgetType !== "none" && <OverviewWidget compact />}
       </div>
 
       {/* Top stat row — responsive */}
       {isMobile ? (
         /* ── MOBILE: Net Worth full width, then Income+Expenses 2-col ── */
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+        <div style={STYLES.s77}>
           <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
           {/* Period toggle — shared, shown once above the 2-col row */}
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 2, gap: 1 }}>
+          <div style={STYLES.s78}>
+            <div style={STYLES.s79}>
               {PERIODS.map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)}
                   style={{ padding: "3px 9px", borderRadius: 5, border: "none", cursor: "pointer", fontSize: 11, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
@@ -1495,18 +2916,18 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
               ))}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={STYLES.s80}>
             {/* Income card — mobile, no toggle (period shared above) */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem", display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(filteredIncome)}</div>
-              <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+            <div style={STYLES.s81}>
+              <span style={STYLES.s72}>⊕ Total Income</span>
+              <div style={STYLES.s82}>{fmtCur(filteredIncome)}</div>
+              <div style={STYLES.s83}>{periodLabel}</div>
             </div>
             {/* Expenses card — mobile */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem", display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>⊟ Total Expenses</span>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#d44" }}>{fmtCur(filteredExpense)}</div>
-              <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+            <div style={STYLES.s81}>
+              <span style={STYLES.s72}>⊟ Total Expenses</span>
+              <div style={STYLES.s84}>{fmtCur(filteredExpense)}</div>
+              <div style={STYLES.s83}>{periodLabel}</div>
             </div>
           </div>
           {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
@@ -1517,10 +2938,10 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
           <StatCard label="Net Worth · ₹ INR" value={fmtCur(netWorth)} sub={todayStr} accent big />
 
           {/* Income card with period toggle */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊕ Total Income</span>
-              <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+          <div style={STYLES.s85}>
+            <div style={STYLES.s86}>
+              <span style={STYLES.s53}>⊕ Total Income</span>
+              <div style={STYLES.s87}>
                 {PERIODS.map(p => (
                   <button key={p.key} onClick={() => setPeriod(p.key)}
                     style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#1a6b3c" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
@@ -1529,15 +2950,15 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                 ))}
               </div>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(filteredIncome)}</div>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+            <div style={STYLES.s88}>{fmtCur(filteredIncome)}</div>
+            <div style={STYLES.s72}>{periodLabel}</div>
           </div>
 
           {/* Expenses card with same period toggle (synced) */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>⊟ Total Expenses</span>
-              <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+          <div style={STYLES.s85}>
+            <div style={STYLES.s86}>
+              <span style={STYLES.s53}>⊟ Total Expenses</span>
+              <div style={STYLES.s87}>
                 {PERIODS.map(p => (
                   <button key={p.key} onClick={() => setPeriod(p.key)}
                     style={{ padding: "2px 7px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: period === p.key ? 600 : 400, background: period === p.key ? "#d44" : "transparent", color: period === p.key ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
@@ -1546,8 +2967,8 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                 ))}
               </div>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#d44" }}>{fmtCur(filteredExpense)}</div>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{periodLabel}</div>
+            <div style={STYLES.s89}>{fmtCur(filteredExpense)}</div>
+            <div style={STYLES.s72}>{periodLabel}</div>
           </div>
 
           {foOn && <StatCard label="F&O Net P&L" value={fmtCur(foNetPnl)} sub={`${data.foTrades.length} trades`} icon="◉" pnl={foNetPnl} />}
@@ -1614,12 +3035,12 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
           const totalDayChange = indDayChange + usDayChange + mfDayChange;
 
           return (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-                <span style={{ fontWeight: 500, fontSize: 15 }}>📈 Assets</span>
-                <button onClick={() => setPage("portfolio")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View →</button>
+            <div style={STYLES.s90}>
+              <div style={STYLES.s91}>
+                <span style={STYLES.s92}>📈 Assets</span>
+                <button onClick={() => setPage("portfolio")} style={STYLES.s93}>View →</button>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={STYLES.s80}>
                 {[
                   { label: "Invested",      val: fmtCur(totalInvested), color: "var(--color-text-primary)" },
                   { label: "Current Value", val: fmtCur(totalCurrent),  color: "#1a6b3c" },
@@ -1634,36 +3055,36 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                       : totalDayChange >= 0 ? "#1a6b3c" : "#d44"
                   },
                 ].map(c => (
-                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
-                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
+                  <div key={c.label} style={STYLES.s94}>
+                    <div style={STYLES.s95}>{c.label}</div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: c.color }}>{c.val}</div>
                   </div>
                 ))}
               </div>
               {Object.keys(indPrices).length === 0 && Object.keys(usPrices).length === 0 && (
-                <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 8, textAlign: "center" }}>Open Portfolio and click Refresh to load live prices</div>
+                <div style={STYLES.s96}>Open Portfolio and click Refresh to load live prices</div>
               )}
             </div>
           );
         })()}
 
         {/* ── Quick To-Do (right side) ── */}
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-            <span style={{ fontWeight: 500, fontSize: 15 }}>✅ To-Do</span>
-            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+        <div style={STYLES.s90}>
+          <div style={STYLES.s91}>
+            <span style={STYLES.s92}>✅ To-Do</span>
+            <span style={STYLES.s72}>
               {todos.filter(t => t.done).length}/{todos.length} done
             </span>
           </div>
 
           {/* Input row */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          <div style={STYLES.s97}>
             <input
               value={newTodo}
               onChange={e => setNewTodo(e.target.value)}
               onKeyDown={e => e.key === "Enter" && addTodo()}
               placeholder="Add a task…"
-              style={{ flex: 1, fontSize: 13, padding: "6px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" }}
+              style={STYLES.s98}
             />
             {/* Repeat toggle button */}
             <button onClick={() => setShowRepeat(p => !p)}
@@ -1672,15 +3093,15 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
               🔁
             </button>
             <button onClick={addTodo}
-              style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+              style={STYLES.s99}>
               +
             </button>
           </div>
 
           {/* Repeat picker */}
           {showRepeat && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            <div style={STYLES.s100}>
+              <div style={STYLES.s101}>
                 {[["none","No repeat"], ["daily","Daily"], ["weekly","Weekly"], ["monthly","Monthly"]].map(([v, l]) => (
                   <button key={v} onClick={() => { setRepeatMode(v); if (v !== "weekly") setWeeklyDays([]); }}
                     style={{ fontSize: 11, padding: "4px 11px", borderRadius: 20, border: `0.5px solid ${repeatMode === v ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: repeatMode === v ? "#1a6b3c" : "var(--color-background-secondary)", color: repeatMode === v ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: repeatMode === v ? 600 : 400 }}>
@@ -1689,14 +3110,14 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
                 ))}
               </div>
               {repeatMode === "weekly" && (
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                <div style={STYLES.s102}>
                   {[["S",0],["M",1],["T",2],["W",3],["T",4],["F",5],["S",6]].map(([label, dow]) => (
                     <button key={dow} onClick={() => toggleWeeklyDay(dow)}
                       style={{ width: 28, height: 28, borderRadius: "50%", border: `1.5px solid ${weeklyDays.includes(dow) ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: weeklyDays.includes(dow) ? "#1a6b3c" : "var(--color-background-secondary)", color: weeklyDays.includes(dow) ? "#fff" : "var(--color-text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>
                       {label}
                     </button>
                   ))}
-                  <span style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: 2 }}>
+                  <span style={STYLES.s103}>
                     {weeklyDays.length === 0 ? "(any day)" : ""}
                   </span>
                 </div>
@@ -1706,42 +3127,42 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
           {/* Task list */}
           {todos.length === 0 ? (
-            <div style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12, padding: "1rem 0", fontStyle: "italic" }}>
+            <div style={STYLES.s104}>
               No tasks yet — add one above
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
+            <div style={STYLES.s105}>
               {/* Pending */}
               {todos.filter(t => !t.done).map(t => (
-                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                <div key={t.id} style={STYLES.s106}>
                   <button onClick={() => toggleTodo(t.id)}
-                    style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }} />
-                  <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-primary)", wordBreak: "break-word" }}>{t.text}</span>
+                    style={STYLES.s107} />
+                  <span style={STYLES.s108}>{t.text}</span>
                   {/* Repeat badge */}
                   {t.repeat && t.repeat !== "none" && (
-                    <span style={{ fontSize: 10, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    <span style={STYLES.s109}>
                       🔁 {t.repeat === "weekly" && t.weeklyDays && t.weeklyDays.length > 0
                         ? ["Su","Mo","Tu","We","Th","Fr","Sa"].filter((_,i) => t.weeklyDays.includes(i)).join(", ")
                         : t.repeat}
                     </span>
                   )}
                   <button onClick={() => deleteTodo(t.id)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.45, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
+                    style={STYLES.s110}>✕</button>
                 </div>
               ))}
               {/* Completed */}
               {todos.filter(t => t.done).map(t => (
-                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: "transparent", border: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
+                <div key={t.id} style={STYLES.s111}>
                   <button onClick={() => toggleTodo(t.id)}
-                    style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 11 }}>✓</button>
-                  <span style={{ flex: 1, fontSize: 13, color: "var(--color-text-secondary)", textDecoration: "line-through", wordBreak: "break-word" }}>{t.text}</span>
+                    style={STYLES.s112}>✓</button>
+                  <span style={STYLES.s113}>{t.text}</span>
                   {t.repeat && t.repeat !== "none" && (
-                    <span style={{ fontSize: 10, background: "#f0fdf4", color: "#4a9a6a", borderRadius: 4, padding: "1px 6px", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    <span style={STYLES.s114}>
                       🔁 {t.repeat}
                     </span>
                   )}
                   <button onClick={() => deleteTodo(t.id)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.45, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
+                    style={STYLES.s110}>✕</button>
                 </div>
               ))}
             </div>
@@ -1751,8 +3172,8 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
       {/* F&O summary row */}
       {foOn && (
-        <div style={{ marginBottom: 12 }}>
-          <Card title="F&O Summary" action={<button onClick={() => setPage("fo")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}>
+        <div style={STYLES.s115}>
+          <Card title="F&O Summary" action={<button onClick={() => setPage("fo")} style={STYLES.s93}>View all →</button>}>
             <FOSummaryMini trades={data.foTrades} netPnl={foNetPnl} />
           </Card>
         </div>
@@ -1760,11 +3181,11 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
 
       {/* Bank balances */}
       {bankBalances.length > 0 && (
-        <Card title="Bank Balances" action={<button onClick={() => setPage("money")} style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer" }}>Manage →</button>}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginTop: 8 }}>
+        <Card title="Bank Balances" action={<button onClick={() => setPage("money")} style={STYLES.s93}>Manage →</button>}>
+          <div style={STYLES.s116}>
             {bankBalances.map(b => (
-              <div key={b.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>{b.name}</div>
+              <div key={b.id} style={STYLES.s117}>
+                <div style={STYLES.s118}>{b.name}</div>
                 <div style={{ fontWeight: 600, fontSize: 16, color: b.balance >= 0 ? "var(--color-text-primary)" : "#d44" }}>{fmtCur(b.balance)}</div>
               </div>
             ))}
@@ -1772,8 +3193,8 @@ function Overview({ data, netWorth, foNetPnl, setPage, toggles, update, portfoli
         </Card>
       )}
       {bankBalances.length === 0 && (
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "1.2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-          Add accounts in the <button onClick={() => setPage("money")} style={{ background: "none", border: "none", color: "#1a6b3c", cursor: "pointer", fontWeight: 500, fontSize: 13 }}>Money → Accounts</button> tab to track balances here.
+        <div style={STYLES.s119}>
+          Add accounts in the <button onClick={() => setPage("money")} style={STYLES.s120}>Money → Accounts</button> tab to track balances here.
         </div>
       )}
     </div>
@@ -1784,29 +3205,29 @@ function FOSummaryMini({ trades, netPnl }) {
   const winning = trades.filter(t => (Number(t.sellPremium) - Number(t.buyPremium)) > 0).length;
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
-        <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Total Trades</div><div style={{ fontWeight: 500 }}>{trades.length}</div></div>
-        <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Winners</div><div style={{ fontWeight: 500, color: "#1a6b3c" }}>{winning}</div></div>
-        <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Net P&L</div><div style={{ fontWeight: 500, color: netPnl >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(netPnl)}</div></div>
+      <div style={STYLES.s121}>
+        <div style={STYLES.s122}><div style={STYLES.s72}>Total Trades</div><div style={STYLES.s123}>{trades.length}</div></div>
+        <div style={STYLES.s122}><div style={STYLES.s72}>Winners</div><div style={STYLES.s124}>{winning}</div></div>
+        <div style={STYLES.s122}><div style={STYLES.s72}>Net P&L</div><div style={{ fontWeight: 500, color: netPnl >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(netPnl)}</div></div>
       </div>
     </div>
   );
 }
 
 function AssetPie({ assets }) {
-  if (assets.length === 0) return <p style={{ color: "var(--color-text-secondary)", fontSize: 13, padding: "1rem 0" }}>Add assets to see allocation.</p>;
+  if (assets.length === 0) return <p style={STYLES.s125}>Add assets to see allocation.</p>;
   const total = assets.reduce((s, a) => s + Number(a.value), 0);
   const grouped = {};
   assets.forEach(a => { grouped[a.type] = (grouped[a.type] || 0) + Number(a.value); });
   const colors = ["#1a6b3c", "#2d9e5f", "#4cc97a", "#9fe1c0", "#c5efd8", "#e8f5ee", "#0d4a2a", "#68d9a0"];
   const items = Object.entries(grouped).map(([k, v], i) => ({ label: k, value: v, pct: (v / total * 100).toFixed(1), color: colors[i % colors.length] }));
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+    <div style={STYLES.s126}>
       {items.map(item => (
-        <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <div key={item.label} style={STYLES.s127}>
           <div style={{ width: 10, height: 10, borderRadius: 2, background: item.color, flexShrink: 0 }} />
-          <span style={{ flex: 1, color: "var(--color-text-secondary)" }}>{item.label}</span>
-          <span style={{ fontWeight: 500 }}>{item.pct}%</span>
+          <span style={STYLES.s128}>{item.label}</span>
+          <span style={STYLES.s123}>{item.pct}%</span>
         </div>
       ))}
     </div>
@@ -1921,54 +3342,54 @@ function BudgetTab({ data, update, categories }) {
     <div>
       {/* Edit Budget Modal */}
       {editBudget && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Budget</div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
-              <input value={editBudget.category} disabled style={{ width: "100%", boxSizing: "border-box", background: "var(--color-background-secondary)", opacity: 0.7 }} />
+        <div style={STYLES.s129}>
+          <div style={STYLES.s130}>
+            <div style={STYLES.s131}>✏️ Edit Budget</div>
+            <div style={STYLES.s56}>
+              <label style={STYLES.s132}>Category</label>
+              <input value={editBudget.category} disabled style={STYLES.s133} />
             </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Budget Amount (₹)</label>
-              <input type="number" value={editBudget.amount} onChange={e => setEditBudget(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <div style={STYLES.s56}>
+              <label style={STYLES.s132}>Budget Amount (₹)</label>
+              <input type="number" value={editBudget.amount} onChange={e => setEditBudget(p => ({ ...p, amount: e.target.value }))} style={STYLES.s45} />
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Sort Order (1, 2, 3...)</label>
+            <div style={STYLES.s134}>
+              <label style={STYLES.s132}>Sort Order (1, 2, 3...)</label>
               <input type="number" min="1" placeholder="e.g. 1" value={editBudget.sortOrder || ""} onChange={e => setEditBudget(p => ({ ...p, sortOrder: parseInt(e.target.value) || "" }))}
                 style={{ width: "100%", boxSizing: "border-box", borderColor: editBudget.sortOrder && budgets.find(b => b.id !== editBudget.id && b.month === selectedMonth && b.sortOrder === editBudget.sortOrder) ? "#dc2626" : undefined }} />
               {editBudget.sortOrder && budgets.find(b => b.id !== editBudget.id && b.month === selectedMonth && b.sortOrder === editBudget.sortOrder) && (
-                <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4 }}>
+                <div style={STYLES.s135}>
                   ⚠️ Already used by "{budgets.find(b => b.id !== editBudget.id && b.month === selectedMonth && b.sortOrder === editBudget.sortOrder).category}"
                 </div>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setEditBudget(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditBudget} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            <div style={STYLES.s136}>
+              <button onClick={() => setEditBudget(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditBudget} style={STYLES.s138}>Save</button>
             </div>
           </div>
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={STYLES.s139}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>💰 Monthly Budget Tracker</h2>
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Track your spending against monthly budgets per category</p>
+          <h2 style={STYLES.s140}>💰 Monthly Budget Tracker</h2>
+          <p style={STYLES.s141}>Track your spending against monthly budgets per category</p>
         </div>
         <div>
-          <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Month</label>
+          <label style={STYLES.s132}>Month</label>
           <input 
             type="month" 
             value={selectedMonth} 
             onChange={e => handleMonthChange(e.target.value)} 
-            style={{ padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)" }} 
+            style={STYLES.s142} 
           />
         </div>
       </div>
 
       {/* Base Amount - Edit/Save Toggle */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap" }}>
-        <label style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Base Amount (₹)</label>
+      <div style={STYLES.s143}>
+        <label style={STYLES.s144}>Base Amount (₹)</label>
         {editingBase ? (
           <>
             <input
@@ -1977,21 +3398,21 @@ function BudgetTab({ data, update, categories }) {
               value={baseInput}
               onChange={e => setBaseInput(e.target.value)}
               autoFocus
-              style={{ flex: 1, minWidth: 120, maxWidth: 180, padding: "6px 10px", borderRadius: 6, border: "1.5px solid #1a6b3c", fontSize: 14, fontWeight: 600 }}
+              style={STYLES.s145}
             />
             <button
               onClick={() => { handleBaseAmountChange(baseInput); setEditingBase(false); }}
-              style={{ padding: "6px 14px", borderRadius: 6, background: "#1a6b3c", color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+              style={STYLES.s146}
             >Save</button>
             <button
               onClick={() => setEditingBase(false)}
-              style={{ padding: "6px 10px", borderRadius: 6, background: "transparent", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", fontSize: 12, cursor: "pointer" }}
+              style={STYLES.s147}
             >Cancel</button>
           </>
         ) : (
           <>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)", flex: 1 }}>
-              {baseAmount > 0 ? `₹${baseAmount.toLocaleString("en-IN")}` : <span style={{ color: "var(--color-text-tertiary)", fontWeight: 400, fontSize: 13 }}>Not set</span>}
+            <span style={STYLES.s148}>
+              {baseAmount > 0 ? `₹${baseAmount.toLocaleString("en-IN")}` : <span style={STYLES.s149}>Not set</span>}
             </span>
             {baseAmount > 0 && baseRemaining !== null && (
               <span style={{ fontSize: 12, color: baseRemaining >= 0 ? "#1a6b3c" : "#dc2626", fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -2000,7 +3421,7 @@ function BudgetTab({ data, update, categories }) {
             )}
             <button
               onClick={() => { setBaseInput(baseAmount > 0 ? String(baseAmount) : ""); setEditingBase(true); }}
-              style={{ padding: "6px 14px", borderRadius: 6, background: "transparent", color: "#1a6b3c", border: "1px solid #1a6b3c", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+              style={STYLES.s150}
             >{baseAmount > 0 ? "✏️ Edit" : "+ Set Base"}</button>
           </>
         )}
@@ -2008,41 +3429,41 @@ function BudgetTab({ data, update, categories }) {
 
       {/* Summary Cards */}
       {totalBudgeted > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 12, marginBottom: 16 }}>
+        <div style={STYLES.s151}>
           {baseAmount > 0 && (
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
-              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Base Amount</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)" }}>₹{baseAmount.toLocaleString("en-IN")}</div>
+            <div style={STYLES.s152}>
+              <div style={STYLES.s153}>Base Amount</div>
+              <div style={STYLES.s154}>₹{baseAmount.toLocaleString("en-IN")}</div>
             </div>
           )}
-          <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Budgeted</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>₹{totalBudgeted.toLocaleString("en-IN")}</div>
+          <div style={STYLES.s152}>
+            <div style={STYLES.s153}>Total Budgeted</div>
+            <div style={STYLES.s88}>₹{totalBudgeted.toLocaleString("en-IN")}</div>
           </div>
           {baseAmount > 0 && baseRemaining !== null && (
             <div style={{ background: baseRemaining >= 0 ? "#f0fdf4" : "#fee2e2", borderRadius: 12, padding: "14px 16px", border: `0.5px solid ${baseRemaining >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
-              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Base Remaining</div>
+              <div style={STYLES.s153}>Base Remaining</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: baseRemaining >= 0 ? "#1a6b3c" : "#dc2626" }}>₹{Math.abs(baseRemaining).toLocaleString("en-IN")}</div>
             </div>
           )}
-          <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Spent</div>
+          <div style={STYLES.s152}>
+            <div style={STYLES.s153}>Total Spent</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: totalSpent > totalBudgeted ? "#dc2626" : "#f59e0b" }}>₹{totalSpent.toLocaleString("en-IN")}</div>
           </div>
           <div style={{ background: remaining >= 0 ? "#f0fdf4" : "#fee2e2", borderRadius: 12, padding: "14px 16px", border: `0.5px solid ${remaining >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Remaining</div>
+            <div style={STYLES.s153}>Remaining</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: remaining >= 0 ? "#1a6b3c" : "#dc2626" }}>₹{Math.abs(remaining).toLocaleString("en-IN")}</div>
           </div>
         </div>
       )}
 
       {/* Add Budget Form */}
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "1rem", marginBottom: 16, border: "0.5px solid var(--color-border-tertiary)" }}>
-        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>➕ Add/Update Budget</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
+      <div style={STYLES.s155}>
+        <div style={STYLES.s156}>➕ Add/Update Budget</div>
+        <div style={STYLES.s157}>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
-            <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+            <label style={STYLES.s132}>Category</label>
+            <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} style={STYLES.s45}>
               <option value="">Select category</option>
               <optgroup label="── Expense Categories ──">
                 {baseCategories.map(c => <option key={c} value={c} disabled={alreadyBudgeted.has(c)}>{alreadyBudgeted.has(c) ? `${c} ✓` : c}</option>)}
@@ -2060,24 +3481,24 @@ function BudgetTab({ data, update, categories }) {
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Budget Amount (₹)</label>
-            <input type="number" placeholder="e.g. 5000" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <label style={STYLES.s132}>Budget Amount (₹)</label>
+            <input type="number" placeholder="e.g. 5000" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} style={STYLES.s45} />
           </div>
         </div>
-        <button onClick={addBudget} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+        <button onClick={addBudget} style={STYLES.s158}>
           {budgets.find(b => b.category === form.category && b.month === form.month) ? "Update Budget" : "+ Add Budget"}
         </button>
       </div>
 
       {/* Budget List */}
       {monthBudgets.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)" }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>💰</div>
-          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 6 }}>No budgets set for {selectedMonth}</div>
-          <div style={{ fontSize: 13 }}>Add your first budget above to start tracking</div>
+        <div style={STYLES.s159}>
+          <div style={STYLES.s160}>💰</div>
+          <div style={STYLES.s161}>No budgets set for {selectedMonth}</div>
+          <div style={STYLES.s162}>Add your first budget above to start tracking</div>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={STYLES.s163}>
           {monthBudgets.map(budget => {
             const budgetAmt = parseFloat(budget.amount) || 0;
             const spent = getSpendingForCategory(budget.category, selectedMonth);
@@ -2086,26 +3507,26 @@ function BudgetTab({ data, update, categories }) {
             const remaining = budgetAmt - spent;
 
             return (
-              <div key={budget.id} style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {budget.sortOrder && <span style={{ minWidth: 22, height: 22, borderRadius: "50%", background: "#1a6b3c", color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{budget.sortOrder}</span>}
-                    <div style={{ fontWeight: 600, fontSize: 15 }}>{budget.category}</div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+              <div key={budget.id} style={STYLES.s152}>
+                <div style={STYLES.s164}>
+                  <div style={STYLES.s165}>
+                    {budget.sortOrder && <span style={STYLES.s166}>{budget.sortOrder}</span>}
+                    <div style={STYLES.s65}>{budget.category}</div>
+                    <div style={STYLES.s53}>
                       ₹{spent.toLocaleString("en-IN")} / ₹{budgetAmt.toLocaleString("en-IN")}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => setEditBudget(budget)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, padding: "2px 6px", opacity: 0.7 }} title="Edit">✏️</button>
-                    <button onClick={() => deleteBudget(budget.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "2px 6px", color: "#dc2626", opacity: 0.7 }} title="Delete">🗑️</button>
+                  <div style={STYLES.s167}>
+                    <button onClick={() => setEditBudget(budget)} style={STYLES.s168} title="Edit">✏️</button>
+                    <button onClick={() => deleteBudget(budget.id)} style={STYLES.s169} title="Delete">🗑️</button>
                   </div>
                 </div>
                 {/* Progress Bar */}
-                <div style={{ width: "100%", height: 8, background: "var(--color-border-tertiary)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                <div style={STYLES.s170}>
                   <div style={{ width: `${Math.min(percentage, 100)}%`, height: "100%", background: isOver ? "#dc2626" : percentage > 80 ? "#f59e0b" : "#1a6b3c", borderRadius: 4, transition: "width 0.3s ease" }} />
                 </div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
-                  <div style={{ color: "var(--color-text-secondary)" }}>
+                <div style={STYLES.s171}>
+                  <div style={STYLES.s172}>
                     {percentage.toFixed(1)}% used
                   </div>
                   <div style={{ fontWeight: 600, color: isOver ? "#dc2626" : remaining < budgetAmt * 0.2 ? "#f59e0b" : "#1a6b3c" }}>
@@ -2259,28 +3680,28 @@ function MoneyPage({ data, update, tab, setTab }) {
     <div>
       {/* Edit Transaction Modal */}
       {editTx && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(420px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit {editTx.type === "income" ? "Income" : "Expense"}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={STYLES.s129}>
+          <div style={STYLES.s173}>
+            <div style={STYLES.s131}>✏️ Edit {editTx.type === "income" ? "Income" : "Expense"}</div>
+            <div style={STYLES.s174}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
-                <input type="date" value={editTx.date} onChange={e => setEditTx(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Date</label>
+                <input type="date" value={editTx.date} onChange={e => setEditTx(p => ({ ...p, date: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Time <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span></label>
-                <input type="time" value={editTx.time || ""} onChange={e => setEditTx(p => ({ ...p, time: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Time <span style={STYLES.s175}>(optional)</span></label>
+                <input type="time" value={editTx.time || ""} onChange={e => setEditTx(p => ({ ...p, time: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
-                <input type="number" value={editTx.amount} onChange={e => setEditTx(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontWeight: 600 }} />
+                <label style={STYLES.s132}>Amount (₹)</label>
+                <input type="number" value={editTx.amount} onChange={e => setEditTx(p => ({ ...p, amount: e.target.value }))} style={STYLES.s176} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
+                <label style={STYLES.s132}>Category</label>
                 <select 
                   value={editTx.category || ""} 
                   onChange={e => setEditTx(p => ({ ...p, category: e.target.value }))} 
-                  style={{ width: "100%", boxSizing: "border-box" }}
+                  style={STYLES.s45}
                 >
                   <option value="">Select a category</option>
                   {(categories[editTx.type === "income" ? "income" : "expense"] || []).map(c => (
@@ -2289,8 +3710,8 @@ function MoneyPage({ data, update, tab, setTab }) {
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account</label>
-                <select value={editTx.bankId || ""} onChange={e => setEditTx(p => ({ ...p, bankId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <label style={STYLES.s132}>Account</label>
+                <select value={editTx.bankId || ""} onChange={e => setEditTx(p => ({ ...p, bankId: e.target.value }))} style={STYLES.s45}>
                   <option value="">— None —</option>
                   
                   {/* Bank Accounts Group */}
@@ -2321,52 +3742,52 @@ function MoneyPage({ data, update, tab, setTab }) {
                   )}
                 </select>
               </div>
-              <div style={{ gridColumn: "span 2" }}>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes</label>
-                <input value={editTx.note || ""} onChange={e => setEditTx(p => ({ ...p, note: e.target.value }))} placeholder="Optional note" style={{ width: "100%", boxSizing: "border-box" }} />
+              <div style={STYLES.s177}>
+                <label style={STYLES.s132}>Notes</label>
+                <input value={editTx.note || ""} onChange={e => setEditTx(p => ({ ...p, note: e.target.value }))} placeholder="Optional note" style={STYLES.s45} />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setEditTx(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditTx} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save Changes</button>
+            <div style={STYLES.s136}>
+              <button onClick={() => setEditTx(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditTx} style={STYLES.s138}>Save Changes</button>
             </div>
           </div>
         </div>
       )}
       {/* Edit Account Modal */}
       {editAcct && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Account</div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account Name</label>
-              <input value={editAcct.name} onChange={e => setEditAcct(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s129}>
+          <div style={STYLES.s130}>
+            <div style={STYLES.s131}>✏️ Edit Account</div>
+            <div style={STYLES.s56}>
+              <label style={STYLES.s132}>Account Name</label>
+              <input value={editAcct.name} onChange={e => setEditAcct(p => ({ ...p, name: e.target.value }))} style={STYLES.s45} />
             </div>
             {editAcct.type === "Credit Card" && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={STYLES.s174}>
                 <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Outstanding Balance (₹)</label>
-                  <input type="number" placeholder="e.g. 5000" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s132}>Outstanding Balance (₹)</label>
+                  <input type="number" placeholder="e.g. 5000" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={STYLES.s45} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
-                  <input type="number" value={editAcct.creditLimit || ""} onChange={e => setEditAcct(p => ({ ...p, creditLimit: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s132}>Card Limit (₹)</label>
+                  <input type="number" value={editAcct.creditLimit || ""} onChange={e => setEditAcct(p => ({ ...p, creditLimit: parseFloat(e.target.value) || 0 }))} style={STYLES.s45} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Due Date (day)</label>
-                  <input type="number" min="1" max="31" value={editAcct.dueDate || ""} onChange={e => setEditAcct(p => ({ ...p, dueDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s132}>Due Date (day)</label>
+                  <input type="number" min="1" max="31" value={editAcct.dueDate || ""} onChange={e => setEditAcct(p => ({ ...p, dueDate: e.target.value }))} style={STYLES.s45} />
                 </div>
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-              <button onClick={() => setEditAcct(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditAcct} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            <div style={STYLES.s178}>
+              <button onClick={() => setEditAcct(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditAcct} style={STYLES.s138}>Save</button>
             </div>
           </div>
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>{pageTitle || (tab === "recent" ? "Recent Transactions" : tab)}</h1>
+      <div style={STYLES.s164}>
+        <h1 style={STYLES.s179}>{pageTitle || (tab === "recent" ? "Recent Transactions" : tab)}</h1>
         {(tab === "income" || tab === "expenses") && <GreenBtn onClick={addTx} label="+ Add" />}
       </div>
       <TabBar tabs={["expenses", "income", "transactions", "transfer", "scheduled", "budget", "liabilities", "analysis"]} active={tab} setActive={setTab} labels={["Expenses", "Income", "Transactions", "Transfer", "Scheduled", "Budget", "Liabilities", "Analysis"]} />
@@ -2388,23 +3809,23 @@ function MoneyPage({ data, update, tab, setTab }) {
             <Card title={`Add ${tab === "income" ? "Income" : "Expense"}`}>
               <LabelInput label="Amount (INR)" placeholder="e.g. 5000" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
               <LabelInput label="Notes" placeholder="optional" value={form.note} onChange={v => setForm(p => ({ ...p, note: v }))} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+              <div style={STYLES.s180}>
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
-                  <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s181}>Date</label>
+                  <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={STYLES.s45} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Time <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span></label>
-                  <input type="time" value={form.time || ""} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s181}>Time <span style={STYLES.s175}>(optional)</span></label>
+                  <input type="time" value={form.time || ""} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} style={STYLES.s45} />
                 </div>
               </div>
 
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Category</label>
+              <div style={STYLES.s56}>
+                <label style={STYLES.s181}>Category</label>
                 <select 
                   value={form.category || ""} 
                   onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
-                  style={{ width: "100%", boxSizing: "border-box" }}
+                  style={STYLES.s45}
                 >
                   <option value="">Select a category</option>
                   {(categories[tab === "income" ? "income" : "expense"] || []).map(c => (
@@ -2415,12 +3836,12 @@ function MoneyPage({ data, update, tab, setTab }) {
 
               {/* Account selector — Dropdown with grouped options */}
               {accounts.length > 0 && (
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account</label>
+                <div style={STYLES.s56}>
+                  <label style={STYLES.s181}>Account</label>
                   <select 
                     value={form.bankId || ""} 
                     onChange={e => setForm(p => ({ ...p, bankId: e.target.value }))}
-                    style={{ width: "100%", boxSizing: "border-box" }}
+                    style={STYLES.s45}
                   >
                     <option value="">Select an account</option>
                     
@@ -2454,8 +3875,8 @@ function MoneyPage({ data, update, tab, setTab }) {
                 </div>
               )}
               {accounts.length === 0 && (
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
-                  <button onClick={() => setTab("accounts")} style={{ background: "none", border: "none", color: "#1a6b3c", cursor: "pointer", fontSize: 11, padding: 0 }}>+ Add an account</button> to link transactions
+                <div style={STYLES.s182}>
+                  <button onClick={() => setTab("accounts")} style={STYLES.s183}>+ Add an account</button> to link transactions
                 </div>
               )}
               <GreenBtn onClick={addTx} label="+ Add Entry" />
@@ -2516,28 +3937,28 @@ function CategoryBreakdownCard({ transactions, type, period }) {
 
   if (transactions.length === 0) {
     return (
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "2rem 1.2rem", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 260 }}>
-        <div style={{ fontSize: 36 }}>{isIncome ? "💰" : "🥧"}</div>
-        <div style={{ fontWeight: 600, fontSize: 15, color: "var(--color-text-primary)" }}>{isIncome ? "Income" : "Expenses"} Breakdown</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No {isIncome ? "income" : "expenses"} recorded yet</div>
+      <div style={STYLES.s184}>
+        <div style={STYLES.s185}>{isIncome ? "💰" : "🥧"}</div>
+        <div style={STYLES.s186}>{isIncome ? "Income" : "Expenses"} Breakdown</div>
+        <div style={STYLES.s141}>No {isIncome ? "income" : "expenses"} recorded yet</div>
       </div>
     );
   }
 
   return (
-    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
+    <div style={STYLES.s187}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <span style={{ fontSize: 18 }}>{isIncome ? "💰" : "🥧"}</span>
-        <span style={{ fontWeight: 600, fontSize: 15, color: "var(--color-text-primary)" }}>{isIncome ? "Income" : "Expenses"} Breakdown</span>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>{transactions.length} entries</span>
+      <div style={STYLES.s63}>
+        <span style={STYLES.s64}>{isIncome ? "💰" : "🥧"}</span>
+        <span style={STYLES.s186}>{isIncome ? "Income" : "Expenses"} Breakdown</span>
+        <span style={STYLES.s188}>{transactions.length} entries</span>
       </div>
 
       {/* Donut chart + legend side by side */}
-      <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: 16 }}>
+      <div style={STYLES.s189}>
         {/* SVG Donut */}
         <div style={{ position: "relative", flexShrink: 0, width: SIZE, height: SIZE }}>
-          <svg width={SIZE} height={SIZE} style={{ transform: "rotate(-90deg)" }}>
+          <svg width={SIZE} height={SIZE} style={STYLES.s190}>
             {/* Background ring */}
             <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--color-background-secondary)" strokeWidth={STROKE} />
             {/* Segments */}
@@ -2548,23 +3969,23 @@ function CategoryBreakdownCard({ transactions, type, period }) {
                 strokeDasharray={`${seg.dash} ${seg.gap}`}
                 strokeDashoffset={-seg.offset}
                 strokeLinecap="butt"
-                style={{ cursor: "pointer", transition: "stroke-width 0.15s" }}
+                style={STYLES.s191}
                 onMouseEnter={() => setHovered(idx)}
                 onMouseLeave={() => setHovered(null)}
               />
             ))}
           </svg>
           {/* Center label */}
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <div style={STYLES.s192}>
             {hoveredItem ? (
               <>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoveredItem.label}</div>
+                <div style={STYLES.s193}>{hoveredItem.label}</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: accentColor }}>₹{hoveredItem.value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{(hoveredItem.pct * 100).toFixed(1)}%</div>
+                <div style={STYLES.s72}>{(hoveredItem.pct * 100).toFixed(1)}%</div>
               </>
             ) : (
               <>
-                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Total</div>
+                <div style={STYLES.s83}>Total</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>₹{total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
               </>
             )}
@@ -2572,35 +3993,35 @@ function CategoryBreakdownCard({ transactions, type, period }) {
         </div>
 
         {/* Legend */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+        <div style={STYLES.s194}>
           {arcs.slice(0, 6).map((seg, idx) => (
             <div key={seg.label}
               onMouseEnter={() => setHovered(idx)}
               onMouseLeave={() => setHovered(null)}
               style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", opacity: hovered === null || hovered === idx ? 1 : 0.45, transition: "opacity 0.15s" }}>
               <div style={{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
-              <div style={{ flex: 1, fontSize: 12, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{seg.label}</div>
+              <div style={STYLES.s195}>{seg.label}</div>
               <div style={{ fontSize: 12, fontWeight: 600, color: accentColor, flexShrink: 0 }}>₹{seg.value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
             </div>
           ))}
           {arcs.length > 6 && (
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>+{arcs.length - 6} more categories</div>
+            <div style={STYLES.s196}>+{arcs.length - 6} more categories</div>
           )}
         </div>
       </div>
 
       {/* Full bar breakdown */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      <div style={STYLES.s197}>
         {arcs.map((seg, idx) => (
           <div key={seg.label}
             onMouseEnter={() => setHovered(idx)}
             onMouseLeave={() => setHovered(null)}
-            style={{ cursor: "pointer" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+            style={STYLES.s198}>
+            <div style={STYLES.s199}>
               <span style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: hovered === idx ? 600 : 400 }}>{seg.label}</span>
-              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{(seg.pct * 100).toFixed(1)}%</span>
+              <span style={STYLES.s53}>{(seg.pct * 100).toFixed(1)}%</span>
             </div>
-            <div style={{ height: 5, borderRadius: 4, background: "var(--color-background-secondary)", overflow: "hidden" }}>
+            <div style={STYLES.s200}>
               <div style={{ height: "100%", width: `${seg.pct * 100}%`, background: seg.color, borderRadius: 4, transition: "width 0.4s ease" }} />
             </div>
           </div>
@@ -2636,34 +4057,34 @@ function TransferHistoryRow({ t, idx, total, fromAcct, toAcct, accounts, badgeSt
     return (
       <div style={{ padding: "14px 16px", borderBottom: idx < total - 1 ? `0.5px solid ${BORDER}` : "none", background: BG2 }}>
         <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 10, color: GREEN }}>✏️ Edit Transfer</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+        <div style={STYLES.s201}>
           <div>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>From Account</label>
-            <select value={ef.fromId} onChange={e => setEf(p => ({ ...p, fromId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }}>
+            <label style={STYLES.s181}>From Account</label>
+            <select value={ef.fromId} onChange={e => setEf(p => ({ ...p, fromId: e.target.value }))} style={STYLES.s202}>
               {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>To Account</label>
-            <select value={ef.toId} onChange={e => setEf(p => ({ ...p, toId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }}>
+            <label style={STYLES.s181}>To Account</label>
+            <select value={ef.toId} onChange={e => setEf(p => ({ ...p, toId: e.target.value }))} style={STYLES.s202}>
               {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Amount (₹)</label>
-            <input type="number" value={ef.amount} onChange={e => setEf(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12, fontWeight: 600 }} autoFocus />
+            <label style={STYLES.s181}>Amount (₹)</label>
+            <input type="number" value={ef.amount} onChange={e => setEf(p => ({ ...p, amount: e.target.value }))} style={STYLES.s203} autoFocus />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
-            <input type="date" value={ef.date} onChange={e => setEf(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+            <label style={STYLES.s181}>Date</label>
+            <input type="date" value={ef.date} onChange={e => setEf(p => ({ ...p, date: e.target.value }))} style={STYLES.s202} />
           </div>
-          <div style={{ gridColumn: "span 2" }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Note (optional)</label>
-            <input value={ef.note} onChange={e => setEf(p => ({ ...p, note: e.target.value }))} placeholder="e.g. Savings transfer" style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+          <div style={STYLES.s177}>
+            <label style={STYLES.s181}>Note (optional)</label>
+            <input value={ef.note} onChange={e => setEf(p => ({ ...p, note: e.target.value }))} placeholder="e.g. Savings transfer" style={STYLES.s202} />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
+        <div style={STYLES.s136}>
+          <button onClick={() => setEditing(false)} style={STYLES.s204}>Cancel</button>
           <button onClick={save} style={{ background: GREEN, color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Save Changes</button>
         </div>
       </div>
@@ -2676,35 +4097,35 @@ function TransferHistoryRow({ t, idx, total, fromAcct, toAcct, accounts, badgeSt
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >
       {/* Icon */}
-      <div style={{ width: 44, height: 44, borderRadius: 13, background: "#e8f5ee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, border: "0.5px solid #b6ddc233" }}>↔</div>
+      <div style={STYLES.s205}>↔</div>
       {/* Details */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+      <div style={STYLES.s206}>
+        <div style={STYLES.s207}>
           <span style={{ ...badgeStyle(t.bankId), borderRadius: 5, padding: "2px 9px", fontSize: 12, fontWeight: 600 }}>{fromAcct?.name || "—"}</span>
           <span style={{ fontWeight: 800, color: GREEN, fontSize: 14 }}>→</span>
           <span style={{ ...(toAcct ? badgeStyle(t.transferToId) : {}), borderRadius: 5, padding: "2px 9px", fontSize: 12, fontWeight: 600, color: toAcct ? undefined : "var(--color-text-secondary)" }}>{toAcct?.name || "—"}</span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+        <div style={STYLES.s72}>
           {t.date}{t.note && t.note !== "Account Transfer" ? ` · ${t.note}` : ""}
         </div>
       </div>
       {/* Amount + pill */}
-      <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <div style={{ marginBottom: 3 }}>
+      <div style={STYLES.s208}>
+        <div style={STYLES.s209}>
           <span style={{ fontSize: 10, fontWeight: 700, background: "#e8f5ee", color: GREEN, borderRadius: 5, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transfer</span>
         </div>
         <div style={{ fontWeight: 700, fontSize: 15, color: GREEN }}>₹{Number(t.amount).toLocaleString("en-IN")}</div>
       </div>
       {/* Edit */}
       <button onClick={openEdit}
-        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.45 }}
+        style={STYLES.s210}
         title="Edit transfer"
         onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
         onMouseLeave={e => { e.currentTarget.style.opacity = "0.45"; }}
       >✏️</button>
       {/* Delete */}
       <button onClick={onDelete}
-        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
+        style={STYLES.s211}
         title="Delete transfer"
         onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
         onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
@@ -2843,29 +4264,29 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
 
       {/* ── Summary cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-        <div style={{ background: "linear-gradient(135deg,#e8f5ee,#d1ead9)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #b6ddc2" }}>
+      <div style={STYLES.s213}>
+        <div style={STYLES.s214}>
           <div style={{ fontSize: 11, color: GREEN, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Total Income</div>
           <div style={{ fontWeight: 800, fontSize: 20, color: GREEN }}>+₹{totalIncome.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
-          <div style={{ fontSize: 11, color: "#4a9a6a", marginTop: 4 }}>{allTx.filter(t => t.type === "income").length} entries</div>
+          <div style={STYLES.s215}>{allTx.filter(t => t.type === "income").length} entries</div>
         </div>
-        <div style={{ background: "linear-gradient(135deg,#fef2f2,#fde8e8)", borderRadius: 14, padding: "14px 18px", border: "0.5px solid #f5c0c0" }}>
-          <div style={{ fontSize: 11, color: "#cc2222", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Total Expenses</div>
-          <div style={{ fontWeight: 800, fontSize: 20, color: "#cc2222" }}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
-          <div style={{ fontSize: 11, color: "#e05a5a", marginTop: 4 }}>{allTx.filter(t => t.type === "expense").length} entries</div>
+        <div style={STYLES.s216}>
+          <div style={STYLES.s217}>Total Expenses</div>
+          <div style={STYLES.s218}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+          <div style={STYLES.s219}>{allTx.filter(t => t.type === "expense").length} entries</div>
         </div>
       </div>
 
       {/* ── Search + Filter + Sort bar ── */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+      <div style={STYLES.s220}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: BG2, borderRadius: 14, padding: "10px 16px", border: `0.5px solid var(--color-border-secondary)` }}>
-          <span style={{ fontSize: 15, color: "var(--color-text-secondary)" }}>🔍</span>
+          <span style={STYLES.s221}>🔍</span>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search transactions"
-            style={{ flex: 1, background: "none !important", border: "none !important", outline: "none", fontSize: 14, color: "var(--color-text-primary)", padding: "0 !important" }} />
-          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", padding: 0 }}>✕</button>}
+            style={STYLES.s222} />
+          {search && <button onClick={() => setSearch("")} style={STYLES.s223}>✕</button>}
         </div>
 
         {/* Filter button with badge */}
@@ -2877,13 +4298,13 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
           color: activeFilterCount > 0 ? "#fff" : "var(--color-text-secondary)",
         }}>
           {activeFilterCount > 0 && (
-            <span style={{ position: "absolute", top: -3, right: -3, background: "#ef4444", color: "#fff", borderRadius: "50%", width: 16, height: 16, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeFilterCount}</span>
+            <span style={STYLES.s224}>{activeFilterCount}</span>
           )}
           ▽
         </button>
 
         {/* Sort button */}
-        <div style={{ position: "relative", flexShrink: 0 }}>
+        <div style={STYLES.s225}>
           <button onClick={() => { setShowSort(p => !p); setShowFilter(false); }} style={{
             width: 42, height: 42, borderRadius: "50%", background: BG2,
             border: `0.5px solid var(--color-border-secondary)`,
@@ -2891,7 +4312,7 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
           }}>↕</button>
           {showSort && (
             <>
-              <div onClick={() => setShowSort(false)} style={{ position: "fixed", inset: 0, zIndex: 498 }} />
+              <div onClick={() => setShowSort(false)} style={STYLES.s226} />
               <div style={{ position: "absolute", top: 48, right: 0, background: BG, border: `0.5px solid var(--color-border-secondary)`, borderRadius: 12, zIndex: 499, minWidth: 150, boxShadow: "0 4px 20px rgba(0,0,0,0.12)", overflow: "hidden" }}>
                 {[["date","By Date (newest)"], ["amount","By Amount"]].map(([v, l]) => (
                   <button key={v} onClick={() => { setSortBy(v); setShowSort(false); }}
@@ -2907,23 +4328,23 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
 
       {/* ── Active filter chip row ── */}
       {activeFilterCount > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={STYLES.s227}>
           {filterYearMonth !== "all" && filterDateMode === "ym" && (
             <span style={{ ...chipStyle(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap: 4 }}>
               📅 {filterYearMonth.length === 4 ? filterYearMonth : fmtYM(filterYearMonth)}
-              <button onClick={() => setFilterYearMonth("all")} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:11, padding:0 }}>✕</button>
+              <button onClick={() => setFilterYearMonth("all")} style={STYLES.s228}>✕</button>
             </span>
           )}
           {filterCatType !== "All" && (
             <span style={{ ...chipStyle(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap: 4 }}>
               {filterCatType}
-              <button onClick={() => setFilterCatType("All")} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:11, padding:0 }}>✕</button>
+              <button onClick={() => setFilterCatType("All")} style={STYLES.s228}>✕</button>
             </span>
           )}
           {filterCats.map(c => (
             <span key={c} style={{ ...chipStyle(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap: 4 }}>
               {c}
-              <button onClick={() => toggleCat(c)} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:11, padding:0 }}>✕</button>
+              <button onClick={() => toggleCat(c)} style={STYLES.s228}>✕</button>
             </span>
           ))}
           {filterAccounts.map(id => {
@@ -2931,7 +4352,7 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
             return a ? (
               <span key={id} style={{ ...chipStyle(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap: 4 }}>
                 {a.name}
-                <button onClick={() => toggleAcct(id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:11, padding:0 }}>✕</button>
+                <button onClick={() => toggleAcct(id)} style={STYLES.s228}>✕</button>
               </span>
             ) : null;
           })}
@@ -2943,18 +4364,18 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
 
       {/* ── Transaction list ── */}
       {grouped.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 14 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>💸</div>
+        <div style={STYLES.s229}>
+          <div style={STYLES.s230}>💸</div>
           No transactions found
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={STYLES.s231}>
           {grouped.map(group => {
             const groupNet = group.items.reduce((s, t) => t.type === "expense" ? s - Number(t.amount) : s + Number(t.amount), 0);
             return (
               <div key={group.label} style={{ background: BG, borderRadius: 16, overflow: "hidden", border: `0.5px solid var(--color-border-secondary)`, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `0.5px solid ${BORDER}`, background: BG2 }}>
-                  <span style={{ fontWeight: 700, fontSize: 15, color: "var(--color-text-primary)" }}>{group.label}</span>
+                  <span style={STYLES.s232}>{group.label}</span>
                   <span style={{ fontWeight: 700, fontSize: 14, color: groupNet >= 0 ? GREEN : "#cc2222" }}>
                     {groupNet >= 0 ? "+" : "-"}₹{Math.abs(groupNet).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                   </span>
@@ -2973,18 +4394,18 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                       <div style={{ width: 44, height: 44, borderRadius: 13, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, border: `0.5px solid ${iconColor}33` }}>
                         {emoji}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text-primary)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div style={STYLES.s206}>
+                        <div style={STYLES.s233}>
                           {t.category || t.note || "Uncategorized"}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--color-text-secondary)" }}>
-                          {acct && <><span style={{ fontSize: 11 }}>🏛</span><span>{acct.name}</span></>}
-                          {t.note && t.category && <span style={{ color: "var(--color-border-primary)" }}>· {t.note}</span>}
+                        <div style={STYLES.s234}>
+                          {acct && <><span style={STYLES.s235}>🏛</span><span>{acct.name}</span></>}
+                          {t.note && t.category && <span style={STYLES.s236}>· {t.note}</span>}
                         </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ marginBottom: 4 }}>
+                      <div style={STYLES.s237}>
+                        <div style={STYLES.s238}>
+                          <div style={STYLES.s239}>
                             <span style={{ fontSize: 10, fontWeight: 700, background: isIncome ? "#e8f5ee" : "#fff0f0", color: isIncome ? GREEN : "#cc2222", borderRadius: 5, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                               {isIncome ? "Income" : "Expense"}
                             </span>
@@ -2992,10 +4413,10 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                           <div style={{ fontWeight: 700, fontSize: 15, color: isIncome ? GREEN : "var(--color-text-primary)" }}>
                             ₹{Number(t.amount).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                           </div>
-                          {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{t.time}</div>}
+                          {t.time && <div style={STYLES.s196}>{t.time}</div>}
                         </div>
                         <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
-                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
+                          style={STYLES.s211}
                           title="Delete"
                           onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
                           onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
@@ -3041,14 +4462,14 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
           }));
         }
         return (
-          <div style={{ marginTop: 28 }}>
+          <div style={STYLES.s240}>
             {/* Section header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{ flex: 1, height: "0.5px", background: "var(--color-border-tertiary)" }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+            <div style={STYLES.s241}>
+              <div style={STYLES.s242} />
+              <span style={STYLES.s243}>
                 ↔ Transfer History · {transfers.length}
               </span>
-              <div style={{ flex: 1, height: "0.5px", background: "var(--color-border-tertiary)" }} />
+              <div style={STYLES.s242} />
             </div>
             <div style={{ background: BG, borderRadius: 16, border: `0.5px solid var(--color-border-secondary)`, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               {transfers.map((t, idx) => {
@@ -3081,7 +4502,7 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
       {showFilter && (
         <>
           {/* Backdrop */}
-          <div onClick={() => setShowFilter(false)} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.25)" }} />
+          <div onClick={() => setShowFilter(false)} style={STYLES.s244} />
 
           {/* Panel — slides up from bottom on mobile, floats right on desktop */}
           <div style={{
@@ -3092,14 +4513,14 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
             border: `0.5px solid var(--color-border-secondary)`,
           }}>
             {/* Drag handle */}
-            <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 2 }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--color-border-primary)" }} />
+            <div style={STYLES.s245}>
+              <div style={STYLES.s246} />
             </div>
 
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px" }}>
-              <span style={{ fontWeight: 700, fontSize: 18, color: "var(--color-text-primary)" }}>Filter</span>
-              <div style={{ display: "flex", gap: 8 }}>
+            <div style={STYLES.s247}>
+              <span style={STYLES.s248}>Filter</span>
+              <div style={STYLES.s249}>
                 <button onClick={resetFilters} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 20, border: `0.5px solid var(--color-border-secondary)`, background: BG2, cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500 }}>
                   ↺ Reset
                 </button>
@@ -3107,12 +4528,12 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
               </div>
             </div>
 
-            <div style={{ padding: "0 20px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+            <div style={STYLES.s250}>
 
               {/* ── Section 1: Date ── */}
               <div>
                 {/* Sub-tabs: Year/month vs Date range */}
-                <div style={{ display: "flex", gap: 20, marginBottom: 14 }}>
+                <div style={STYLES.s251}>
                   {[["ym","Year / month"],["range","Date range"]].map(([v, lbl]) => (
                     <button key={v} onClick={() => setFilterDateMode(v)} style={{
                       fontSize: 14, fontWeight: filterDateMode === v ? 700 : 400,
@@ -3124,7 +4545,7 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                 </div>
 
                 {filterDateMode === "ym" ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={STYLES.s252}>
                     <button onClick={() => setFilterYearMonth("all")} style={chipStyle(filterYearMonth === "all")}>All</button>
                     {yearMonthOptions.years.map(y  => (
                       <button key={y}  onClick={() => setFilterYearMonth(filterYearMonth === y  ? "all" : y)}  style={chipStyle(filterYearMonth === y)}>{y}</button>
@@ -3134,14 +4555,14 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={STYLES.s253}>
                     <div>
-                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>From</label>
-                      <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+                      <label style={STYLES.s254}>From</label>
+                      <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={STYLES.s45} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>To</label>
-                      <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+                      <label style={STYLES.s254}>To</label>
+                      <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={STYLES.s45} />
                     </div>
                   </div>
                 )}
@@ -3149,8 +4570,8 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
 
               {/* ── Section 2: Category ── */}
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <span style={{ fontWeight: 700, fontSize: 15, color: "var(--color-text-primary)" }}>Category</span>
+                <div style={STYLES.s255}>
+                  <span style={STYLES.s232}>Category</span>
                   {filterCats.length > 0 && (
                     <button onClick={() => setFilterCats([])} style={{ fontSize: 12, color: GREEN, background: "none", border: "none", cursor: "pointer" }}>○ Select all</button>
                   )}
@@ -3169,9 +4590,9 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                   ))}
                 </div>
                 {/* Category chips */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div style={STYLES.s256}>
                   {displayedCats.length === 0
-                    ? <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No categories found</span>
+                    ? <span style={STYLES.s141}>No categories found</span>
                     : displayedCats.map(cat => (
                         <button key={cat} onClick={() => toggleCat(cat)} style={{
                           padding: "6px 16px", borderRadius: 20, fontSize: 13, cursor: "pointer",
@@ -3188,13 +4609,13 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
               {/* ── Section 3: Payment Mode ── */}
               {accounts.length > 0 && (
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                    <span style={{ fontWeight: 700, fontSize: 15, color: "var(--color-text-primary)" }}>Payment mode</span>
+                  <div style={STYLES.s255}>
+                    <span style={STYLES.s232}>Payment mode</span>
                     {filterAccounts.length > 0 && (
                       <button onClick={() => setFilterAccounts([])} style={{ fontSize: 12, color: GREEN, background: "none", border: "none", cursor: "pointer" }}>○ Select all</button>
                     )}
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div style={STYLES.s256}>
                     {accounts.map(a => {
                       const active = filterAccounts.includes(String(a.id));
                       return (
@@ -3400,17 +4821,17 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       {/* ── Search + Filter + Sort bar ── */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
+      <div style={STYLES.s257}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: BG2, borderRadius: 14, padding: "10px 14px", border: `0.5px solid ${BORDER}` }}>
-          <span style={{ fontSize: 15, color: "var(--color-text-secondary)" }}>🔍</span>
+          <span style={STYLES.s221}>🔍</span>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search transactions"
-            style={{ flex: 1, background: "none !important", border: "none !important", outline: "none", fontSize: 14, color: "var(--color-text-primary)", padding: "0 !important" }}
+            style={STYLES.s222}
           />
-          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", padding: 0 }}>✕</button>}
+          {search && <button onClick={() => setSearch("")} style={STYLES.s223}>✕</button>}
         </div>
         {/* Filter icon button */}
         <button onClick={() => { setShowFilter(p => !p); setShowSort(false); }} style={{
@@ -3420,19 +4841,19 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
           color: activeFilterCount > 0 ? "#fff" : "var(--color-text-secondary)", position: "relative", flexShrink: 0,
         }}>
           {activeFilterCount > 0 && (
-            <span style={{ position: "absolute", top: -3, right: -3, background: "#ef4444", color: "#fff", borderRadius: "50%", width: 16, height: 16, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeFilterCount}</span>
+            <span style={STYLES.s224}>{activeFilterCount}</span>
           )}
           ≡
         </button>
         {/* Sort icon */}
-        <div style={{ position: "relative", flexShrink: 0 }}>
+        <div style={STYLES.s225}>
           <button onClick={() => { setShowSort(p => !p); setShowFilter(false); }} style={{
             width: 44, height: 44, borderRadius: "50%", background: BG2, border: `0.5px solid ${BORDER}`,
             cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)",
           }}>↕</button>
           {showSort && (
             <>
-              <div onClick={() => setShowSort(false)} style={{ position: "fixed", inset: 0, zIndex: 498 }} />
+              <div onClick={() => setShowSort(false)} style={STYLES.s226} />
               <div style={{ position: "absolute", top: 50, right: 0, background: BG, border: `0.5px solid ${BORDER}`, borderRadius: 12, zIndex: 499, minWidth: 150, boxShadow: "0 6px 24px rgba(0,0,0,0.12)", overflow: "hidden" }}>
                 {[["date","By Date"], ["amount","By Amount"]].map(([v, l]) => (
                   <button key={v} onClick={() => { setSortBy(v); setShowSort(false); }}
@@ -3448,23 +4869,23 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
 
       {/* ── Active filter chips (quick preview) ── */}
       {activeFilterCount > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={STYLES.s227}>
           {filterYearMonth !== "all" && filterDateMode === "ym" && (
             <span style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
               📅 {filterYearMonth.length === 4 ? filterYearMonth : fmtYM(filterYearMonth)}
-              <button onClick={() => setFilterYearMonth("all")} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+              <button onClick={() => setFilterYearMonth("all")} style={STYLES.s258}>✕</button>
             </span>
           )}
           {filterCatType !== "All" && (
             <span style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
               {filterCatType}
-              <button onClick={() => setFilterCatType("All")} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+              <button onClick={() => setFilterCatType("All")} style={STYLES.s258}>✕</button>
             </span>
           )}
           {filterCats.map(c => (
             <span key={c} style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
               {c}
-              <button onClick={() => toggleCat(c)} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+              <button onClick={() => toggleCat(c)} style={STYLES.s258}>✕</button>
             </span>
           ))}
           {filterAccounts.map(id => {
@@ -3472,7 +4893,7 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
             return a ? (
               <span key={id} style={{ ...chip(true), fontSize: 11, padding: "3px 10px", display:"flex", alignItems:"center", gap:4 }}>
                 {a.name}
-                <button onClick={() => toggleAccount(id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+                <button onClick={() => toggleAccount(id)} style={STYLES.s258}>✕</button>
               </span>
             ) : null;
           })}
@@ -3483,31 +4904,31 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
       )}
 
       {/* ── Summary strip ── */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-        <div style={{ flex: 1, background: "linear-gradient(135deg,#e8f5ee,#d1ead9)", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #b6ddc2" }}>
+      <div style={STYLES.s259}>
+        <div style={STYLES.s260}>
           <div style={{ fontSize: 11, color: GREEN, fontWeight: 600, marginBottom: 2 }}>INCOME</div>
           <div style={{ fontWeight: 800, fontSize: 16, color: GREEN }}>+₹{totalIncome.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
         </div>
-        <div style={{ flex: 1, background: "linear-gradient(135deg,#fef2f2,#fde8e8)", borderRadius: 12, padding: "10px 14px", border: "0.5px solid #f5c0c0" }}>
-          <div style={{ fontSize: 11, color: "#cc2222", fontWeight: 600, marginBottom: 2 }}>SPENDING</div>
-          <div style={{ fontWeight: 800, fontSize: 16, color: "#cc2222" }}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+        <div style={STYLES.s261}>
+          <div style={STYLES.s262}>SPENDING</div>
+          <div style={STYLES.s263}>-₹{totalExpense.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
         </div>
       </div>
 
       {/* ── Grouped transaction list ── */}
       {grouped.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 14 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+        <div style={STYLES.s229}>
+          <div style={STYLES.s230}>🔍</div>
           No transactions found
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={STYLES.s264}>
           {grouped.map(group => {
             const groupTotal = group.items.reduce((s, t) => t.type === "expense" ? s - Number(t.amount) : s + Number(t.amount), 0);
             return (
               <div key={group.label} style={{ background: BG, borderRadius: 16, overflow: "hidden", border: `0.5px solid ${BORDER}`, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `0.5px solid ${BORDER}`, background: BG2 }}>
-                  <span style={{ fontWeight: 700, fontSize: 15 }}>{group.label}</span>
+                  <span style={STYLES.s265}>{group.label}</span>
                   <span style={{ fontWeight: 700, fontSize: 14, color: groupTotal >= 0 ? GREEN : "#cc2222" }}>
                     {groupTotal >= 0 ? "+" : ""}₹{Math.abs(groupTotal).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                   </span>
@@ -3523,21 +4944,21 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                     >
                       <div style={{ width: 46, height: 46, borderRadius: 14, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: `0.5px solid ${iconColor}33` }}>{emoji}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.category || t.note || "Uncategorized"}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      <div style={STYLES.s206}>
+                        <div style={STYLES.s266}>{t.category || t.note || "Uncategorized"}</div>
+                        <div style={STYLES.s267}>
                           {acct && <><span>🏛</span><span>{acct.name}</span></>}
                           {t.note && t.category && <span>· {t.note}</span>}
                         </div>
                       </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={STYLES.s208}>
                         <div style={{ fontWeight: 700, fontSize: 15, color: t.type === "income" ? GREEN : "var(--color-text-primary)", marginBottom: 3 }}>
                           {t.type === "income" ? "+" : ""}₹{Number(t.amount).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                         </div>
-                        {t.time && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{t.time}</div>}
+                        {t.time && <div style={STYLES.s72}>{t.time}</div>}
                       </div>
                       <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--color-border-primary)", padding: "4px", borderRadius: 6, flexShrink: 0, opacity: 0.4 }}
+                        style={STYLES.s211}
                         title="Delete"
                         onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
                         onMouseLeave={e => { e.currentTarget.style.color = "var(--color-border-primary)"; e.currentTarget.style.opacity = "0.4"; }}
@@ -3557,7 +4978,7 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
       {showFilter && (
         <>
           {/* Backdrop */}
-          <div onClick={() => setShowFilter(false)} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2px)" }} />
+          <div onClick={() => setShowFilter(false)} style={STYLES.s268} />
           {/* Sheet */}
           <div style={{
             position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 501,
@@ -3568,14 +4989,14 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
             WebkitOverflowScrolling: "touch",
           }}>
             {/* Handle bar */}
-            <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 4 }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--color-border-primary)" }} />
+            <div style={STYLES.s269}>
+              <div style={STYLES.s246} />
             </div>
 
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px" }}>
-              <span style={{ fontWeight: 700, fontSize: 18 }}>Filter</span>
-              <div style={{ display: "flex", gap: 8 }}>
+            <div style={STYLES.s247}>
+              <span style={STYLES.s270}>Filter</span>
+              <div style={STYLES.s249}>
                 <button onClick={resetFilters} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 20, border: `0.5px solid ${BORDER}`, background: BG2, cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500 }}>
                   ↺ Reset
                 </button>
@@ -3583,11 +5004,11 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
               </div>
             </div>
 
-            <div style={{ padding: "0 20px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+            <div style={STYLES.s250}>
 
               {/* ── Section 1: Date ── */}
               <div>
-                <div style={{ display: "flex", gap: 20, marginBottom: 14 }}>
+                <div style={STYLES.s251}>
                   <button onClick={() => setFilterDateMode("ym")} style={{ fontSize: 14, fontWeight: filterDateMode === "ym" ? 700 : 400, color: filterDateMode === "ym" ? "var(--color-text-primary)" : "var(--color-text-secondary)", background: "none", border: "none", cursor: "pointer", padding: 0, borderBottom: filterDateMode === "ym" ? `2px solid ${GREEN}` : "2px solid transparent", paddingBottom: 2 }}>
                     Year / month
                   </button>
@@ -3597,7 +5018,7 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
                 </div>
 
                 {filterDateMode === "ym" ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={STYLES.s252}>
                     <button onClick={() => setFilterYearMonth("all")} style={chip(filterYearMonth === "all")}>All</button>
                     {yearMonthOptions.years.map(y => (
                       <button key={y} onClick={() => setFilterYearMonth(filterYearMonth === y ? "all" : y)} style={chip(filterYearMonth === y)}>{y}</button>
@@ -3607,14 +5028,14 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={STYLES.s253}>
                     <div>
-                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>From</label>
-                      <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+                      <label style={STYLES.s254}>From</label>
+                      <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={STYLES.s45} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>To</label>
-                      <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+                      <label style={STYLES.s254}>To</label>
+                      <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={STYLES.s45} />
                     </div>
                   </div>
                 )}
@@ -3622,8 +5043,8 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
 
               {/* ── Section 2: Category ── */}
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <span style={{ fontWeight: 700, fontSize: 15 }}>Category</span>
+                <div style={STYLES.s255}>
+                  <span style={STYLES.s265}>Category</span>
                   {filterCats.length > 0 && (
                     <button onClick={() => setFilterCats([])} style={{ fontSize: 12, color: GREEN, background: "none", border: "none", cursor: "pointer", padding: 0 }}>○ Select all</button>
                   )}
@@ -3638,9 +5059,9 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
                   ))}
                 </div>
                 {/* Category chips */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div style={STYLES.s256}>
                   {displayedCats.length === 0 ? (
-                    <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No categories yet</span>
+                    <span style={STYLES.s141}>No categories yet</span>
                   ) : displayedCats.map(cat => (
                     <button key={cat} onClick={() => toggleCat(cat)}
                       style={{ padding: "6px 16px", borderRadius: 20, fontSize: 13, cursor: "pointer", border: filterCats.includes(cat) ? `1.5px solid ${GREEN}` : `0.5px solid ${BORDER}`, background: filterCats.includes(cat) ? "#e8f5ee" : BG2, color: filterCats.includes(cat) ? GREEN : "var(--color-text-secondary)", fontWeight: filterCats.includes(cat) ? 600 : 400, transition: "all 0.15s" }}>
@@ -3653,13 +5074,13 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
               {/* ── Section 3: Payment Mode ── */}
               {accounts.length > 0 && (
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>Payment mode</span>
+                  <div style={STYLES.s255}>
+                    <span style={STYLES.s265}>Payment mode</span>
                     {filterAccounts.length > 0 && (
                       <button onClick={() => setFilterAccounts([])} style={{ fontSize: 12, color: GREEN, background: "none", border: "none", cursor: "pointer", padding: 0 }}>○ Select all</button>
                     )}
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div style={STYLES.s256}>
                     {accounts.map(a => {
                       const active = filterAccounts.includes(String(a.id));
                       return (
@@ -3786,57 +5207,57 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
     <div>
       {/* Edit Trade Modal */}
       {editTrade && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(480px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Trade</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={STYLES.s129}>
+          <div style={STYLES.s271}>
+            <div style={STYLES.s131}>✏️ Edit Trade</div>
+            <div style={STYLES.s174}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
-                <input type="date" value={editTrade.date} onChange={e => setEditTrade(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Date</label>
+                <input type="date" value={editTrade.date} onChange={e => setEditTrade(p => ({ ...p, date: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Strategy</label>
-                <select value={editTrade.strategy} onChange={e => setEditTrade(p => ({ ...p, strategy: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <label style={STYLES.s132}>Strategy</label>
+                <select value={editTrade.strategy} onChange={e => setEditTrade(p => ({ ...p, strategy: e.target.value }))} style={STYLES.s45}>
                   <option>Call</option><option>Put</option>
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Strike Price</label>
-                <input type="number" value={editTrade.strikePrice} onChange={e => setEditTrade(p => ({ ...p, strikePrice: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Strike Price</label>
+                <input type="number" value={editTrade.strikePrice} onChange={e => setEditTrade(p => ({ ...p, strikePrice: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Expiry</label>
-                <input type="date" value={editTrade.expiry || ""} onChange={e => setEditTrade(p => ({ ...p, expiry: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Expiry</label>
+                <input type="date" value={editTrade.expiry || ""} onChange={e => setEditTrade(p => ({ ...p, expiry: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Buy Premium (₹)</label>
-                <input type="number" value={editTrade.buyPremium} onChange={e => setEditTrade(p => ({ ...p, buyPremium: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Buy Premium (₹)</label>
+                <input type="number" value={editTrade.buyPremium} onChange={e => setEditTrade(p => ({ ...p, buyPremium: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Sell Premium (₹)</label>
-                <input type="number" value={editTrade.sellPremium || ""} onChange={e => setEditTrade(p => ({ ...p, sellPremium: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Sell Premium (₹)</label>
+                <input type="number" value={editTrade.sellPremium || ""} onChange={e => setEditTrade(p => ({ ...p, sellPremium: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Lots</label>
-                <input type="number" value={editTrade.lots} onChange={e => setEditTrade(p => ({ ...p, lots: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Lots</label>
+                <input type="number" value={editTrade.lots} onChange={e => setEditTrade(p => ({ ...p, lots: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Lot Size</label>
-                <input type="number" value={editTrade.lotSize} onChange={e => setEditTrade(p => ({ ...p, lotSize: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Lot Size</label>
+                <input type="number" value={editTrade.lotSize} onChange={e => setEditTrade(p => ({ ...p, lotSize: e.target.value }))} style={STYLES.s45} />
               </div>
-              <div style={{ gridColumn: "span 2" }}>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes</label>
-                <input value={editTrade.notes || ""} onChange={e => setEditTrade(p => ({ ...p, notes: e.target.value }))} placeholder="Optional notes" style={{ width: "100%", boxSizing: "border-box" }} />
+              <div style={STYLES.s177}>
+                <label style={STYLES.s132}>Notes</label>
+                <input value={editTrade.notes || ""} onChange={e => setEditTrade(p => ({ ...p, notes: e.target.value }))} placeholder="Optional notes" style={STYLES.s45} />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setEditTrade(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditTrade} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save Changes</button>
+            <div style={STYLES.s136}>
+              <button onClick={() => setEditTrade(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditTrade} style={STYLES.s138}>Save Changes</button>
             </div>
           </div>
         </div>
       )}
-      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 8 }}>F&O Tracker</h1>
+      <h1 style={STYLES.s272}>F&O Tracker</h1>
       <TabBar tabs={["trades", "pnl", "charges"]} active={tab} setActive={setTab} labels={["Trades", "P&L Report", "Charges"]} />
 
       {tab === "trades" && (
@@ -3849,36 +5270,36 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
             const effective = cap + filteredPnl;
             const roi = cap > 0 ? ((filteredPnl / cap) * 100) : 0;
             return (
-              <div style={{ margin: "12px 0 0", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "12px 16px" }}>
+              <div style={STYLES.s273}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: cap > 0 ? 12 : 0 }}>
-                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>💰 Trading Capital (₹)</span>
+                  <span style={STYLES.s274}>💰 Trading Capital (₹)</span>
                   <input
                     type="number"
                     placeholder="e.g. 2,00,000"
                     value={capital}
                     onChange={e => { setCapital(e.target.value); update(() => ({ foCapital: parseFloat(e.target.value) || 0 })); }}
-                    style={{ flex: 1, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 10px", fontSize: 14, fontWeight: 500, background: "var(--color-background-secondary)" }}
+                    style={STYLES.s275}
                   />
                 </div>
                 {cap > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "7px 14px", fontSize: 13 }}>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Capital</div>
-                      <div style={{ fontWeight: 600 }}>{fmtCur(cap)}</div>
+                  <div style={STYLES.s276}>
+                    <div style={STYLES.s277}>
+                      <div style={STYLES.s278}>Capital</div>
+                      <div style={STYLES.s279}>{fmtCur(cap)}</div>
                     </div>
-                    <span style={{ fontSize: 18, color: "var(--color-text-secondary)" }}>{filteredPnl >= 0 ? "+" : "−"}</span>
+                    <span style={STYLES.s280}>{filteredPnl >= 0 ? "+" : "−"}</span>
                     <div style={{ background: filteredPnl >= 0 ? "#f0fdf4" : "#fff0f0", borderRadius: 8, padding: "7px 14px", fontSize: 13, border: `0.5px solid ${filteredPnl >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{filteredPnl >= 0 ? "Profit" : "Loss"}</div>
+                      <div style={STYLES.s278}>{filteredPnl >= 0 ? "Profit" : "Loss"}</div>
                       <div style={{ fontWeight: 600, color: filteredPnl >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(Math.abs(filteredPnl))}</div>
                     </div>
-                    <span style={{ fontSize: 18, color: "var(--color-text-secondary)" }}>=</span>
+                    <span style={STYLES.s280}>=</span>
                     <div style={{ background: effective >= cap ? "#f0fdf4" : "#fff0f0", borderRadius: 8, padding: "7px 14px", fontSize: 13, border: `0.5px solid ${effective >= cap ? "#1a6b3c" : "#d44"}` }}>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Effective Capital</div>
+                      <div style={STYLES.s278}>Effective Capital</div>
                       <div style={{ fontWeight: 700, fontSize: 15, color: effective >= cap ? "#1a6b3c" : "#d44" }}>{fmtCur(effective)}</div>
                     </div>
                     {cap > 0 && (
-                      <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>ROI</div>
+                      <div style={STYLES.s281}>
+                        <div style={STYLES.s278}>ROI</div>
                         <div style={{ fontWeight: 700, fontSize: 15, color: roi >= 0 ? "#1a6b3c" : "#d44" }}>{roi >= 0 ? "+" : ""}{roi.toFixed(2)}%</div>
                       </div>
                     )}
@@ -3888,7 +5309,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
             );
           })()}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, margin: "10px 0" }}>
+          <div style={STYLES.s282}>
             <StatCard label="Total Trades" value={filtered.length} />
             <StatCard label="Winners" value={winners} />
             <StatCard label="Losers" value={losers} />
@@ -3896,21 +5317,21 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
             <StatCard label="Net P&L (after charges)" value={fmtCur(filteredPnl)} pnl={filteredPnl} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16 }}>
+          <div style={STYLES.s283}>
             <Card title="Log New Trade">
               {/* Row 1: Date */}
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
-                <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <div style={STYLES.s100}>
+                <label style={STYLES.s181}>Date</label>
+                <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={STYLES.s45} />
               </div>
 
               {/* Instrument — Dropdown */}
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Instrument</label>
+              <div style={STYLES.s100}>
+                <label style={STYLES.s181}>Instrument</label>
                 <select 
                   value={form.instrument} 
                   onChange={e => handleInstrumentChange(e.target.value)}
-                  style={{ width: "100%", boxSizing: "border-box" }}
+                  style={STYLES.s45}
                 >
                   {INSTRUMENTS.map(i => (
                     <option key={i} value={i}>{i}</option>
@@ -3920,12 +5341,12 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
 
               {/* Row 2: Sub-instrument (conditional) */}
               {form.instrument === "Index Options" && (
-                <div style={{ marginTop: 8 }}>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Index</label>
+                <div style={STYLES.s284}>
+                  <label style={STYLES.s181}>Index</label>
                   <select 
                     value={form.subInstrument} 
                     onChange={e => handleSubInstrumentChange(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box" }}
+                    style={STYLES.s45}
                   >
                     {indexSubs.map(s => (
                       <option key={s} value={s}>{s}</option>
@@ -3935,19 +5356,19 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
               )}
 
               {form.instrument === "Stock Options" && (
-                <div style={{ marginTop: 8 }}>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Stock Name</label>
-                  <input placeholder="e.g. RELIANCE, TCS" value={form.stockName} onChange={e => setForm(p => ({ ...p, stockName: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <div style={STYLES.s284}>
+                  <label style={STYLES.s181}>Stock Name</label>
+                  <input placeholder="e.g. RELIANCE, TCS" value={form.stockName} onChange={e => setForm(p => ({ ...p, stockName: e.target.value }))} style={STYLES.s45} />
                 </div>
               )}
 
               {form.instrument === "Commodities" && (
-                <div style={{ marginTop: 8 }}>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Commodity</label>
+                <div style={STYLES.s284}>
+                  <label style={STYLES.s181}>Commodity</label>
                   <select 
                     value={form.subInstrument} 
                     onChange={e => handleSubInstrumentChange(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box" }}
+                    style={STYLES.s45}
                   >
                     {commoditySubs.map(s => (
                       <option key={s} value={s}>{s}</option>
@@ -3957,9 +5378,9 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
               )}
 
               {/* Strategy */}
-              <div style={{ marginTop: 8 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Strategy</label>
-                <div style={{ display: "flex", gap: 8 }}>
+              <div style={STYLES.s284}>
+                <label style={STYLES.s181}>Strategy</label>
+                <div style={STYLES.s249}>
                   {STRATEGIES.map(s => (
                     <button key={s} onClick={() => setForm(p => ({ ...p, strategy: s }))} style={{ flex: 1, padding: "6px", borderRadius: 6, border: "0.5px solid", borderColor: form.strategy === s ? "#1a6b3c" : "var(--color-border-secondary)", background: form.strategy === s ? "#e8f5ee" : "transparent", fontSize: 13, cursor: "pointer", color: form.strategy === s ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: form.strategy === s ? 600 : 400 }}>{s}</button>
                   ))}
@@ -3968,12 +5389,12 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
 
               {/* Broker selector */}
               {brokerProfiles.length > 0 ? (
-                <div style={{ marginTop: 8 }}>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Broker / Charges Template</label>
+                <div style={STYLES.s284}>
+                  <label style={STYLES.s181}>Broker / Charges Template</label>
                   <select 
                     value={form.brokerId} 
                     onChange={e => setForm(p => ({ ...p, brokerId: e.target.value }))}
-                    style={{ width: "100%", boxSizing: "border-box" }}
+                    style={STYLES.s45}
                   >
                     <option value="">Default</option>
                     {brokerProfiles.map(b => (
@@ -3982,13 +5403,13 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
                   </select>
                 </div>
               ) : (
-                <div style={{ marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)" }}>
-                  <button onClick={() => setTab("charges")} style={{ background: "none", border: "none", color: "#1a6b3c", cursor: "pointer", fontSize: 11, padding: 0 }}>+ Add broker template</button> in Charges tab
+                <div style={STYLES.s285}>
+                  <button onClick={() => setTab("charges")} style={STYLES.s183}>+ Add broker template</button> in Charges tab
                 </div>
               )}
 
               {/* Strike, Expiry, Premiums, Lots, Lot Size */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+              <div style={STYLES.s286}>
 
               {/* Strike, Expiry, Premiums, Lots, Lot Size */}
                 <LabelInput label="Strike Price" placeholder="e.g. 22500" value={form.strikePrice} onChange={v => setForm(p => ({ ...p, strikePrice: v }))} />
@@ -3997,8 +5418,8 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
                 <LabelInput label="Sell Premium (₹)" placeholder="e.g. 150" value={form.sellPremium} onChange={v => setForm(p => ({ ...p, sellPremium: v }))} />
                 <LabelInput label="Lots" placeholder="1" value={form.lots} onChange={v => setForm(p => ({ ...p, lots: v }))} />
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>
-                    Lot Size {lotSizeIsAuto && <span style={{ color: "#1a6b3c", fontSize: 10 }}>● auto</span>}
+                  <label style={STYLES.s181}>
+                    Lot Size {lotSizeIsAuto && <span style={STYLES.s287}>● auto</span>}
                   </label>
                   <input
                     type="number"
@@ -4012,24 +5433,24 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
               </div>
               <LabelInput label="Notes" placeholder="optional" value={form.notes} onChange={v => setForm(p => ({ ...p, notes: v }))} />
               {form.buyPremium && form.sellPremium && (
-                <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 12px", marginTop: 8, fontSize: 12 }}>
+                <div style={STYLES.s288}>
                   {form.brokerId && brokerProfiles.find(b => b.id === form.brokerId) && (
-                    <div style={{ fontSize: 11, color: "#1a6b3c", marginBottom: 6, fontWeight: 500 }}>
+                    <div style={STYLES.s289}>
                       Using: {brokerProfiles.find(b => b.id === form.brokerId).name} charges
                     </div>
                   )}
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span style={{ color: "var(--color-text-secondary)" }}>Gross P&L</span>
+                  <div style={STYLES.s199}>
+                    <span style={STYLES.s172}>Gross P&L</span>
                     <span style={{ fontWeight: 500, color: (Number(form.sellPremium) - Number(form.buyPremium)) >= 0 ? "#1a6b3c" : "#d44" }}>
                       {fmtCur((Number(form.sellPremium) - Number(form.buyPremium)) * Number(form.lots) * Number(form.lotSize))}
                     </span>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span style={{ color: "var(--color-text-secondary)" }}>Est. Charges</span>
+                  <div style={STYLES.s199}>
+                    <span style={STYLES.s172}>Est. Charges</span>
                     <span>- {fmtCur(calcCharges(form, selectedBrokerCharges))}</span>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 4 }}>
-                    <span style={{ fontWeight: 500 }}>Net P&L</span>
+                  <div style={STYLES.s290}>
+                    <span style={STYLES.s123}>Net P&L</span>
                     <span style={{ fontWeight: 500, color: ((Number(form.sellPremium) - Number(form.buyPremium)) * Number(form.lots) * Number(form.lotSize) - calcCharges(form, selectedBrokerCharges)) >= 0 ? "#1a6b3c" : "#d44" }}>
                       {fmtCur((Number(form.sellPremium) - Number(form.buyPremium)) * Number(form.lots) * Number(form.lotSize) - calcCharges(form, selectedBrokerCharges))}
                     </span>
@@ -4041,28 +5462,28 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
 
             <Card title={`Trade Log (${filtered.length})`}>
               {filtered.length === 0 ? <EmptyState msg="No trades logged yet. Add your first trade." /> : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", minWidth: 500 }}>
-                    <thead><tr>{["Date", "Instrument", "Type", "Strategy", "Strike", "Buy", "Sell", "Lots", "Broker", "Net P&L", ""].map(h => <th key={h} style={{ textAlign: "left", padding: "4px 6px", color: "var(--color-text-secondary)", fontWeight: 500, borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+                <div style={STYLES.s291}>
+                  <table style={STYLES.s292}>
+                    <thead><tr>{["Date", "Instrument", "Type", "Strategy", "Strike", "Buy", "Sell", "Lots", "Broker", "Net P&L", ""].map(h => <th key={h} style={STYLES.s293}>{h}</th>)}</tr></thead>
                     <tbody>{filtered.slice().reverse().map(t => {
                       const gross = (Number(t.sellPremium) - Number(t.buyPremium)) * Number(t.lots) * Number(t.lotSize);
                       const charges = calcCharges(t, t.brokerCharges || data.foCharges);
                       const net = gross - charges;
                       return (
-                        <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                          <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{t.date}</td>
-                          <td style={{ padding: "5px 6px", fontWeight: 500 }}>{t.instrument}</td>
-                          <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)" }}>{t.subInstrument || "—"}</td>
-                          <td style={{ padding: "5px 6px" }}>{t.strategy}</td>
-                          <td style={{ padding: "5px 6px" }}>{t.strikePrice}</td>
-                          <td style={{ padding: "5px 6px" }}>₹{t.buyPremium}</td>
-                          <td style={{ padding: "5px 6px" }}>₹{t.sellPremium || "—"}</td>
-                          <td style={{ padding: "5px 6px" }}>{t.lots}×{t.lotSize}</td>
-                          <td style={{ padding: "5px 6px" }}>
-                            {t.brokerName ? <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 500 }}>{t.brokerName}</span> : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                        <tr key={t.id} style={STYLES.s294}>
+                          <td style={STYLES.s295}>{t.date}</td>
+                          <td style={STYLES.s296}>{t.instrument}</td>
+                          <td style={STYLES.s297}>{t.subInstrument || "—"}</td>
+                          <td style={STYLES.s298}>{t.strategy}</td>
+                          <td style={STYLES.s298}>{t.strikePrice}</td>
+                          <td style={STYLES.s298}>₹{t.buyPremium}</td>
+                          <td style={STYLES.s298}>₹{t.sellPremium || "—"}</td>
+                          <td style={STYLES.s298}>{t.lots}×{t.lotSize}</td>
+                          <td style={STYLES.s298}>
+                            {t.brokerName ? <span style={STYLES.s299}>{t.brokerName}</span> : <span style={STYLES.s172}>—</span>}
                           </td>
                           <td style={{ padding: "5px 6px", fontWeight: 500, color: net >= 0 ? "#1a6b3c" : "#d44" }}>{fmtCur(net)}</td>
-                          <td style={{ padding: "2px 4px" }}>
+                          <td style={STYLES.s300}>
                             <ThreeDotMenu
                               onEdit={() => setEditTrade({ ...t })}
                               onDelete={() => update(p => ({ foTrades: p.foTrades.filter(x => x.id !== t.id) }))}
@@ -4084,7 +5505,7 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
       )}
 
       {tab === "charges" && (
-        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16 }}>
+        <div style={STYLES.s301}>
 
           {/* Left: Add / Edit broker form */}
           <Card title={editingBroker ? "Edit Broker Template" : "Add Broker Template"}>
@@ -4097,17 +5518,17 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
               ["gst", "GST (%)", "On brokerage + exchange fee"],
               ["stampDuty", "Stamp Duty (%)", "On buy side only"],
             ].map(([key, label, hint]) => (
-              <div key={key} style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 }}>{label}</label>
-                <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>{hint}</div>
-                <input type="number" step="any" value={chargesForm[key] ?? ""} onChange={e => setChargesForm(p => ({ ...p, [key]: parseFloat(e.target.value) }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <div key={key} style={STYLES.s56}>
+                <label style={STYLES.s302}>{label}</label>
+                <div style={STYLES.s95}>{hint}</div>
+                <input type="number" step="any" value={chargesForm[key] ?? ""} onChange={e => setChargesForm(p => ({ ...p, [key]: parseFloat(e.target.value) }))} style={STYLES.s45} />
               </div>
             ))}
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <div style={STYLES.s303}>
               <GreenBtn onClick={saveBroker} label={editingBroker ? "Update Template" : "+ Save Template"} />
               {editingBroker && (
                 <button onClick={() => { setEditingBroker(null); setChargesForm({ name: "", brokerage: 20, stt: 0.05, exchangeFee: 0.05, sebi: 0.0001, gst: 18, stampDuty: 0.003 }); }}
-                  style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                  style={STYLES.s304}>
                   Cancel
                 </button>
               )}
@@ -4119,17 +5540,17 @@ function FOPage({ data, update, tab, setTab, calcCharges, foNetPnl }) {
             {(data.brokerProfiles || []).length === 0 ? (
               <EmptyState msg="No broker templates saved yet. Add one on the left." />
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={STYLES.s163}>
                 {(data.brokerProfiles || []).map(b => (
                   <div key={b.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", border: editingBroker === b.id ? "1px solid #1a6b3c" : "0.5px solid var(--color-border-tertiary)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{b.name}</span>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => editBroker(b)} style={{ background: "#e8f5ee", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 }}>Edit</button>
-                        <button onClick={() => deleteBroker(b.id)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14 }}>✕</button>
+                    <div style={STYLES.s305}>
+                      <span style={STYLES.s306}>{b.name}</span>
+                      <div style={STYLES.s167}>
+                        <button onClick={() => editBroker(b)} style={STYLES.s307}>Edit</button>
+                        <button onClick={() => deleteBroker(b.id)} style={STYLES.s308}>✕</button>
                       </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
+                    <div style={STYLES.s309}>
                       <span>Brokerage: ₹{b.charges.brokerage}</span>
                       <span>STT: {b.charges.stt}%</span>
                       <span>Exch: {b.charges.exchangeFee}%</span>
@@ -4207,9 +5628,9 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
   const selectedData = selectedKey ? dayMap[selectedKey] : null;
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       {/* Month summary stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={STYLES.s310}>
         <StatCard label="Trades This Month" value={monthTrades.length} />
         <StatCard label="Gross P&L" value={fmtCur(monthGross)} pnl={monthGross} />
         <StatCard label="Total Charges" value={"- " + fmtCur(monthCharges)} />
@@ -4218,28 +5639,28 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
 
       <div style={{ display: "grid", gridTemplateColumns: selectedDay ? "1fr min(320px,100%)" : "1fr", gap: 16 }}>
         {/* Calendar */}
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+        <div style={STYLES.s311}>
           {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.2rem", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-            <button onClick={prevMonth} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 16, color: "var(--color-text-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, fontWeight: 400 }}>{monthName}</div>
-              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{monthTrades.length} TRADE{monthTrades.length !== 1 ? "S" : ""}</div>
+          <div style={STYLES.s312}>
+            <button onClick={prevMonth} style={STYLES.s313}>‹</button>
+            <div style={STYLES.s122}>
+              <div style={STYLES.s314}>{monthName}</div>
+              <div style={STYLES.s196}>{monthTrades.length} TRADE{monthTrades.length !== 1 ? "S" : ""}</div>
             </div>
-            <button onClick={nextMonth} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 16, color: "var(--color-text-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+            <button onClick={nextMonth} style={STYLES.s313}>›</button>
           </div>
 
           {/* Day labels */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+          <div style={STYLES.s315}>
             {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-              <div key={i} style={{ textAlign: "center", padding: "8px 0", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>{d}</div>
+              <div key={i} style={STYLES.s316}>{d}</div>
             ))}
           </div>
 
           {/* Calendar grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+          <div style={STYLES.s317}>
             {cells.map((day, idx) => {
-              if (!day) return <div key={"e" + idx} style={{ minHeight: 80, borderRight: "0.5px solid var(--color-border-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-tertiary)", opacity: 0.4 }} />;
+              if (!day) return <div key={"e" + idx} style={STYLES.s318} />;
               const key = `${calYear}-${pad(calMonth + 1)}-${pad(day)}`;
               const info = dayMap[key];
               const isSelected = selectedDay === day;
@@ -4265,13 +5686,9 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
                     marginBottom: 4
                   }}>{day}</div>
                   {info && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    <div style={STYLES.s319}>
                       {info.trades.length > 0 && (
-                        <div style={{
-                          fontSize: 10, fontWeight: 500, color: "#888",
-                          background: "var(--color-background-secondary)",
-                          borderRadius: 4, padding: "1px 5px", display: "inline-block"
-                        }}>₹{fmt(Math.abs(info.gross))}</div>
+                        <div style={STYLES.s320}>₹{fmt(Math.abs(info.gross))}</div>
                       )}
                       <div style={{
                         fontSize: 11, fontWeight: 600,
@@ -4291,48 +5708,48 @@ function FOCalendarPnl({ trades, calcCharges, foCharges }) {
 
         {/* Day detail panel */}
         {selectedDay && (
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem", display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={STYLES.s321}>
+            <div style={STYLES.s322}>
               <div>
-                <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18 }}>
+                <div style={STYLES.s323}>
                   {new Date(calYear, calMonth, selectedDay).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>{selectedData ? selectedData.trades.length + " trade(s)" : "No trades"}</div>
+                <div style={STYLES.s324}>{selectedData ? selectedData.trades.length + " trade(s)" : "No trades"}</div>
               </div>
-              <button onClick={() => setSelectedDay(null)} style={{ background: "none", border: "none", color: "var(--color-text-secondary)", cursor: "pointer", fontSize: 18 }}>✕</button>
+              <button onClick={() => setSelectedDay(null)} style={STYLES.s325}>✕</button>
             </div>
 
             {!selectedData ? (
               <EmptyState msg="No trades on this day." />
             ) : (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Gross P&L</div>
+                <div style={STYLES.s326}>
+                  <div style={STYLES.s327}>
+                    <div style={STYLES.s328}>Gross P&L</div>
                     <div style={{ fontWeight: 600, fontSize: 15, color: selectedData.gross >= 0 ? "#1a6b3c" : "#c0392b" }}>{fmtCur(selectedData.gross)}</div>
                   </div>
-                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Charges</div>
-                    <div style={{ fontWeight: 600, fontSize: 15 }}>- {fmtCur(selectedData.charges)}</div>
+                  <div style={STYLES.s327}>
+                    <div style={STYLES.s328}>Charges</div>
+                    <div style={STYLES.s65}>- {fmtCur(selectedData.charges)}</div>
                   </div>
                 </div>
                 <div style={{ background: selectedData.net >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "12px 14px", border: `0.5px solid ${selectedData.net >= 0 ? "#1a6b3c44" : "#c0392b44"}` }}>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Net P&L</div>
+                  <div style={STYLES.s328}>Net P&L</div>
                   <div style={{ fontWeight: 700, fontSize: 22, color: selectedData.net >= 0 ? "#1a6b3c" : "#c0392b" }}>{fmtCur(selectedData.net)}</div>
                 </div>
-                <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 10 }}>
-                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8, fontWeight: 500 }}>Trades</div>
+                <div style={STYLES.s329}>
+                  <div style={STYLES.s330}>Trades</div>
                   {selectedData.trades.map((t, i) => {
                     const g = (Number(t.sellPremium || 0) - Number(t.buyPremium || 0)) * Number(t.lots || 1) * Number(t.lotSize || 50);
                     const ch = calcCharges(t, t.brokerCharges || foCharges);
                     const n = g - ch;
                     return (
-                      <div key={t.id} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", marginBottom: 6, fontSize: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                          <span style={{ fontWeight: 500 }}>{t.instrument} {t.strikePrice}</span>
+                      <div key={t.id} style={STYLES.s331}>
+                        <div style={STYLES.s332}>
+                          <span style={STYLES.s123}>{t.instrument} {t.strikePrice}</span>
                           <span style={{ fontWeight: 600, color: n >= 0 ? "#1a6b3c" : "#c0392b" }}>{fmtCur(n)}</span>
                         </div>
-                        <div style={{ color: "var(--color-text-secondary)" }}>{t.strategy} · {t.lots}×{t.lotSize} · Buy ₹{t.buyPremium} → Sell ₹{t.sellPremium || "—"}</div>
+                        <div style={STYLES.s172}>{t.strategy} · {t.lots}×{t.lotSize} · Buy ₹{t.buyPremium} → Sell ₹{t.sellPremium || "—"}</div>
                       </div>
                     );
                   })}
@@ -4364,15 +5781,15 @@ function EssentialsPage({ data, update, tab, setTab }) {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 8 }}>Essentials</h1>
-      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 12 }}>Financial health check</p>
+      <h1 style={STYLES.s272}>Essentials</h1>
+      <p style={STYLES.s333}>Financial health check</p>
       <TabBar tabs={["essentials", "goals"]} active={tab} setActive={setTab} labels={["Essentials", "Goals"]} />
 
       {tab === "essentials" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+        <div style={STYLES.s334}>
           <Card title="Financial Profile">
-            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12 }}>Used for health scores and personalised guidance. All fields are optional.</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <p style={STYLES.s335}>Used for health scores and personalised guidance. All fields are optional.</p>
+            <div style={STYLES.s326}>
               <LabelInput label="Age" placeholder="Your age" value={profileForm.age} onChange={v => setProfileForm(p => ({ ...p, age: v }))} />
               <LabelInput label="Monthly Income" placeholder="Monthly income" value={profileForm.income} onChange={v => setProfileForm(p => ({ ...p, income: v }))} />
               <LabelInput label="Monthly Expense" placeholder="Monthly expense" value={profileForm.expense} onChange={v => setProfileForm(p => ({ ...p, expense: v }))} />
@@ -4382,13 +5799,13 @@ function EssentialsPage({ data, update, tab, setTab }) {
           </Card>
           <Card title="Health Scores">
             {!data.profile.income ? (
-              <div style={{ background: "#fef9e7", border: "0.5px solid #f0c040", borderRadius: 8, padding: "1rem", textAlign: "center" }}>
-                <div style={{ fontSize: 20, marginBottom: 6 }}>⚠</div>
-                <div style={{ fontWeight: 500, marginBottom: 4, fontSize: 14 }}>Monthly Expense Data Required</div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Fill in your financial profile to see health scores.</div>
+              <div style={STYLES.s336}>
+                <div style={STYLES.s337}>⚠</div>
+                <div style={STYLES.s338}>Monthly Expense Data Required</div>
+                <div style={STYLES.s53}>Fill in your financial profile to see health scores.</div>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={STYLES.s231}>
                 <HealthBar label="Savings Rate" value={parseFloat(savingsRate)} target={30} unit="%" hint="Target: >30%" />
                 <HealthBar label="Expense Ratio" value={parseFloat(expenseRatio)} target={50} invert unit="%" hint="Target: <50%" />
                 <HealthBar label="Emergency Fund" value={Math.min((netWorth / (Number(data.profile.expense) * 6)) * 100, 100)} target={100} unit="%" hint="Target: 6 months expenses" />
@@ -4399,42 +5816,42 @@ function EssentialsPage({ data, update, tab, setTab }) {
       )}
 
       {tab === "goals" && (
-        <div style={{ marginTop: 16 }}>
+        <div style={STYLES.s212}>
           {data.goals.length === 0 && (
-            <div style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-secondary)", marginBottom: 20 }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>◎</div>
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>No goals yet</div>
-              <div style={{ fontSize: 13 }}>Set financial goals to track your progress toward milestones like retirement, home purchase, or emergency funds.</div>
+            <div style={STYLES.s339}>
+              <div style={STYLES.s340}>◎</div>
+              <div style={STYLES.s341}>No goals yet</div>
+              <div style={STYLES.s162}>Set financial goals to track your progress toward milestones like retirement, home purchase, or emergency funds.</div>
             </div>
           )}
           {data.goals.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12, marginBottom: 20 }}>
+            <div style={STYLES.s342}>
               {data.goals.map(g => {
                 const progress = Math.min((netWorth / Number(g.target)) * 100, 100);
                 return (
                   <Card key={g.id} title={g.name}>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Target: {fmtCur(g.target)}</div>
-                    <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 6, marginBottom: 6, overflow: "hidden" }}>
+                    <div style={STYLES.s343}>Target: {fmtCur(g.target)}</div>
+                    <div style={STYLES.s344}>
                       <div style={{ width: progress + "%", height: "100%", background: "#1a6b3c", borderRadius: 4 }} />
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                    <div style={STYLES.s345}>
                       <span>{progress.toFixed(1)}% achieved</span>
                       {g.targetDate && <span>By {g.targetDate}</span>}
                     </div>
-                    <button onClick={() => update(p => ({ goals: p.goals.filter(x => x.id !== g.id) }))} style={{ marginTop: 8, background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 12 }}>Remove</button>
+                    <button onClick={() => update(p => ({ goals: p.goals.filter(x => x.id !== g.id) }))} style={STYLES.s346}>Remove</button>
                   </Card>
                 );
               })}
             </div>
           )}
           <Card title="Create New Goal">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={STYLES.s80}>
               <LabelInput label="Goal Name *" placeholder="Goal name" value={goalForm.name} onChange={v => setGoalForm(p => ({ ...p, name: v }))} />
               <LabelInput label="Target Amount *" placeholder="Target amount" value={goalForm.target} onChange={v => setGoalForm(p => ({ ...p, target: v }))} />
               <LabelInput label="Target Date *" type="date" value={goalForm.targetDate} onChange={v => setGoalForm(p => ({ ...p, targetDate: v }))} />
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Track Progress By</label>
-                <select value={goalForm.trackBy} onChange={e => setGoalForm(p => ({ ...p, trackBy: e.target.value }))} style={{ width: "100%" }}>
+                <label style={STYLES.s347}>Track Progress By</label>
+                <select value={goalForm.trackBy} onChange={e => setGoalForm(p => ({ ...p, trackBy: e.target.value }))} style={STYLES.s348}>
                   <option>Net Worth (all assets)</option>
                   <option>Specific assets</option>
                   <option>Savings only</option>
@@ -4454,12 +5871,12 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
   const foOn = (data.featureToggles || { fo: true }).fo !== false;
   const cardStyle = { background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem", marginBottom: 16 };
   const sectionTitle = (icon, label, sub) => (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-        <span style={{ fontSize: 16 }}>{icon}</span>
-        <span style={{ fontWeight: 600, fontSize: 15 }}>{label}</span>
+    <div style={STYLES.s43}>
+      <div style={STYLES.s349}>
+        <span style={STYLES.s6}>{icon}</span>
+        <span style={STYLES.s65}>{label}</span>
       </div>
-      {sub && <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 24 }}>{sub}</p>}
+      {sub && <p style={STYLES.s350}>{sub}</p>}
     </div>
   );
 
@@ -4471,8 +5888,8 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
   return (
     <div>
-      <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, marginBottom: 4 }}>Settings</h1>
-      <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 16 }}>Manage your app preferences, accounts and categories.</p>
+      <h1 style={STYLES.s61}>Settings</h1>
+      <p style={STYLES.s351}>Manage your app preferences, accounts and categories.</p>
       <TabBar
         tabs={settingsTabs}
         active={effectiveTab}
@@ -4488,7 +5905,7 @@ function SettingsPage({ data, update, tab, setTab, navItems, navEditMode, setNav
 
       {/* ── Money (Account Settings + Trading Settings if FO on) ── */}
       {effectiveTab === "money" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div style={STYLES.s352}>
           <AccountSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />
           {foOn && <TradingSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />}
         </div>
@@ -4898,17 +6315,17 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     : "Never";
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       <div style={cardStyle}>
         {sectionTitle("🗂️", "Google Drive", "Back up and restore FinTrack data directly in your Google Drive.")}
 
         {/* ── Token expired banner ─────────────────────────────────────── */}
         {tokenExpired && (
-          <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 20 }}>🔑</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e" }}>Drive token expired</div>
-              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>Your Drive session expired. Click Sign in to reconnect — takes 2 seconds.</div>
+          <div style={STYLES.s353}>
+            <span style={STYLES.s51}>🔑</span>
+            <div style={STYLES.s354}>
+              <div style={STYLES.s355}>Drive token expired</div>
+              <div style={STYLES.s356}>Your Drive session expired. Click Sign in to reconnect — takes 2 seconds.</div>
             </div>
             <button
               onClick={reAuth}
@@ -4925,28 +6342,28 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
           <div style={{ width: 44, height: 44, borderRadius: 10, background: isConnected ? "#1a6b3c" : "var(--color-border-primary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
             🗂️
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Google Drive</div>
+          <div style={STYLES.s206}>
+            <div style={STYLES.s306}>Google Drive</div>
             {isConnected ? (
               <>
                 <div style={{ fontSize: 12, color: tokenExpired ? "#b45309" : "#1a6b3c", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: tokenExpired ? "#f59e0b" : "#1a6b3c", display: "inline-block" }} />
                   {tokenExpired ? "Token expired · " : "Connected · "}{gdrive.email}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                <div style={STYLES.s357}>
                   📁 All backups saved inside <strong>FinTracker/Backup/</strong>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                <div style={STYLES.s357}>
                   🕐 Auto-backup every 6 hrs · Last: {lastBackupStr}
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+              <div style={STYLES.s324}>
                 Not connected — sign in with Google or click Connect.
               </div>
             )}
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <div style={STYLES.s358}>
             {isConnected ? (
               <button style={{ ...btnBase, background: "#fee2e2", color: "#991b1b", padding: "7px 14px", fontSize: 12 }}
                 onClick={handleDisconnect} disabled={!!status}>
@@ -4966,48 +6383,48 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
 
         {/* ── How it works hint ────────────────────────────────────────── */}
         {!isConnected && (
-          <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12, color: "#0369a1", lineHeight: 1.6 }}>
+          <div style={STYLES.s359}>
             💡 <strong>Automatic:</strong> Drive connects when you sign in with Gmail. If it didn't connect, click <strong>Connect</strong> above.
           </div>
         )}
 
         {/* ── Connected actions ─────────────────────────────────────────── */}
         {isConnected && (
-          <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 16 }}>
+          <div style={STYLES.s360}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: showFiles ? 16 : 0 }}>
               <button
                 style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "saving" ? 0.6 : 1 }}
                 onClick={handleSaveToDrive} disabled={!!status}
               >
-                <span style={{ fontSize: 16 }}>☁️</span>
+                <span style={STYLES.s6}>☁️</span>
                 {status === "saving" ? "Saving…" : "Save Backup to Drive"}
               </button>
               <button
                 style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-secondary)", opacity: loadingFiles ? 0.6 : 1 }}
                 onClick={handleListFiles} disabled={loadingFiles || !!status}
               >
-                <span style={{ fontSize: 16 }}>📂</span>
+                <span style={STYLES.s6}>📂</span>
                 {loadingFiles ? "Loading…" : "Browse Backups"}
               </button>
             </div>
 
             {showFiles && (
-              <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ background: "var(--color-background-secondary)", padding: "10px 14px", fontSize: 13, fontWeight: 600, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={STYLES.s361}>
+                <div style={STYLES.s362}>
                   <span>📁 FinTracker / Backup</span>
-                  <button onClick={() => setShowFiles(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1 }}>✕</button>
+                  <button onClick={() => setShowFiles(false)} style={STYLES.s363}>✕</button>
                 </div>
                 {loadingFiles ? (
-                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>Loading…</div>
+                  <div style={STYLES.s364}>Loading…</div>
                 ) : driveFiles.length === 0 ? (
-                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>No backups found. Save your first backup above.</div>
+                  <div style={STYLES.s364}>No backups found. Save your first backup above.</div>
                 ) : (
                   driveFiles.map(f => (
-                    <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", fontSize: 13 }}>
-                      <span style={{ fontSize: 18 }}>📄</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                    <div key={f.id} style={STYLES.s365}>
+                      <span style={STYLES.s64}>📄</span>
+                      <div style={STYLES.s206}>
+                        <div style={STYLES.s366}>{f.name}</div>
+                        <div style={STYLES.s196}>
                           {f.createdTime ? new Date(f.createdTime).toLocaleString() : ""}
                           {f.size ? ` · ${(f.size / 1024).toFixed(1)} KB` : ""}
                         </div>
@@ -5037,27 +6454,27 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
           </div>
         )}
 
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+        <p style={STYLES.s367}>
           🔒 FinTrack only accesses files it creates (<code>drive.file</code> scope). It cannot read or modify any other files in your Drive.
         </p>
       </div>
 
       {/* ── Restore confirm dialog ────────────────────────────────────────── */}
       {restoreConfirm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.6rem", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>Restore from Drive?</div>
-            <p style={{ fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
+        <div style={STYLES.s368}>
+          <div style={STYLES.s369}>
+            <div style={STYLES.s370}>Restore from Drive?</div>
+            <p style={STYLES.s371}>
               This will <strong>replace all current data</strong> with:
             </p>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 500, marginBottom: 16 }}>
+            <div style={STYLES.s372}>
               📄 {restoreConfirm.name}
             </div>
-            <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#92400e" }}>
+            <div style={STYLES.s373}>
               ⚠️ Export your current data first if you want to keep it.
             </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={() => setRestoreConfirm(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <div style={STYLES.s374}>
+              <button onClick={() => setRestoreConfirm(null)} style={STYLES.s375}>Cancel</button>
               <button
                 onClick={() => handleRestore(restoreConfirm)}
                 disabled={status === "loading"}
@@ -5107,12 +6524,12 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
   ];
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
 
       {/* Default Period preference */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
         {sectionTitle("📊", "Overview Default Period", "Choose which period Income & Expenses show by default on the Overview page.")}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+        <div style={STYLES.s376}>
           {PERIODS.map(p => (
             <button key={p.key} onClick={() => setDefaultPeriod(p.key)}
               style={{
@@ -5121,29 +6538,29 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
                 background: defaultPeriod === p.key ? "#e8f5ee" : "var(--color-background-secondary)",
                 cursor: "pointer", textAlign: "center",
               }}>
-              <div style={{ fontSize: 22, marginBottom: 4 }}>{p.icon}</div>
+              <div style={STYLES.s377}>{p.icon}</div>
               <div style={{ fontWeight: defaultPeriod === p.key ? 700 : 500, fontSize: 13, color: defaultPeriod === p.key ? "#1a6b3c" : "var(--color-text-primary)" }}>{p.label}</div>
-              {defaultPeriod === p.key && <div style={{ fontSize: 10, color: "#1a6b3c", marginTop: 3, fontWeight: 600 }}>✓ Default</div>}
+              {defaultPeriod === p.key && <div style={STYLES.s378}>✓ Default</div>}
             </button>
           ))}
         </div>
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
+        <p style={STYLES.s379}>
           💡 This sets what Income & Expenses cards show when you first open Overview. You can still switch periods on the fly.
         </p>
       </div>
 
       <div style={cardStyle}>
         {sectionTitle("🔧", "Feature Toggles", "Turn features on or off. Your data is always preserved — just hidden until you switch back on.")}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={STYLES.s231}>
           {features.map(f => {
             const isOn = toggles[f.key] !== false;
             return (
-              <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px", border: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ fontSize: 20 }}>{f.icon}</span>
+              <div key={f.key} style={STYLES.s380}>
+                <div style={STYLES.s381}>
+                  <span style={STYLES.s51}>{f.icon}</span>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{f.label}</div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>{f.sub}</div>
+                    <div style={STYLES.s306}>{f.label}</div>
+                    <div style={STYLES.s324}>{f.sub}</div>
                   </div>
                 </div>
                 <button
@@ -5166,7 +6583,7 @@ function FeatureToggles({ data, update, cardStyle, sectionTitle }) {
             );
           })}
         </div>
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+        <p style={STYLES.s367}>
           💡 Toggling a feature off hides it from the sidebar. All data (trades, records, history) is kept safe and will reappear the moment you turn it back on.
         </p>
       </div>
@@ -5569,32 +6986,32 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
         {sectionTitle("🗂️", "Google Drive Integration", "Automatic cloud backup to your Google Drive every 6 hours.")}
         
         {/* ── Connection status row ─────────────────────────────────────── */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
+        <div style={STYLES.s382}>
           <div style={{ width: 44, height: 44, borderRadius: 10, background: isConnected ? "#1a6b3c" : "var(--color-border-primary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
             🗂️
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Google Drive</div>
+          <div style={STYLES.s206}>
+            <div style={STYLES.s306}>Google Drive</div>
             {isConnected ? (
               <>
                 <div style={{ fontSize: 12, color: tokenExpired ? "#b45309" : "#1a6b3c", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: tokenExpired ? "#f59e0b" : "#1a6b3c", display: "inline-block" }} />
                   {tokenExpired ? "Token expired · " : "Connected · "}{gdrive.email}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                <div style={STYLES.s357}>
                   📁 All backups saved inside <strong>FinTracker/Backup/</strong>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                <div style={STYLES.s357}>
                   🕐 Auto-backup every 6 hrs · Last: {lastBackupStr}
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+              <div style={STYLES.s324}>
                 Not connected — sign in with Google or click Connect.
               </div>
             )}
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <div style={STYLES.s358}>
             {isConnected ? (
               <button style={{ ...btnBase, background: "#fee2e2", color: "#991b1b", padding: "7px 14px", fontSize: 12 }}
                 onClick={handleDisconnect} disabled={!!status}>
@@ -5614,48 +7031,48 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
 
         {/* ── How it works hint ────────────────────────────────────────── */}
         {!isConnected && (
-          <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12, color: "#0369a1", lineHeight: 1.6 }}>
+          <div style={STYLES.s359}>
             💡 <strong>Automatic:</strong> Drive connects when you sign in with Gmail. If it didn't connect, click <strong>Connect</strong> above.
           </div>
         )}
 
         {/* ── Connected actions ─────────────────────────────────────────── */}
         {isConnected && (
-          <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 16 }}>
+          <div style={STYLES.s360}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: showFiles ? 16 : 0 }}>
               <button
                 style={{ ...btnBase, background: "#1a6b3c", color: "#fff", opacity: status === "saving" ? 0.6 : 1 }}
                 onClick={handleSaveToDrive} disabled={!!status}
               >
-                <span style={{ fontSize: 16 }}>☁️</span>
+                <span style={STYLES.s6}>☁️</span>
                 {status === "saving" ? "Saving…" : "Save Backup to Drive"}
               </button>
               <button
                 style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-secondary)", opacity: loadingFiles ? 0.6 : 1 }}
                 onClick={handleListFiles} disabled={loadingFiles || !!status}
               >
-                <span style={{ fontSize: 16 }}>📂</span>
+                <span style={STYLES.s6}>📂</span>
                 {loadingFiles ? "Loading…" : "Browse Backups"}
               </button>
             </div>
 
             {showFiles && (
-              <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ background: "var(--color-background-secondary)", padding: "10px 14px", fontSize: 13, fontWeight: 600, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={STYLES.s361}>
+                <div style={STYLES.s362}>
                   <span>📁 FinTracker / Backup</span>
-                  <button onClick={() => setShowFiles(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, lineHeight: 1 }}>✕</button>
+                  <button onClick={() => setShowFiles(false)} style={STYLES.s363}>✕</button>
                 </div>
                 {loadingFiles ? (
-                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>Loading…</div>
+                  <div style={STYLES.s364}>Loading…</div>
                 ) : driveFiles.length === 0 ? (
-                  <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "center" }}>No backups found. Save your first backup above.</div>
+                  <div style={STYLES.s364}>No backups found. Save your first backup above.</div>
                 ) : (
                   driveFiles.map(f => (
-                    <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", fontSize: 13 }}>
-                      <span style={{ fontSize: 18 }}>📄</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                    <div key={f.id} style={STYLES.s365}>
+                      <span style={STYLES.s64}>📄</span>
+                      <div style={STYLES.s206}>
+                        <div style={STYLES.s366}>{f.name}</div>
+                        <div style={STYLES.s196}>
                           {f.createdTime ? new Date(f.createdTime).toLocaleString() : ""}
                           {f.size ? ` · ${(f.size / 1024).toFixed(1)} KB` : ""}
                         </div>
@@ -5685,27 +7102,27 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
           </div>
         )}
 
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+        <p style={STYLES.s367}>
           🔒 FinTrack only accesses files it creates (<code>drive.file</code> scope). It cannot read or modify any other files in your Drive.
         </p>
       </div>
 
       {/* ── Restore from Drive confirm dialog ────────────────────────────── */}
       {restoreConfirm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.6rem", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>Restore from Drive?</div>
-            <p style={{ fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
+        <div style={STYLES.s368}>
+          <div style={STYLES.s369}>
+            <div style={STYLES.s370}>Restore from Drive?</div>
+            <p style={STYLES.s371}>
               This will <strong>replace all current data</strong> with:
             </p>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 500, marginBottom: 16 }}>
+            <div style={STYLES.s372}>
               📄 {restoreConfirm.name}
             </div>
-            <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#92400e" }}>
+            <div style={STYLES.s373}>
               ⚠️ Export your current data first if you want to keep it.
             </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={() => setRestoreConfirm(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <div style={STYLES.s374}>
+              <button onClick={() => setRestoreConfirm(null)} style={STYLES.s375}>Cancel</button>
               <button
                 onClick={() => handleRestore(restoreConfirm)}
                 disabled={status === "loading"}
@@ -5721,11 +7138,11 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
       {/* Token expired re-auth prompt */}
       {tokenExpired && !isConnected && (
         <div style={{ ...cardStyle, background: "#fef3c7", border: "1px solid #f59e0b", marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-            <span style={{ fontSize: 24 }}>⚠️</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: "#92400e" }}>Google Drive Token Expired</div>
-              <div style={{ fontSize: 12, color: "#92400e", marginTop: 2 }}>
+          <div style={STYLES.s383}>
+            <span style={STYLES.s384}>⚠️</span>
+            <div style={STYLES.s354}>
+              <div style={STYLES.s385}>Google Drive Token Expired</div>
+              <div style={STYLES.s386}>
                 Your authentication has expired. Sign in again to reconnect Drive.
               </div>
             </div>
@@ -5743,23 +7160,23 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
       {/* ── Export Card ─────────────────────────────────────────────────── */}
       <div style={cardStyle}>
         {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 }}>
+        <p style={STYLES.s387}>
           Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, and all settings.
           Store this file somewhere safe (email to yourself, cloud storage, or external drive).
         </p>
         <button style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }} onClick={handleExport}>
-          <span style={{ fontSize: 18 }}>⬇️</span> Export All Data
+          <span style={STYLES.s64}>⬇️</span> Export All Data
         </button>
       </div>
 
       {/* ── Import Card ─────────────────────────────────────────────────── */}
       <div style={cardStyle}>
         {sectionTitle("📥", "Import Data", "Restore your data from a previously exported FinTrack backup file.")}
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
+        <p style={STYLES.s388}>
           Select a <strong>fintrack_backup_*.json</strong> file. This will <strong>replace all current data</strong> with the backup.
           Your Google account stays signed in.
         </p>
-        <div style={{ background: "#fef3c7", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#92400e" }}>
+        <div style={STYLES.s389}>
           ⚠️ Importing will overwrite your existing data. Make sure to export first if you want to keep the current state.
         </div>
 
@@ -5768,7 +7185,7 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
           ref={importRef}
           type="file"
           accept=".json,application/json"
-          style={{ display: "none" }}
+          style={STYLES.s390}
           onChange={handleFileChange}
         />
         <button
@@ -5776,18 +7193,18 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
           onClick={() => importRef.current?.click()}
           disabled={importing}
         >
-          <span style={{ fontSize: 18 }}>📂</span>
+          <span style={STYLES.s64}>📂</span>
           {importing ? "Reading file…" : "Choose Backup File"}
         </button>
 
         {/* Status messages */}
         {importStatus === "success" && (
-          <div style={{ marginTop: 12, background: "#d1fae5", border: "0.5px solid #6ee7b7", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#065f46" }}>
+          <div style={STYLES.s391}>
             ✅ {importMsg}
           </div>
         )}
         {importStatus === "error" && (
-          <div style={{ marginTop: 12, background: "#fee2e2", border: "0.5px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#991b1b" }}>
+          <div style={STYLES.s392}>
             ❌ {importMsg}
           </div>
         )}
@@ -5795,27 +7212,19 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
 
       {/* ── Confirm Dialog ───────────────────────────────────────────────── */}
       {showConfirm && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 9999, padding: 16,
-        }}>
-          <div style={{
-            background: "var(--color-background-primary)", borderRadius: 16,
-            padding: "1.6rem", maxWidth: 420, width: "100%",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-          }}>
-            <div style={{ fontSize: 28, marginBottom: 8, textAlign: "center" }}>⚠️</div>
-            <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, textAlign: "center" }}>Replace All Data?</h3>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center", lineHeight: 1.6 }}>
+        <div style={STYLES.s393}>
+          <div style={STYLES.s394}>
+            <div style={STYLES.s395}>⚠️</div>
+            <h3 style={STYLES.s396}>Replace All Data?</h3>
+            <p style={STYLES.s397}>
               This will <strong>permanently overwrite</strong> all your current data with the selected backup.
             </p>
             {pendingImport?._meta?.exportedAt && (
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center", marginBottom: 16 }}>
+              <p style={STYLES.s398}>
                 Backup date: <strong>{pendingImport._meta.exportedAt.slice(0, 10)}</strong>
               </p>
             )}
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <div style={STYLES.s399}>
               <button
                 style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-primary)" }}
                 onClick={cancelImport}
@@ -5857,32 +7266,32 @@ function ProjectSettings({ data, update, cardStyle, sectionTitle }) {
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       <div style={cardStyle}>
         {sectionTitle("📋", "Project Task Types", "Customize the task type labels used across all your projects.")}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        <div style={STYLES.s400}>
           {taskTypes.map(t => (
-            <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, background: "#e8f5ee", border: "0.5px solid #1a6b3c33", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#1a6b3c" }}>{t}</span>
-              <button onClick={() => deleteType(t)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2, opacity: 0.7 }} title="Remove">✕</button>
+            <div key={t} style={STYLES.s401}>
+              <span style={STYLES.s124}>{t}</span>
+              <button onClick={() => deleteType(t)} style={STYLES.s402} title="Remove">✕</button>
             </div>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>New Task Type</label>
+        <div style={STYLES.s403}>
+          <div style={STYLES.s354}>
+            <label style={STYLES.s132}>New Task Type</label>
             <input
               placeholder="e.g. QA, Deployment, Client Call…"
               value={newType}
               onChange={e => setNewType(e.target.value)}
               onKeyDown={e => e.key === "Enter" && addType()}
-              style={{ width: "100%", boxSizing: "border-box" }}
+              style={STYLES.s45}
             />
           </div>
-          <button onClick={addType} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
-          {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ Saved</span>}
+          <button onClick={addType} style={STYLES.s404}>+ Add</button>
+          {saved && <span style={STYLES.s405}>✓ Saved</span>}
         </div>
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+        <p style={STYLES.s367}>
           💡 These types appear in the task type dropdown when adding or editing tasks in any project. Deleting a type won't remove it from existing tasks.
         </p>
       </div>
@@ -5929,19 +7338,19 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       <div style={cardStyle}>
         {sectionTitle("◉", "Index Options — Lot Sizes", "Default lot sizes for index contracts.")}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+        <div style={STYLES.s406}>
           {[...indexItems, ...(custom["Index Options"] || [])].map(name => (
             <div key={name}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input type="number" value={form[name] ?? ""} onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontWeight: 600, fontSize: 15 }} />
-                <span style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>/ lot</span>
+              <label style={STYLES.s407}>{name}</label>
+              <div style={STYLES.s408}>
+                <input type="number" value={form[name] ?? ""} onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))} style={STYLES.s409} />
+                <span style={STYLES.s410}>/ lot</span>
               </div>
               {DEFAULT_LOT_SIZES[name] !== undefined && Number(form[name]) !== DEFAULT_LOT_SIZES[name] && (
-                <div style={{ fontSize: 11, color: "#f0a020", marginTop: 3 }}>Default: {DEFAULT_LOT_SIZES[name]}</div>
+                <div style={STYLES.s411}>Default: {DEFAULT_LOT_SIZES[name]}</div>
               )}
             </div>
           ))}
@@ -5949,56 +7358,56 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
       </div>
       <div style={cardStyle}>
         {sectionTitle("◈", "Commodities — Lot Sizes", "Default lot sizes for commodity contracts on MCX.")}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+        <div style={STYLES.s406}>
           {[...commodityItems, ...(custom["Commodities"] || [])].map(name => (
             <div key={name}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 5, fontWeight: 500 }}>{name}</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input type="number" value={form[name] ?? ""} onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontWeight: 600, fontSize: 15 }} />
-                <span style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>/ lot</span>
+              <label style={STYLES.s407}>{name}</label>
+              <div style={STYLES.s408}>
+                <input type="number" value={form[name] ?? ""} onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))} style={STYLES.s409} />
+                <span style={STYLES.s410}>/ lot</span>
               </div>
               {DEFAULT_LOT_SIZES[name] !== undefined && Number(form[name]) !== DEFAULT_LOT_SIZES[name] && (
-                <div style={{ fontSize: 11, color: "#f0a020", marginTop: 3 }}>Default: {DEFAULT_LOT_SIZES[name]}</div>
+                <div style={STYLES.s411}>Default: {DEFAULT_LOT_SIZES[name]}</div>
               )}
             </div>
           ))}
         </div>
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
-        <button onClick={handleSaveLotSizes} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "9px 24px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Save Lot Sizes</button>
-        <button onClick={handleReset} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "9px 20px", cursor: "pointer", fontSize: 14, color: "var(--color-text-secondary)" }}>Reset to Defaults</button>
-        {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ {savedMsg}</span>}
+      <div style={STYLES.s412}>
+        <button onClick={handleSaveLotSizes} style={STYLES.s413}>Save Lot Sizes</button>
+        <button onClick={handleReset} style={STYLES.s414}>Reset to Defaults</button>
+        {saved && <span style={STYLES.s405}>✓ {savedMsg}</span>}
       </div>
       <div style={cardStyle}>
         {sectionTitle("⊕", "Manage Instruments", "Add custom instruments to any category.")}
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.5fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 20 }}>
+        <div style={STYLES.s415}>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
-            <select value={newInstrument.category} onChange={e => setNewInstrument(p => ({ ...p, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+            <label style={STYLES.s132}>Category</label>
+            <select value={newInstrument.category} onChange={e => setNewInstrument(p => ({ ...p, category: e.target.value }))} style={STYLES.s45}>
               <option>Index Options</option><option>Stock Options</option><option>Commodities</option>
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Instrument Name</label>
-            <input placeholder="e.g. MIDCPNIFTY, SilverM" value={newInstrument.name} onChange={e => setNewInstrument(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <label style={STYLES.s132}>Instrument Name</label>
+            <input placeholder="e.g. MIDCPNIFTY, SilverM" value={newInstrument.name} onChange={e => setNewInstrument(p => ({ ...p, name: e.target.value }))} style={STYLES.s45} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Lot Size <span style={{ color: "#aaa" }}>(optional)</span></label>
-            <input type="number" placeholder="e.g. 75" value={newInstrument.lotSize} onChange={e => setNewInstrument(p => ({ ...p, lotSize: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <label style={STYLES.s132}>Lot Size <span style={STYLES.s416}>(optional)</span></label>
+            <input type="number" placeholder="e.g. 75" value={newInstrument.lotSize} onChange={e => setNewInstrument(p => ({ ...p, lotSize: e.target.value }))} style={STYLES.s45} />
           </div>
-          <button onClick={handleAddInstrument} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+          <button onClick={handleAddInstrument} style={STYLES.s417}>+ Add</button>
         </div>
         {["Index Options", "Stock Options", "Commodities"].map(cat => {
           const items = custom[cat] || []; if (items.length === 0) return null;
           return (
-            <div key={cat} style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{cat}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <div key={cat} style={STYLES.s43}>
+              <div style={STYLES.s418}>{cat}</div>
+              <div style={STYLES.s256}>
                 {items.map(name => (
-                  <div key={name} style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 10px", fontSize: 13 }}>
-                    <span style={{ fontWeight: 500 }}>{name}</span>
-                    {lotSizes[name] && <span style={{ fontSize: 11, color: "#1a6b3c", fontWeight: 600 }}>· {lotSizes[name]}/lot</span>}
-                    <button onClick={() => handleRemoveInstrument(cat, name)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2 }}>✕</button>
+                  <div key={name} style={STYLES.s419}>
+                    <span style={STYLES.s123}>{name}</span>
+                    {lotSizes[name] && <span style={STYLES.s420}>· {lotSizes[name]}/lot</span>}
+                    <button onClick={() => handleRemoveInstrument(cat, name)} style={STYLES.s421}>✕</button>
                   </div>
                 ))}
               </div>
@@ -6006,10 +7415,10 @@ function TradingSettings({ data, update, cardStyle, sectionTitle }) {
           );
         })}
         {["Index Options", "Stock Options", "Commodities"].every(cat => (custom[cat] || []).length === 0) && (
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)", fontStyle: "italic" }}>No custom instruments added yet.</p>
+          <p style={STYLES.s422}>No custom instruments added yet.</p>
         )}
       </div>
-      <div style={{ background: "#fef9e7", border: "0.5px solid #f0c040", borderRadius: 10, padding: "0.8rem 1rem", fontSize: 13, color: "#7a5a00" }}>
+      <div style={STYLES.s423}>
         ⚠ Lot size changes affect all future P&L calculations. Existing trades will recalculate automatically.
       </div>
     </div>
@@ -6063,35 +7472,35 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       {/* Edit Account Modal */}
       {editAcct && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Account</div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account Name</label>
-              <input value={editAcct.name} onChange={e => setEditAcct(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s129}>
+          <div style={STYLES.s130}>
+            <div style={STYLES.s131}>✏️ Edit Account</div>
+            <div style={STYLES.s56}>
+              <label style={STYLES.s132}>Account Name</label>
+              <input value={editAcct.name} onChange={e => setEditAcct(p => ({ ...p, name: e.target.value }))} style={STYLES.s45} />
             </div>
             {editAcct.type === "Credit Card" && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={STYLES.s174}>
                 <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Outstanding Balance (₹)</label>
-                  <input type="number" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s132}>Outstanding Balance (₹)</label>
+                  <input type="number" value={editAcct.openingBalance ?? ""} onChange={e => setEditAcct(p => ({ ...p, openingBalance: parseFloat(e.target.value) || 0 }))} style={STYLES.s45} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
-                  <input type="number" value={editAcct.creditLimit || ""} onChange={e => setEditAcct(p => ({ ...p, creditLimit: parseFloat(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s132}>Card Limit (₹)</label>
+                  <input type="number" value={editAcct.creditLimit || ""} onChange={e => setEditAcct(p => ({ ...p, creditLimit: parseFloat(e.target.value) || 0 }))} style={STYLES.s45} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Due Date (day)</label>
-                  <input type="number" min="1" max="31" value={editAcct.dueDate || ""} onChange={e => setEditAcct(p => ({ ...p, dueDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <label style={STYLES.s132}>Due Date (day)</label>
+                  <input type="number" min="1" max="31" value={editAcct.dueDate || ""} onChange={e => setEditAcct(p => ({ ...p, dueDate: e.target.value }))} style={STYLES.s45} />
                 </div>
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-              <button onClick={() => setEditAcct(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditAcct} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            <div style={STYLES.s178}>
+              <button onClick={() => setEditAcct(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditAcct} style={STYLES.s138}>Save</button>
             </div>
           </div>
         </div>
@@ -6106,27 +7515,27 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
         const diffColor = diff === null || diff === 0 ? "var(--color-text-secondary)" : (isCC ? (diff < 0 ? "#1a6b3c" : "#d44") : (diff > 0 ? "#1a6b3c" : "#d44"));
         const isValid = adjustAmt !== "" && !isNaN(targetBal);
         return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-              <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Adjust Balance</div>
-              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>{adjusting.name}</div>
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>New Balance (₹)</label>
-                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Current: <strong>{fmtCur(currentBal)}</strong></span>
+          <div style={STYLES.s129}>
+            <div style={STYLES.s130}>
+              <div style={STYLES.s424}>Adjust Balance</div>
+              <div style={STYLES.s425}>{adjusting.name}</div>
+              <div style={STYLES.s56}>
+                <div style={STYLES.s426}>
+                  <label style={STYLES.s53}>New Balance (₹)</label>
+                  <span style={STYLES.s72}>Current: <strong>{fmtCur(currentBal)}</strong></span>
                 </div>
-                <input type="number" placeholder={String(currentBal)} value={adjustAmt} onChange={e => setAdjustAmt(e.target.value)} style={{ width: "100%", boxSizing: "border-box", fontSize: 16, fontWeight: 600 }} autoFocus />
+                <input type="number" placeholder={String(currentBal)} value={adjustAmt} onChange={e => setAdjustAmt(e.target.value)} style={STYLES.s427} autoFocus />
                 {diffLabel && (
                   <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: diffColor }}>{diffLabel}</div>
                 )}
               </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Note (optional)</label>
-                <input placeholder="e.g. Salary credit" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+              <div style={STYLES.s134}>
+                <label style={STYLES.s132}>Note (optional)</label>
+                <input placeholder="e.g. Salary credit" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} style={STYLES.s45} />
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={STYLES.s249}>
                 <button onClick={applyAdjustment} disabled={!isValid} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: isValid ? "pointer" : "not-allowed", fontWeight: 600, fontSize: 14, opacity: isValid ? 1 : 0.5 }}>Set Balance</button>
-                <button onClick={() => { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+                <button onClick={() => { setAdjusting(null); setAdjustAmt(""); setAdjustNote(""); }} style={STYLES.s428}>Cancel</button>
               </div>
             </div>
           </div>
@@ -6136,32 +7545,32 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
       {/* Add Account */}
       <div style={cardStyle}>
         {sectionTitle("🏦", "Add Account", "Add bank accounts, credit cards or cash wallets.")}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "flex-end" }}>
+        <div style={STYLES.s429}>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Account Name</label>
-            <input placeholder="e.g. HDFC Savings, SBI, Axis CC" value={acctForm.name} onChange={e => setAcctForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} onKeyDown={e => e.key === "Enter" && addAccount()} />
+            <label style={STYLES.s132}>Account Name</label>
+            <input placeholder="e.g. HDFC Savings, SBI, Axis CC" value={acctForm.name} onChange={e => setAcctForm(p => ({ ...p, name: e.target.value }))} style={STYLES.s45} onKeyDown={e => e.key === "Enter" && addAccount()} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
-            <select value={acctForm.type} onChange={e => setAcctForm(p => ({ ...p, type: e.target.value }))} style={{ boxSizing: "border-box" }}>
+            <label style={STYLES.s132}>Type</label>
+            <select value={acctForm.type} onChange={e => setAcctForm(p => ({ ...p, type: e.target.value }))} style={STYLES.s430}>
               <option>Bank</option><option>Credit Card</option><option>Cash</option>
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Opening Balance (₹)</label>
-            <input type="number" placeholder="e.g. 10000" value={acctForm.balance} onChange={e => setAcctForm(p => ({ ...p, balance: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <label style={STYLES.s132}>Opening Balance (₹)</label>
+            <input type="number" placeholder="e.g. 10000" value={acctForm.balance} onChange={e => setAcctForm(p => ({ ...p, balance: e.target.value }))} style={STYLES.s45} />
           </div>
           <GreenBtn onClick={addAccount} label="+ Add" />
         </div>
         {acctForm.type === "Credit Card" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+          <div style={STYLES.s431}>
             <div>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Card Limit (₹)</label>
-              <input type="number" placeholder="e.g. 1,00,000" value={acctForm.creditLimit} onChange={e => setAcctForm(p => ({ ...p, creditLimit: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s132}>Card Limit (₹)</label>
+              <input type="number" placeholder="e.g. 1,00,000" value={acctForm.creditLimit} onChange={e => setAcctForm(p => ({ ...p, creditLimit: e.target.value }))} style={STYLES.s45} />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Due Date (day of month)</label>
-              <input type="number" min="1" max="31" placeholder="e.g. 15" value={acctForm.dueDate} onChange={e => setAcctForm(p => ({ ...p, dueDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s132}>Due Date (day of month)</label>
+              <input type="number" min="1" max="31" placeholder="e.g. 15" value={acctForm.dueDate} onChange={e => setAcctForm(p => ({ ...p, dueDate: e.target.value }))} style={STYLES.s45} />
             </div>
           </div>
         )}
@@ -6182,33 +7591,33 @@ function AccountSettings({ data, update, cardStyle, sectionTitle }) {
               if (acct.type === "Credit Card") bal = (acct.openingBalance || 0) + txExp - txInc;
               else bal = (acct.openingBalance || 0) + txInc - txExp;
               const typeBadge = acct.type === "Credit Card"
-                ? <span style={{ fontSize: 10, background: "#fff3e0", color: "#e65100", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CC</span>
+                ? <span style={STYLES.s432}>CC</span>
                 : acct.type === "Cash"
-                ? <span style={{ fontSize: 10, background: "#f0fdf4", color: "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>CASH</span>
-                : <span style={{ fontSize: 10, background: "#f1f5f9", color: "#64748b", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>BANK</span>;
+                ? <span style={STYLES.s433}>CASH</span>
+                : <span style={STYLES.s434}>BANK</span>;
               return (
-                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 12px 9px 0" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{acct.name}</span>
+                <div style={STYLES.s435}>
+                  <div style={STYLES.s206}>
+                    <div style={STYLES.s436}>
+                      <span style={STYLES.s306}>{acct.name}</span>
                       {typeBadge}
                     </div>
-                    <div style={{ display: "flex", gap: 10, fontSize: 12, alignItems: "center" }}>
+                    <div style={STYLES.s437}>
                       <span style={{ fontWeight: 600, color: bal >= 0 ? "var(--color-text-primary)" : "#d44" }}>{fmtCur(bal)}</span>
                       {acct.type !== "Credit Card" && (
                         <>
-                          <span style={{ color: "#1a6b3c", fontSize: 11 }}>↑{fmtCur(txInc)}</span>
-                          <span style={{ color: "#d44", fontSize: 11 }}>↓{fmtCur(txExp)}</span>
+                          <span style={STYLES.s438}>↑{fmtCur(txInc)}</span>
+                          <span style={STYLES.s439}>↓{fmtCur(txExp)}</span>
                         </>
                       )}
                       {acct.type === "Credit Card" && acct.creditLimit > 0 && (
-                        <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>Limit: {fmtCur(acct.creditLimit)}</span>
+                        <span style={STYLES.s440}>Limit: {fmtCur(acct.creditLimit)}</span>
                       )}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <div style={STYLES.s441}>
                     <button onClick={() => { setAdjusting(acct); setAdjustAmt(""); setAdjustNote(""); }}
-                      style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>± Adjust</button>
+                      style={STYLES.s442}>± Adjust</button>
                     <ThreeDotMenu onEdit={() => setEditAcct({ ...acct })} onDelete={() => deleteAccount(acct.id)} />
                   </div>
                 </div>
@@ -6256,23 +7665,23 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle, navItems, n
   }
 
   return (
-    <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+    <div style={STYLES.s443}>
 
       {editCat && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(340px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>✏️ Rename Category</div>
-            <input value={editCatName} onChange={e => setEditCatName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEditCat()} style={{ width: "100%", boxSizing: "border-box", marginBottom: 14, fontSize: 14 }} autoFocus />
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => { setEditCat(null); setEditCatName(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditCat} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+        <div style={STYLES.s129}>
+          <div style={STYLES.s444}>
+            <div style={STYLES.s445}>✏️ Rename Category</div>
+            <input value={editCatName} onChange={e => setEditCatName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEditCat()} style={STYLES.s446} autoFocus />
+            <div style={STYLES.s136}>
+              <button onClick={() => { setEditCat(null); setEditCatName(""); }} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditCat} style={STYLES.s138}>Save</button>
             </div>
           </div>
         </div>
       )}
       {["expense", "income"].map(type => (
         <Card key={type} title={type === "expense" ? "🔴 Expense Categories" : "🟢 Income Categories"}>
-          <div style={{ marginBottom: 12 }}>
+          <div style={STYLES.s115}>
             {(categories[type] || []).length === 0
               ? <EmptyState msg="No categories yet." />
               : <DraggableList
@@ -6280,35 +7689,35 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle, navItems, n
                   keyFn={cat => cat}
                   onReorder={newList => reorderCategories(type, newList)}
                   renderItem={cat => (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px 7px 0" }}>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>{cat}</span>
+                    <div style={STYLES.s447}>
+                      <span style={STYLES.s448}>{cat}</span>
                       <ThreeDotMenu onEdit={() => { setEditCat({ type, oldName: cat }); setEditCatName(cat); }} onDelete={() => deleteCategory(type, cat)} />
                     </div>
                   )}
                 />
             }
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input placeholder={`New ${type} category`} value={newCat.type === type ? newCat.name : ""} onFocus={() => setNewCat(p => ({ ...p, type }))} onChange={e => setNewCat({ type, name: e.target.value })} onKeyDown={e => e.key === "Enter" && addCategory()} style={{ flex: 1, boxSizing: "border-box" }} />
-            <button onClick={addCategory} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+          <div style={STYLES.s249}>
+            <input placeholder={`New ${type} category`} value={newCat.type === type ? newCat.name : ""} onFocus={() => setNewCat(p => ({ ...p, type }))} onChange={e => setNewCat({ type, name: e.target.value })} onKeyDown={e => e.key === "Enter" && addCategory()} style={STYLES.s449} />
+            <button onClick={addCategory} style={STYLES.s450}>+ Add</button>
           </div>
         </Card>
       ))}
-      <div style={{ gridColumn: "span 2" }}>
+      <div style={STYLES.s177}>
         <LiabilityTypesSettings data={data} update={update} cardStyle={cardStyle} sectionTitle={sectionTitle} />
       </div>
 
       {/* Sidebar Order card — at the bottom */}
       <div style={{ gridColumn: "span 2", ...cardStyle }}>
         {sectionTitle("☰", "Sidebar Order", "Drag to reorder the navigation items in the sidebar.")}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={STYLES.s241}>
           <button
             onClick={() => { setNavEditMode(m => !m); setNavDragOver(null); navDragIdx.current = null; }}
             style={{ background: navEditMode ? "#1a6b3c" : "none", border: navEditMode ? "none" : "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: navEditMode ? "#fff" : "var(--color-text-secondary)", fontWeight: 500 }}
           >{navEditMode ? "✓ Done Reordering" : "✏️ Reorder Items"}</button>
-          {navEditMode && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Drag the ⠿ handles to change order</span>}
+          {navEditMode && <span style={STYLES.s53}>Drag the ⠿ handles to change order</span>}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={STYLES.s451}>
           {(navItems || []).map((item, i) => (
             <div key={item.id}
               draggable={navEditMode}
@@ -6319,8 +7728,8 @@ function CategoriesSettings({ data, update, cardStyle, sectionTitle, navItems, n
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: navDragOver === i ? "1.5px solid #1a6b3c" : "0.5px solid var(--color-border-secondary)", background: navDragOver === i ? "#e8f5ee" : "var(--color-background-secondary)", cursor: navEditMode ? "grab" : "default", transition: "background 0.15s" }}
             >
               <span style={{ color: navEditMode ? "var(--color-text-secondary)" : "var(--color-border-secondary)", fontSize: 14, userSelect: "none", opacity: navEditMode ? 1 : 0.3 }}>⠿</span>
-              <span style={{ fontSize: 16 }}>{item.icon}</span>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{item.label}</span>
+              <span style={STYLES.s6}>{item.icon}</span>
+              <span style={STYLES.s448}>{item.label}</span>
             </div>
           ))}
         </div>
@@ -6350,23 +7759,23 @@ function LiabilityTypesSettings({ data, update, cardStyle, sectionTitle }) {
   return (
     <div style={cardStyle}>
       {sectionTitle("🏦", "Liability Types", "Customize the liability type options shown when adding or editing liabilities.")}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+      <div style={STYLES.s400}>
         {types.map(t => (
-          <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff3e0", border: "0.5px solid #e6520033", borderRadius: 8, padding: "5px 10px 5px 12px", fontSize: 13 }}>
-            <span style={{ fontWeight: 500, color: "#b45309" }}>{t}</span>
-            <button onClick={() => deleteType(t)} style={{ background: "none", border: "none", color: "#d44", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", marginLeft: 2, opacity: 0.7 }} title="Remove">✕</button>
+          <div key={t} style={STYLES.s452}>
+            <span style={STYLES.s453}>{t}</span>
+            <button onClick={() => deleteType(t)} style={STYLES.s402} title="Remove">✕</button>
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-        <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>New Liability Type</label>
-          <input placeholder="e.g. Education Loan, Medical Loan…" value={newType} onChange={e => setNewType(e.target.value)} onKeyDown={e => e.key === "Enter" && addType()} style={{ width: "100%", boxSizing: "border-box" }} />
+      <div style={STYLES.s403}>
+        <div style={STYLES.s354}>
+          <label style={STYLES.s132}>New Liability Type</label>
+          <input placeholder="e.g. Education Loan, Medical Loan…" value={newType} onChange={e => setNewType(e.target.value)} onKeyDown={e => e.key === "Enter" && addType()} style={STYLES.s45} />
         </div>
-        <button onClick={addType} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
-        {saved && <span style={{ color: "#1a6b3c", fontSize: 13, fontWeight: 500 }}>✓ Saved</span>}
+        <button onClick={addType} style={STYLES.s404}>+ Add</button>
+        {saved && <span style={STYLES.s405}>✓ Saved</span>}
       </div>
-      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+      <p style={STYLES.s367}>
         💡 These types appear in the Type dropdown when adding or editing a liability. Deleting a type won't affect existing liabilities.
       </p>
     </div>
@@ -6452,59 +7861,59 @@ function TransferTab({ data, update, accounts }) {
     <div>
       {/* Edit Transfer Modal */}
       {editTransfer && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(400px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Transfer</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={STYLES.s129}>
+          <div style={STYLES.s454}>
+            <div style={STYLES.s131}>✏️ Edit Transfer</div>
+            <div style={STYLES.s163}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>From Account</label>
-                <select value={editTransfer.fromId} onChange={e => setEditTransfer(p => ({ ...p, fromId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <label style={STYLES.s132}>From Account</label>
+                <select value={editTransfer.fromId} onChange={e => setEditTransfer(p => ({ ...p, fromId: e.target.value }))} style={STYLES.s45}>
                   {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>To Account</label>
-                <select value={editTransfer.toId} onChange={e => setEditTransfer(p => ({ ...p, toId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <label style={STYLES.s132}>To Account</label>
+                <select value={editTransfer.toId} onChange={e => setEditTransfer(p => ({ ...p, toId: e.target.value }))} style={STYLES.s45}>
                   {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Amount (₹)</label>
-                <input type="number" value={editTransfer.amount} onChange={e => setEditTransfer(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontWeight: 600 }} />
+                <label style={STYLES.s132}>Amount (₹)</label>
+                <input type="number" value={editTransfer.amount} onChange={e => setEditTransfer(p => ({ ...p, amount: e.target.value }))} style={STYLES.s176} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Date</label>
-                <input type="date" value={editTransfer.date} onChange={e => setEditTransfer(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Date</label>
+                <input type="date" value={editTransfer.date} onChange={e => setEditTransfer(p => ({ ...p, date: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Note (optional)</label>
-                <input value={editTransfer.note} onChange={e => setEditTransfer(p => ({ ...p, note: e.target.value }))} placeholder="e.g. Savings transfer" style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Note (optional)</label>
+                <input value={editTransfer.note} onChange={e => setEditTransfer(p => ({ ...p, note: e.target.value }))} placeholder="e.g. Savings transfer" style={STYLES.s45} />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-              <button onClick={() => setEditTransfer(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditTransfer} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save Changes</button>
+            <div style={STYLES.s178}>
+              <button onClick={() => setEditTransfer(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditTransfer} style={STYLES.s138}>Save Changes</button>
             </div>
           </div>
         </div>
       )}
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16, marginTop: 16 }}>
+    <div style={STYLES.s455}>
 
       {/* Left: form */}
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={STYLES.s187}>
+        <div style={STYLES.s456}>
           <span>↔</span> Transfer Money
         </div>
 
         {accounts.length < 2 && (
-          <div style={{ background: "#fef9c3", border: "0.5px solid #fbbf24", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#92400e", marginBottom: 14 }}>
+          <div style={STYLES.s457}>
             ⚠ You need at least 2 accounts to make a transfer.
           </div>
         )}
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>From Account *</label>
-          <select value={form.fromId} onChange={e => setForm(p => ({ ...p, fromId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+        <div style={STYLES.s115}>
+          <label style={STYLES.s181}>From Account *</label>
+          <select value={form.fromId} onChange={e => setForm(p => ({ ...p, fromId: e.target.value }))} style={STYLES.s45}>
             <option value="">— Select source —</option>
             {acctGroups.map(g => (
               <optgroup key={g.label} label={g.label}>
@@ -6514,11 +7923,11 @@ function TransferTab({ data, update, accounts }) {
           </select>
         </div>
 
-        <div style={{ textAlign: "center", fontSize: 22, color: "#1a6b3c", margin: "2px 0 10px", fontWeight: 700 }}>↓</div>
+        <div style={STYLES.s458}>↓</div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>To Account *</label>
-          <select value={form.toId} onChange={e => setForm(p => ({ ...p, toId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+        <div style={STYLES.s115}>
+          <label style={STYLES.s181}>To Account *</label>
+          <select value={form.toId} onChange={e => setForm(p => ({ ...p, toId: e.target.value }))} style={STYLES.s45}>
             <option value="">— Select destination —</option>
             {acctGroups.map(g => (
               <optgroup key={g.label} label={g.label}>
@@ -6528,36 +7937,36 @@ function TransferTab({ data, update, accounts }) {
           </select>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Amount (₹) *</label>
-          <input type="number" placeholder="e.g. 5000" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s115}>
+          <label style={STYLES.s181}>Amount (₹) *</label>
+          <input type="number" placeholder="e.g. 5000" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} style={STYLES.s45} />
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Note (optional)</label>
-          <input type="text" placeholder="e.g. Savings transfer, Bill payment" value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s115}>
+          <label style={STYLES.s181}>Note (optional)</label>
+          <input type="text" placeholder="e.g. Savings transfer, Bill payment" value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} style={STYLES.s45} />
         </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Date</label>
-          <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s134}>
+          <label style={STYLES.s181}>Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} style={STYLES.s45} />
         </div>
 
         {error && (
-          <div style={{ fontSize: 12, color: "#d44", marginBottom: 10, background: "#fdf0f0", borderRadius: 6, padding: "6px 10px" }}>⚠ {error}</div>
+          <div style={STYLES.s459}>⚠ {error}</div>
         )}
 
         {/* Live preview */}
         {form.fromId && form.toId && parseFloat(form.amount) > 0 && (
-          <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#0369a1", marginBottom: 6 }}>📋 Preview</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={STYLES.s460}>
+            <div style={STYLES.s461}>📋 Preview</div>
+            <div style={STYLES.s462}>
               <span style={{ ...badgeStyle(form.fromId), borderRadius: 5, padding: "2px 8px", fontSize: 12, fontWeight: 500 }}>{getAcctName(form.fromId)}</span>
-              <span style={{ fontWeight: 700, color: "#0369a1", fontSize: 16 }}>→</span>
+              <span style={STYLES.s463}>→</span>
               <span style={{ ...badgeStyle(form.toId), borderRadius: 5, padding: "2px 8px", fontSize: 12, fontWeight: 500 }}>{getAcctName(form.toId)}</span>
-              <span style={{ marginLeft: "auto", fontWeight: 700, color: "#0369a1", fontSize: 14 }}>₹{parseFloat(form.amount).toLocaleString("en-IN")}</span>
+              <span style={STYLES.s464}>₹{parseFloat(form.amount).toLocaleString("en-IN")}</span>
             </div>
-            <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+            <div style={STYLES.s465}>
               This will create an expense on <b>{getAcctName(form.fromId)}</b> and an income on <b>{getAcctName(form.toId)}</b>. Both are hidden from Expenses/Income tabs.
             </div>
           </div>
@@ -6570,19 +7979,19 @@ function TransferTab({ data, update, accounts }) {
       </div>
 
       {/* Right: history */}
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem" }}>
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>
+      <div style={STYLES.s187}>
+        <div style={STYLES.s466}>
           Transfer History
-          <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)", marginLeft: 8 }}>{transfers.length} transfers</span>
+          <span style={STYLES.s467}>{transfers.length} transfers</span>
         </div>
 
         {transfers.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "3.5rem 1rem", color: "var(--color-text-secondary)", fontSize: 13 }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>↔</div>
+          <div style={STYLES.s468}>
+            <div style={STYLES.s469}>↔</div>
             No transfers yet.<br/>Use the form to move money between accounts.
           </div>
         ) : (
-          <div style={{ margin: "0 -1.2rem -1.2rem" }}>
+          <div style={STYLES.s470}>
             {transfers.map((t, idx) => {
               const toAcct = accounts.find(a => String(a.id) === String(t.transferToId));
               const fromAcct = accounts.find(a => String(a.id) === String(t.bankId));
@@ -6677,8 +8086,8 @@ function AnalysisTab({ data, update, accounts }) {
     const pts = months.map(k => buckets[k]);
 
     if (!pts.length) return (
-      <div style={{textAlign:"center",padding:"4rem",color:"var(--color-text-secondary)"}}>
-        <div style={{fontSize:40,marginBottom:8}}>📊</div>No data in this period.
+      <div style={STYLES.s471}>
+        <div style={STYLES.s472}>📊</div>No data in this period.
       </div>
     );
 
@@ -6715,9 +8124,9 @@ function AnalysisTab({ data, update, accounts }) {
     const p = hovered!==null ? pts[hovered] : null;
 
     return (
-      <div style={{position:"relative"}}>
+      <div style={STYLES.s473}>
         <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H+PB}`}
-          style={{display:"block",overflow:"visible",cursor:"crosshair"}}
+          style={STYLES.s474}
           onMouseMove={onSvgMouseMove}
           onMouseLeave={()=>setHovered(null)}>
           <defs>
@@ -6760,8 +8169,8 @@ function AnalysisTab({ data, update, accounts }) {
             <g key={i}>
               {/* Invisible wide hit target */}
               <rect x={xOf(i)-(n>1?cw/(n-1)/2:30)} y={PT} width={n>1?cw/(n-1):60} height={ch} fill="transparent"/>
-              <circle cx={xOf(i)} cy={yOf(p.income)}  r={hovered===i?6:3.5} fill="#1a6b3c" stroke="#fff" strokeWidth={hovered===i?2:0} style={{transition:"r 0.1s"}}/>
-              <circle cx={xOf(i)} cy={yOf(p.expense)} r={hovered===i?6:3.5} fill="#ef4444" stroke="#fff" strokeWidth={hovered===i?2:0} style={{transition:"r 0.1s"}}/>
+              <circle cx={xOf(i)} cy={yOf(p.income)}  r={hovered===i?6:3.5} fill="#1a6b3c" stroke="#fff" strokeWidth={hovered===i?2:0} style={STYLES.s475}/>
+              <circle cx={xOf(i)} cy={yOf(p.expense)} r={hovered===i?6:3.5} fill="#ef4444" stroke="#fff" strokeWidth={hovered===i?2:0} style={STYLES.s475}/>
               <text x={xOf(i)} y={PT+ch+16} textAnchor="middle" fontSize={9}
                 fill={hovered===i?"#111":"#9ca3af"} fontWeight={hovered===i?"700":"400"}>
                 {p.label}
@@ -6794,22 +8203,22 @@ function AnalysisTab({ data, update, accounts }) {
             boxShadow:"0 8px 24px rgba(0,0,0,0.25)",
             fontSize:12,
           }}>
-            <div style={{fontWeight:700,fontSize:13,marginBottom:8,borderBottom:"0.5px solid rgba(255,255,255,0.15)",paddingBottom:6}}>
+            <div style={STYLES.s476}>
               {pts[hovered].label}
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-              <span style={{width:8,height:8,borderRadius:"50%",background:"#1a6b3c",display:"inline-block"}}/>
-              <span style={{color:"#94a3b8",flex:1}}>Income</span>
-              <span style={{fontWeight:700,color:"#4ade80"}}>{fmtCur(pts[hovered].income)}</span>
+            <div style={STYLES.s477}>
+              <span style={STYLES.s478}/>
+              <span style={STYLES.s479}>Income</span>
+              <span style={STYLES.s480}>{fmtCur(pts[hovered].income)}</span>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-              <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>
-              <span style={{color:"#94a3b8",flex:1}}>Expense</span>
-              <span style={{fontWeight:700,color:"#f87171"}}>{fmtCur(pts[hovered].expense)}</span>
+            <div style={STYLES.s477}>
+              <span style={STYLES.s481}/>
+              <span style={STYLES.s479}>Expense</span>
+              <span style={STYLES.s482}>{fmtCur(pts[hovered].expense)}</span>
             </div>
-            <div style={{borderTop:"0.5px solid rgba(255,255,255,0.15)",paddingTop:6,display:"flex",alignItems:"center",gap:8}}>
+            <div style={STYLES.s483}>
               <span style={{width:8,height:8,borderRadius:"50%",background: pts[hovered].income-pts[hovered].expense>=0?"#4ade80":"#f87171",display:"inline-block"}}/>
-              <span style={{color:"#94a3b8",flex:1}}>Net</span>
+              <span style={STYLES.s479}>Net</span>
               <span style={{fontWeight:700,color:pts[hovered].income-pts[hovered].expense>=0?"#4ade80":"#f87171"}}>
                 {pts[hovered].income-pts[hovered].expense>=0?"+":""}{fmtCur(pts[hovered].income-pts[hovered].expense)}
               </span>
@@ -6818,12 +8227,12 @@ function AnalysisTab({ data, update, accounts }) {
         )}
 
         {/* Summary table */}
-        <div style={{marginTop:12,overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <div style={STYLES.s484}>
+          <table style={STYLES.s485}>
             <thead>
-              <tr style={{background:"var(--color-background-secondary)"}}>
+              <tr style={STYLES.s486}>
                 {["Month","Income","Expense","Net"].map(h=>(
-                  <th key={h} style={{padding:"6px 12px",textAlign:"left",fontSize:11,color:"var(--color-text-secondary)",fontWeight:500}}>{h}</th>
+                  <th key={h} style={STYLES.s487}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -6831,8 +8240,8 @@ function AnalysisTab({ data, update, accounts }) {
               {pts.map((p,i)=>(
                 <tr key={i} style={{borderTop:"0.5px solid var(--color-border-tertiary)",background:hovered===i?"#f0fdf4":"transparent",transition:"background 0.1s"}}>
                   <td style={{padding:"7px 12px",fontWeight:hovered===i?600:400}}>{p.label}</td>
-                  <td style={{padding:"7px 12px",color:"#1a6b3c",fontWeight:600}}>{fmtCur(p.income)}</td>
-                  <td style={{padding:"7px 12px",color:"#ef4444",fontWeight:600}}>{fmtCur(p.expense)}</td>
+                  <td style={STYLES.s488}>{fmtCur(p.income)}</td>
+                  <td style={STYLES.s489}>{fmtCur(p.expense)}</td>
                   <td style={{padding:"7px 12px",color:(p.income-p.expense)>=0?"#1a6b3c":"#ef4444",fontWeight:600}}>
                     {(p.income-p.expense)>=0?"+":""}{fmtCur(p.income-p.expense)}
                   </td>
@@ -6855,8 +8264,8 @@ function AnalysisTab({ data, update, accounts }) {
     const entries = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
     const total = entries.reduce((s,[,v])=>s+v,0);
     if (!entries.length) return (
-      <div style={{textAlign:"center",padding:"4rem",color:"var(--color-text-secondary)"}}>
-        <div style={{fontSize:40,marginBottom:8}}>🥧</div>No {pieType} data in this period.
+      <div style={STYLES.s471}>
+        <div style={STYLES.s472}>🥧</div>No {pieType} data in this period.
       </div>
     );
     const R=90, CX=120, CY=110;
@@ -6870,7 +8279,7 @@ function AnalysisTab({ data, update, accounts }) {
     });
     return (
       <div>
-        <div style={{display:"flex",gap:0,background:"var(--color-background-secondary)",borderRadius:8,padding:3,width:"fit-content",marginBottom:20}}>
+        <div style={STYLES.s490}>
           {["expense","income"].map(t=>(
             <button key={t} onClick={()=>setPieType(t)}
               style={{padding:"5px 18px",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500,
@@ -6881,14 +8290,14 @@ function AnalysisTab({ data, update, accounts }) {
             </button>
           ))}
         </div>
-        <div style={{display:"flex",gap:32,alignItems:"flex-start",flexWrap:"wrap"}}>
-          <svg width={240} height={220} style={{flexShrink:0,maxWidth:"100%"}}>
+        <div style={STYLES.s491}>
+          <svg width={240} height={220} style={STYLES.s492}>
             {slices.map((s,i)=>(
               <path key={i}
                 d={`M${CX},${CY} L${s.x1},${s.y1} A${R},${R} 0 ${s.large},1 ${s.x2},${s.y2} Z`}
                 fill={s.color} stroke="#fff" strokeWidth={hovSlice===i?3:2}
                 opacity={hovSlice===null||hovSlice===i?1:0.6}
-                style={{cursor:"pointer",transition:"opacity 0.15s"}}
+                style={STYLES.s493}
                 onMouseEnter={()=>setHovSlice(i)} onMouseLeave={()=>setHovSlice(null)}
               />
             ))}
@@ -6902,16 +8311,16 @@ function AnalysisTab({ data, update, accounts }) {
               </text>
             )}
           </svg>
-          <div style={{flex:1,minWidth:180}}>
+          <div style={STYLES.s494}>
             {entries.map(([cat,val],i)=>(
               <div key={cat}
                 onMouseEnter={()=>setHovSlice(i)} onMouseLeave={()=>setHovSlice(null)}
                 style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"6px 8px",borderRadius:7,
                   background:hovSlice===i?"var(--color-background-secondary)":"transparent",cursor:"default",transition:"background 0.1s"}}>
                 <span style={{width:12,height:12,borderRadius:3,background:COLORS[i%COLORS.length],flexShrink:0}}/>
-                <span style={{flex:1,fontSize:13,fontWeight:500}}>{cat}</span>
+                <span style={STYLES.s495}>{cat}</span>
                 <span style={{fontSize:13,color:pieType==="expense"?"#ef4444":"#1a6b3c",fontWeight:600}}>{fmtCur(val)}</span>
-                <span style={{fontSize:11,color:"var(--color-text-secondary)",minWidth:36,textAlign:"right"}}>
+                <span style={STYLES.s496}>
                   {(val/total*100).toFixed(1)}%
                 </span>
               </div>
@@ -6958,18 +8367,18 @@ function AnalysisTab({ data, update, accounts }) {
 
     return (
       <div>
-        <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"flex-start"}}>
+        <div style={STYLES.s497}>
           {/* Calendar grid */}
-          <div style={{flex:"1 1 auto",minWidth:0,maxWidth:"100%"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <button onClick={prev} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>‹</button>
-              <span style={{fontWeight:700,fontSize:15}}>{MONTHS[calMonth]} {calYear}</span>
-              <button onClick={next} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--color-text-secondary)",padding:"0 8px"}}>›</button>
+          <div style={STYLES.s498}>
+            <div style={STYLES.s499}>
+              <button onClick={prev} style={STYLES.s500}>‹</button>
+              <span style={STYLES.s501}>{MONTHS[calMonth]} {calYear}</span>
+              <button onClick={next} style={STYLES.s500}>›</button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-              {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600,padding:"4px 0"}}>{d}</div>)}
+            <div style={STYLES.s502}>
+              {DAYS.map(d=><div key={d} style={STYLES.s503}>{d}</div>)}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+            <div style={STYLES.s504}>
               {cells.map((day,i)=>{
                 if(!day) return <div key={i}/>;
                 const info=dayMap[day];
@@ -6993,29 +8402,29 @@ function AnalysisTab({ data, update, accounts }) {
                 );
               })}
             </div>
-            <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:10}}>
-              <span style={{color:"#1a6b3c",fontWeight:600}}>Income: {fmtCur(mIncome)}</span>
-              <span style={{color:"#ef4444",fontWeight:600}}>Expense: {fmtCur(mExpense)}</span>
+            <div style={STYLES.s505}>
+              <span style={STYLES.s506}>Income: {fmtCur(mIncome)}</span>
+              <span style={STYLES.s507}>Expense: {fmtCur(mExpense)}</span>
               <span style={{color:(mIncome-mExpense)>=0?"#1a6b3c":"#ef4444",fontWeight:600}}>Net: {(mIncome-mExpense)>=0?"+":""}{fmtCur(mIncome-mExpense)}</span>
             </div>
           </div>
 
           {/* Right panel — selected day transactions */}
-          <div style={{flex:1,minWidth:220}}>
+          <div style={STYLES.s508}>
             {calDay ? (
               <>
-                <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>
+                <div style={STYLES.s509}>
                   {calDay} {MONTHS[calMonth]} {calYear}
-                  <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>{selTxns.length} transaction{selTxns.length!==1?"s":""}</span>
+                  <span style={STYLES.s510}>{selTxns.length} transaction{selTxns.length!==1?"s":""}</span>
                 </div>
                 {selTxns.length===0
-                  ? <div style={{color:"var(--color-text-secondary)",fontSize:13}}>No transactions.</div>
+                  ? <div style={STYLES.s511}>No transactions.</div>
                   : selTxns.map(t=>(
-                      <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,marginBottom:6,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
+                      <div key={t.id} style={STYLES.s512}>
                         <span style={{width:8,height:8,borderRadius:"50%",background:t.type==="income"?"#1a6b3c":"#ef4444",flexShrink:0}}/>
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:13,fontWeight:500}}>{t.category||"—"}</div>
-                          {t.note&&<div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{t.note}</div>}
+                        <div style={STYLES.s513}>
+                          <div style={STYLES.s514}>{t.category||"—"}</div>
+                          {t.note&&<div style={STYLES.s515}>{t.note}</div>}
                         </div>
                         <span style={{fontWeight:700,color:t.type==="income"?"#1a6b3c":"#ef4444",fontSize:13}}>
                           {t.type==="income"?"+":"-"}{fmtCur(t.amount)}
@@ -7025,8 +8434,8 @@ function AnalysisTab({ data, update, accounts }) {
                 }
               </>
             ) : (
-              <div style={{color:"var(--color-text-secondary)",fontSize:13,paddingTop:8,display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{fontSize:28,marginBottom:4}}>📅</div>
+              <div style={STYLES.s516}>
+                <div style={STYLES.s517}>📅</div>
                 <div>Click any day to see transactions.</div>
               </div>
             )}
@@ -7042,8 +8451,8 @@ function AnalysisTab({ data, update, accounts }) {
     {id:"calendar",  label:"📅 Calendar"},
   ];
   return (
-    <div style={{marginTop:16}}>
-      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+    <div style={STYLES.s518}>
+      <div style={STYLES.s519}>
         {views.map(v=>(
           <button key={v.id} onClick={()=>setView(v.id)}
             style={{padding:"7px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,
@@ -7054,7 +8463,7 @@ function AnalysisTab({ data, update, accounts }) {
           </button>
         ))}
         {view!=="calendar" && (
-          <div style={{marginLeft:"auto",display:"flex",gap:4}}>
+          <div style={STYLES.s520}>
             {["1M","3M","6M","1Y","All"].map(p=>(
               <button key={p} onClick={()=>setPeriod(p)}
                 style={{padding:"5px 10px",borderRadius:6,border:"0.5px solid var(--color-border-secondary)",cursor:"pointer",fontSize:11,fontWeight:500,
@@ -7065,7 +8474,7 @@ function AnalysisTab({ data, update, accounts }) {
           </div>
         )}
       </div>
-      <div style={{background:"var(--color-background-primary)",borderRadius:14,border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"}}>
+      <div style={STYLES.s521}>
         {view==="graph"    && <GraphView/>}
         {view==="calendar" && <CalendarView/>}
 
@@ -7297,16 +8706,16 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       {/* Edit Payment Modal */}
       {editingPayment && editForm && (
         <>
-          <div onClick={() => setEditingPayment(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.32)", zIndex: 200 }} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", zIndex: 201, width: 360, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Edit Scheduled Payment</div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Direction</label>
-              <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)" }}>
+          <div onClick={() => setEditingPayment(null)} style={STYLES.s522} />
+          <div style={STYLES.s523}>
+            <div style={STYLES.s524}>Edit Scheduled Payment</div>
+            <div style={STYLES.s115}>
+              <label style={STYLES.s254}>Direction</label>
+              <div style={STYLES.s525}>
                 {[["expense","📤 Expense","#d44","#fdf0f0"],["income","📥 Income","#1a6b3c","#e8f5ee"]].map(([v,lbl,color,bg]) => (
                   <button key={v} onClick={() => setEditForm(p => ({ ...p, flowType: v }))}
                     style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: editForm.flowType === v ? 600 : 400, background: editForm.flowType === v ? bg : "transparent", color: editForm.flowType === v ? color : "var(--color-text-secondary)" }}>
@@ -7315,9 +8724,9 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 ))}
               </div>
             </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div style={STYLES.s56}>
+              <label style={STYLES.s254}>Category</label>
+              <div style={STYLES.s58}>
                 {(editForm.flowType === "income" ? (categories.income || []) : (categories.expense || [])).map(t => (
                   <button key={t} onClick={() => setEditForm(p => ({ ...p, type: t }))}
                     style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: editForm.type === t ? "#1a6b3c" : "var(--color-border-secondary)", background: editForm.type === t ? "#e8f5ee" : "transparent", color: editForm.type === t ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: editForm.type === t ? 600 : 400 }}>
@@ -7333,19 +8742,19 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={editForm.day} onChange={v => setEditForm(p => ({ ...p, day: v }))} />
               )}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            <div style={STYLES.s180}>
               <div>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label>
-                <input type="date" value={editForm.startDate || ""} onChange={e => setEditForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s181}>Start Date</label>
+                <input type="date" value={editForm.startDate || ""} onChange={e => setEditForm(p => ({ ...p, startDate: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Auto-add Time (optional)</label>
-                <input type="time" value={editForm.autoTime || ""} onChange={e => setEditForm(p => ({ ...p, autoTime: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s181}>Auto-add Time (optional)</label>
+                <input type="time" value={editForm.autoTime || ""} onChange={e => setEditForm(p => ({ ...p, autoTime: e.target.value }))} style={STYLES.s45} />
               </div>
             </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Repeat</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div style={STYLES.s56}>
+              <label style={STYLES.s254}>Repeat</label>
+              <div style={STYLES.s58}>
                 {["monthly","quarterly","annually","once","custom"].map(f => (
                   <button key={f} onClick={() => setEditForm(p => ({ ...p, freq: f }))}
                     style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: editForm.freq === f ? "#1a6b3c" : "var(--color-border-secondary)", background: editForm.freq === f ? "#e8f5ee" : "transparent", color: editForm.freq === f ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: editForm.freq === f ? 600 : 400, textTransform: "capitalize" }}>
@@ -7354,19 +8763,19 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 ))}
               </div>
               {editForm.freq === "custom" && (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Every</span>
-                  <input type="number" min="1" value={editForm.customEveryN} onChange={e => setEditForm(p => ({ ...p, customEveryN: e.target.value }))} style={{ width: 60, textAlign: "center" }} />
-                  <select value={editForm.customUnit} onChange={e => setEditForm(p => ({ ...p, customUnit: e.target.value, customWeekDays: [] }))} style={{ flex: 1 }}>
+                <div style={STYLES.s526}>
+                  <span style={STYLES.s144}>Every</span>
+                  <input type="number" min="1" value={editForm.customEveryN} onChange={e => setEditForm(p => ({ ...p, customEveryN: e.target.value }))} style={STYLES.s527} />
+                  <select value={editForm.customUnit} onChange={e => setEditForm(p => ({ ...p, customUnit: e.target.value, customWeekDays: [] }))} style={STYLES.s354}>
                     <option value="days">Day(s)</option><option value="weeks">Week(s)</option>
                     <option value="months">Month(s)</option><option value="years">Year(s)</option>
                   </select>
                 </div>
               )}
               {editForm.freq === "custom" && editForm.customUnit === "weeks" && (
-                <div style={{ marginTop: 8 }}>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>On which days?</label>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={STYLES.s284}>
+                  <label style={STYLES.s528}>On which days?</label>
+                  <div style={STYLES.s529}>
                     {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d, i) => {
                       const val = i + 1;
                       const selected = (editForm.customWeekDays || []).includes(val);
@@ -7390,28 +8799,28 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               )}
             </div>
             <LabelInput label="Tenure (months, optional)" placeholder="e.g. 24 — blank = ongoing" value={editForm.tenure} onChange={v => setEditForm(p => ({ ...p, tenure: v }))} />
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account (optional)</label>
-              <select value={editForm.accountId} onChange={e => setEditForm(p => ({ ...p, accountId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+            <div style={STYLES.s56}>
+              <label style={STYLES.s181}>Account (optional)</label>
+              <select value={editForm.accountId} onChange={e => setEditForm(p => ({ ...p, accountId: e.target.value }))} style={STYLES.s45}>
                 <option value="">— None —</option>
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
               </select>
             </div>
             <LabelInput label="Notes (optional)" placeholder="e.g. Auto-debit from SBI" value={editForm.notes} onChange={v => setEditForm(p => ({ ...p, notes: v }))} />
-            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-              <button onClick={() => setEditingPayment(null)} style={{ flex: 1, background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEdit} style={{ flex: 2, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Save Changes</button>
+            <div style={STYLES.s530}>
+              <button onClick={() => setEditingPayment(null)} style={STYLES.s531}>Cancel</button>
+              <button onClick={saveEdit} style={STYLES.s532}>Save Changes</button>
             </div>
           </div>
         </>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16, alignItems: "start" }}>
+      <div style={STYLES.s533}>
         {/* Add form */}
         <Card title="Add Scheduled Payment">
           {/* Income / Expense toggle */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Direction</label>
-            <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)" }}>
+          <div style={STYLES.s115}>
+            <label style={STYLES.s254}>Direction</label>
+            <div style={STYLES.s525}>
               {[["expense", "📤 Expense", "#d44", "#fdf0f0"], ["income", "📥 Income", "#1a6b3c", "#e8f5ee"]].map(([v, lbl, color, bg]) => (
                 <button key={v} onClick={() => setForm(p => ({ ...p, flowType: v }))}
                   style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: form.flowType === v ? 600 : 400, background: form.flowType === v ? bg : "transparent", color: form.flowType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
@@ -7420,9 +8829,9 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               ))}
             </div>
           </div>
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Category</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <div style={STYLES.s56}>
+            <label style={STYLES.s254}>Category</label>
+            <div style={STYLES.s58}>
               {(form.flowType === "income" ? (categories.income || []) : (categories.expense || [])).map(t => (
                 <button key={t} onClick={() => setForm(p => ({ ...p, type: t }))}
                   style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.type === t ? "#1a6b3c" : "var(--color-border-secondary)", background: form.type === t ? "#e8f5ee" : "transparent", color: form.type === t ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.type === t ? 600 : 400 }}>
@@ -7438,20 +8847,20 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               <LabelInput label="Day of month (1–31)" placeholder="e.g. 5" value={form.day} onChange={v => setForm(p => ({ ...p, day: v }))} />
             )}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+          <div style={STYLES.s180}>
             <div>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label>
-              <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s181}>Start Date</label>
+              <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={STYLES.s45} />
             </div>
             <div>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Auto-add Time (optional)</label>
-              <input type="time" value={form.autoTime} onChange={e => setForm(p => ({ ...p, autoTime: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s181}>Auto-add Time (optional)</label>
+              <input type="time" value={form.autoTime} onChange={e => setForm(p => ({ ...p, autoTime: e.target.value }))} style={STYLES.s45} />
             </div>
           </div>
           {/* Fully customizable repeat */}
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Repeat</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <div style={STYLES.s56}>
+            <label style={STYLES.s254}>Repeat</label>
+            <div style={STYLES.s534}>
               {["monthly", "quarterly", "annually", "once", "custom"].map(f => (
                 <button key={f} onClick={() => setForm(p => ({ ...p, freq: f }))}
                   style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid", borderColor: form.freq === f ? "#1a6b3c" : "var(--color-border-secondary)", background: form.freq === f ? "#e8f5ee" : "transparent", color: form.freq === f ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: form.freq === f ? 600 : 400, textTransform: "capitalize" }}>
@@ -7460,10 +8869,10 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               ))}
             </div>
             {form.freq === "custom" && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>Every</span>
-                <input type="number" min="1" value={form.customEveryN} onChange={e => setForm(p => ({ ...p, customEveryN: e.target.value }))} style={{ width: 60, boxSizing: "border-box", textAlign: "center" }} />
-                <select value={form.customUnit} onChange={e => setForm(p => ({ ...p, customUnit: e.target.value, customWeekDays: [] }))} style={{ flex: 1, boxSizing: "border-box" }}>
+              <div style={STYLES.s535}>
+                <span style={STYLES.s144}>Every</span>
+                <input type="number" min="1" value={form.customEveryN} onChange={e => setForm(p => ({ ...p, customEveryN: e.target.value }))} style={STYLES.s536} />
+                <select value={form.customUnit} onChange={e => setForm(p => ({ ...p, customUnit: e.target.value, customWeekDays: [] }))} style={STYLES.s449}>
                   <option value="days">Day(s)</option>
                   <option value="weeks">Week(s)</option>
                   <option value="months">Month(s)</option>
@@ -7472,9 +8881,9 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
               </div>
             )}
             {form.freq === "custom" && form.customUnit === "weeks" && (
-              <div style={{ marginTop: 8 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>On which days?</label>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={STYLES.s284}>
+                <label style={STYLES.s528}>On which days?</label>
+                <div style={STYLES.s529}>
                   {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d, i) => {
                     const val = i + 1;
                     const selected = (form.customWeekDays || []).includes(val);
@@ -7500,9 +8909,9 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
           {(form.type === "EMI" || form.flowType === "expense") && (
             <LabelInput label="Tenure (months, optional)" placeholder="e.g. 24 — leave blank for ongoing" value={form.tenure} onChange={v => setForm(p => ({ ...p, tenure: v }))} />
           )}
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account (optional)</label>
-            <select value={form.accountId} onChange={e => setForm(p => ({ ...p, accountId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+          <div style={STYLES.s56}>
+            <label style={STYLES.s181}>Account (optional)</label>
+            <select value={form.accountId} onChange={e => setForm(p => ({ ...p, accountId: e.target.value }))} style={STYLES.s45}>
               <option value="">— None —</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
             </select>
@@ -7512,10 +8921,10 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
         </Card>
 
         {/* List / Timeline */}
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-          <div style={{ padding: "0.8rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontWeight: 500, fontSize: 15 }}>Payments</span>
-            <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, overflow: "hidden" }}>
+        <div style={STYLES.s537}>
+          <div style={STYLES.s538}>
+            <span style={STYLES.s92}>Payments</span>
+            <div style={STYLES.s539}>
               {["list", "timeline"].map(v => (
                 <button key={v} onClick={() => setView(v)} style={{ padding: "4px 12px", background: view === v ? "#1a6b3c" : "transparent", color: view === v ? "#fff" : "var(--color-text-secondary)", border: "none", cursor: "pointer", fontSize: 12, fontWeight: view === v ? 500 : 400 }}>
                   {v === "list" ? "List" : "Timeline"}
@@ -7525,7 +8934,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
           </div>
 
           {view === "list" && (
-            <div style={{ padding: "0.8rem 1.1rem", display: "flex", flexDirection: "column", gap: 8, minHeight: 180 }}>
+            <div style={STYLES.s540}>
               {list.length === 0 ? <EmptyState msg="No scheduled payments yet. Add one on the left." /> : list.map(p => {
                 const d = getDueDate(p);
                 const key = getNextDueKey(p);
@@ -7544,25 +8953,25 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 return (
                   <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: isPaid ? "var(--color-background-tertiary)" : "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", border: `0.5px solid ${isPaid ? "#bbf7d0" : "var(--color-border-tertiary)"}`, opacity: isPaid ? 0.75 : 1, transition: "opacity 0.2s" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: isPaid ? "#1a6b3c" : (typeColors[p.type] || "#1a6b3c"), flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 1 }}>
+                    <div style={STYLES.s206}>
+                      <div style={STYLES.s541}>{p.name}</div>
+                      <div style={STYLES.s357}>
                         {p.flowType === "income" ? "📥" : "📤"} {p.type} · {p.freq === "custom" ? `every ${p.customEveryN || 1} ${p.customUnit || "months"}${p.customUnit === "weeks" && p.customWeekDays && p.customWeekDays.length > 0 ? " on " + ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].filter((_,i) => p.customWeekDays.includes(i+1)).join(", ") : ""}` : p.freq}{p.tenure ? ` · ${p.tenure}mo` : ""}
                         {acct ? ` · ${acct.name}` : ""}
                         {p.notes ? ` · ${p.notes}` : ""}
                       </div>
                     </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{fmtCur(p.amount)}</div>
+                    <div style={STYLES.s208}>
+                      <div style={STYLES.s306}>{fmtCur(p.amount)}</div>
                       <span style={{ fontSize: 10, background: isPaid ? "#e8f5ee" : badgeBg, color: isPaid ? "#1a6b3c" : badgeColor, borderRadius: 4, padding: "2px 7px", display: "inline-block", marginTop: 2, fontWeight: 500 }}>
                         {isPaid ? (autoPaidTx ? "⚡ Auto-paid" : "✓ Paid") : badge}
                       </span>
-                      {isPaid && <div style={{ fontSize: 10, color: "#1a6b3c", marginTop: 2, opacity: 0.8 }}>↳ logged in {p.flowType === "income" ? "Income" : "Expenses"}</div>}
+                      {isPaid && <div style={STYLES.s542}>↳ logged in {p.flowType === "income" ? "Income" : "Expenses"}</div>}
                     </div>
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <div style={STYLES.s543}>
                       <button onClick={() => togglePaid(p.id)} title={isPaid ? "Undo — removes auto-logged transaction" : "Mark Paid manually"} style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
-                      <button onClick={() => startEdit(p)} title="Edit payment" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#4da6ff", display: "flex", alignItems: "center", justifyContent: "center" }}>✏️</button>
-                      <button onClick={() => deletePayment(p.id)} title="Delete" style={{ width: 28, height: 28, borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 13, color: "#d44", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                      <button onClick={() => startEdit(p)} title="Edit payment" style={STYLES.s544}>✏️</button>
+                      <button onClick={() => deletePayment(p.id)} title="Delete" style={STYLES.s545}>✕</button>
                     </div>
                   </div>
                 );
@@ -7571,7 +8980,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
           )}
 
           {view === "timeline" && (
-            <div style={{ padding: "0.8rem 1.1rem" }}>
+            <div style={STYLES.s546}>
               {timelineMonths.map(({ year, month }) => {
                 const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
                 const monthLabel = new Date(year, month, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
@@ -7588,12 +8997,12 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                 if (inMonth.length === 0) return null;
                 const total = inMonth.reduce((s, p) => s + p.amount, 0);
                 return (
-                  <div key={monthKey} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8, paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", justifyContent: "space-between" }}>
+                  <div key={monthKey} style={STYLES.s134}>
+                    <div style={STYLES.s547}>
                       <span>{monthLabel}</span>
-                      <span style={{ color: "#1a6b3c" }}>{fmtCur(total)}</span>
+                      <span style={STYLES.s548}>{fmtCur(total)}</span>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={STYLES.s549}>
                       {inMonth.map(p => {
                         const isPaid = p.paid.includes(monthKey);
                         const dDate = new Date(year, month, p.day);
@@ -7604,8 +9013,8 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
                         return (
                           <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: isPaid ? "var(--color-background-tertiary)" : "var(--color-background-secondary)", borderRadius: 8, padding: "8px 12px", opacity: isPaid ? 0.55 : 1 }}>
                             <div style={{ width: 7, height: 7, borderRadius: "50%", background: typeColors[p.type] || "#1a6b3c", flexShrink: 0 }} />
-                            <div style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.name}</div>
-                            <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtCur(p.amount)}</span>
+                            <div style={STYLES.s550}>{p.name}</div>
+                            <span style={STYLES.s551}>{fmtCur(p.amount)}</span>
                             <span style={{ fontSize: 10, color: isPaid ? "#1a6b3c" : badgeColor, fontWeight: 500 }}>{isPaid ? "✓ Paid" : badge}</span>
                             <button onClick={() => togglePaid(p.id)} style={{ width: 24, height: 24, borderRadius: 5, border: "0.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", fontSize: 11, color: isPaid ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>{isPaid ? "↩" : "✓"}</button>
                           </div>
@@ -7931,45 +9340,45 @@ function LiabilitiesTab({ data, update }) {
   }, 0);
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={STYLES.s212}>
       {/* Summary Strip — matching Scheduled Payments look */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={STYLES.s552}>
         {[
           { label: "Due This Month", val: fmtCur(liabDueThisMonth), color: "#4da6ff" },
           { label: "Overdue", val: fmtCur(liabOverdue), color: "#d44" },
           { label: "Due in 7 Days", val: fmtCur(liabDue7), color: "#f0a020" },
           { label: "Annual Total", val: fmtCur(liabAnnual), color: "#1a6b3c" },
         ].map(c => (
-          <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+          <div key={c.label} style={STYLES.s553}>
+            <div style={STYLES.s153}>{c.label}</div>
             <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
           </div>
         ))}
       </div>
       {/* Edit Liability Modal */}
       {editLiability && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(480px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Liability</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <div style={{ gridColumn: "span 2" }}>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Name</label>
-                <input value={editLiability.name} onChange={e => setEditLiability(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s129}>
+          <div style={STYLES.s554}>
+            <div style={STYLES.s131}>✏️ Edit Liability</div>
+            <div style={STYLES.s174}>
+              <div style={STYLES.s177}>
+                <label style={STYLES.s132}>Name</label>
+                <input value={editLiability.name} onChange={e => setEditLiability(p => ({ ...p, name: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
-                <select value={editLiability.type} onChange={e => setEditLiability(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                <label style={STYLES.s132}>Type</label>
+                <select value={editLiability.type} onChange={e => setEditLiability(p => ({ ...p, type: e.target.value }))} style={STYLES.s45}>
                   {(data.liabilityTypes && data.liabilityTypes.length > 0 ? data.liabilityTypes : ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"]).map(t => (
                     <option key={t}>{t}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                <div style={STYLES.s426}>
+                  <label style={STYLES.s53}>
                     {editLiability._amountMode === "total" ? "Total/Principal Amount (₹)" : "Monthly Amount (₹)"}
                   </label>
-                  <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+                  <div style={STYLES.s555}>
                     <button onClick={() => setEditLiability(p => ({ ...p, _amountMode: "monthly", _totalInput: "" }))}
                       style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
                         background: editLiability._amountMode !== "total" ? "#1a6b3c" : "transparent",
@@ -7996,14 +9405,14 @@ function LiabilitiesTab({ data, update }) {
                             : p.amount
                         }));
                       }}
-                      style={{ width: "100%", boxSizing: "border-box" }} />
+                      style={STYLES.s45} />
                     {editLiability._totalInput && editLiability.totalMonths && (
                       <div style={{ fontSize: 11, color: editLiability._paymentMode === "interestOnly" ? "#f59e0b" : "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
                         = ₹{editLiability.amount ? Number(editLiability.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"} / month
                         {editLiability._paymentMode === "interestOnly"
-                          ? <span style={{ color: "#f59e0b", marginLeft: 6 }}>(interest only · {editLiability.interestRate}% p.a.)</span>
+                          ? <span style={STYLES.s556}>(interest only · {editLiability.interestRate}% p.a.)</span>
                           : editLiability.interestRate > 0 && (
-                            <span style={{ color: "#f59e0b", marginLeft: 6 }}>
+                            <span style={STYLES.s556}>
                               (incl. {editLiability.interestRate}% p.a.)
                             </span>
                           )
@@ -8012,11 +9421,11 @@ function LiabilitiesTab({ data, update }) {
                     )}
                   </div>
                 ) : (
-                  <input type="number" value={editLiability.amount} onChange={e => setEditLiability(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <input type="number" value={editLiability.amount} onChange={e => setEditLiability(p => ({ ...p, amount: e.target.value }))} style={STYLES.s45} />
                 )}
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Interest Rate (% p.a.)</label>
+                <label style={STYLES.s132}>Interest Rate (% p.a.)</label>
                 <input type="number" placeholder="e.g. 12" value={editLiability.interestRate || ""}
                   onChange={e => {
                     const rate = parseFloat(e.target.value) || 0;
@@ -8031,12 +9440,12 @@ function LiabilitiesTab({ data, update }) {
                         : {})
                     }));
                   }}
-                  style={{ width: "100%", boxSizing: "border-box" }} />
+                  style={STYLES.s45} />
               </div>
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Total Months</label>
-                  <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+                <div style={STYLES.s426}>
+                  <label style={STYLES.s53}>Total Months</label>
+                  <div style={STYLES.s555}>
                     <button onClick={() => {
                       const principal = parseFloat(editLiability._totalInput) || 0;
                       const rate = parseFloat(editLiability.interestRate) || 0;
@@ -8078,55 +9487,55 @@ function LiabilitiesTab({ data, update }) {
                         : p.amount
                     }));
                   }}
-                  style={{ width: "100%", boxSizing: "border-box" }} />
+                  style={STYLES.s45} />
                 {editLiability._paymentMode === "interestOnly" && editLiability._totalInput && editLiability.interestRate > 0 && (
-                  <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600, marginTop: 3 }}>
+                  <div style={STYLES.s557}>
                     ⓘ Monthly = interest only · capital (₹{Number(editLiability._totalInput).toLocaleString("en-IN")}) due at end
                   </div>
                 )}
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>
+                <label style={STYLES.s132}>
                   {editLiability._paymentMode === "interestOnly" ? "🗓 Interest Due Day" : "Payment Day"}
                 </label>
-                <input type="number" min="1" max="31" value={editLiability.paymentDay} onChange={e => setEditLiability(p => ({ ...p, paymentDay: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <input type="number" min="1" max="31" value={editLiability.paymentDay} onChange={e => setEditLiability(p => ({ ...p, paymentDay: e.target.value }))} style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Start Date</label>
-                <input type="date" value={editLiability.startDate || ""} onChange={e => setEditLiability(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+                <label style={STYLES.s132}>Start Date</label>
+                <input type="date" value={editLiability.startDate || ""} onChange={e => setEditLiability(p => ({ ...p, startDate: e.target.value }))} style={STYLES.s45} />
               </div>
               {editLiability._paymentMode === "interestOnly" && (
-                <div style={{ gridColumn: "span 2", background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 8 }}>💰 Capital Payment Settings</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={STYLES.s558}>
+                  <div style={STYLES.s559}>💰 Capital Payment Settings</div>
+                  <div style={STYLES.s80}>
                     <div>
-                      <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Due Day</label>
+                      <label style={STYLES.s560}>Capital Due Day</label>
                       <input type="number" min="1" max="31" placeholder="e.g. 10"
                         value={editLiability.capitalPaymentDay || ""}
                         onChange={e => setEditLiability(p => ({ ...p, capitalPaymentDay: e.target.value }))}
-                        style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+                        style={STYLES.s561} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Amount (₹)</label>
+                      <label style={STYLES.s560}>Capital Amount (₹)</label>
                       <input type="number" placeholder="e.g. 30000"
                         value={editLiability.capitalAmount || editLiability._totalInput || ""}
                         onChange={e => setEditLiability(p => ({ ...p, capitalAmount: e.target.value }))}
-                        style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+                        style={STYLES.s561} />
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "#92400e", marginTop: 6 }}>
+                  <div style={STYLES.s562}>
                     ⓘ Interest paid monthly on day {editLiability.paymentDay || "—"} · Capital paid on day {editLiability.capitalPaymentDay || "—"}
                   </div>
                 </div>
               )}
-              <div style={{ gridColumn: "span 2" }}>
-                <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes</label>
-                <input value={editLiability.notes || ""} onChange={e => setEditLiability(p => ({ ...p, notes: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <div style={STYLES.s177}>
+                <label style={STYLES.s132}>Notes</label>
+                <input value={editLiability.notes || ""} onChange={e => setEditLiability(p => ({ ...p, notes: e.target.value }))} style={STYLES.s45} />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setEditLiability(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEditLiability} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            <div style={STYLES.s136}>
+              <button onClick={() => setEditLiability(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEditLiability} style={STYLES.s138}>Save</button>
             </div>
           </div>
         </div>
@@ -8134,14 +9543,14 @@ function LiabilitiesTab({ data, update }) {
 
       {/* Add Liability Form */}
       <Card title="➕ Add Liability">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
+        <div style={STYLES.s157}>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Name</label>
-            <input placeholder="e.g. HDFC Credit Card, Personal Loan" value={liabilityForm.name} onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <label style={STYLES.s132}>Name</label>
+            <input placeholder="e.g. HDFC Credit Card, Personal Loan" value={liabilityForm.name} onChange={e => setLiabilityForm(p => ({ ...p, name: e.target.value }))} style={STYLES.s45} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
-            <select value={liabilityForm.type} onChange={e => setLiabilityForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+            <label style={STYLES.s132}>Type</label>
+            <select value={liabilityForm.type} onChange={e => setLiabilityForm(p => ({ ...p, type: e.target.value }))} style={STYLES.s45}>
               {(data.liabilityTypes && data.liabilityTypes.length > 0 ? data.liabilityTypes : ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"]).map(t => (
                 <option key={t}>{t}</option>
               ))}
@@ -8149,11 +9558,11 @@ function LiabilitiesTab({ data, update }) {
           </div>
           <div>
             {/* Amount mode toggle */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+            <div style={STYLES.s426}>
+              <label style={STYLES.s53}>
                 {amountMode === "monthly" ? "Monthly Amount (₹)" : "Total/Principal Amount (₹)"}
               </label>
-              <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+              <div style={STYLES.s555}>
                 <button onClick={() => { setAmountMode("monthly"); setTotalAmountInput(""); }}
                   style={{ padding: "2px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
                     background: amountMode === "monthly" ? "#1a6b3c" : "transparent",
@@ -8167,9 +9576,9 @@ function LiabilitiesTab({ data, update }) {
             {amountMode === "monthly" ? (
               <input type="number" placeholder="e.g. 5000" value={liabilityForm.amount}
                 onChange={e => setLiabilityForm(p => ({ ...p, amount: e.target.value }))}
-                style={{ width: "100%", boxSizing: "border-box" }} />
+                style={STYLES.s45} />
             ) : (
-              <div style={{ position: "relative" }}>
+              <div style={STYLES.s563}>
                 <input type="number" placeholder="e.g. 60000" value={totalAmountInput}
                   onChange={e => {
                     const principal = parseFloat(e.target.value) || 0;
@@ -8182,14 +9591,14 @@ function LiabilitiesTab({ data, update }) {
                       setLiabilityForm(p => ({ ...p, amount: "" }));
                     }
                   }}
-                  style={{ width: "100%", boxSizing: "border-box" }} />
+                  style={STYLES.s45} />
                 {totalAmountInput && liabilityForm.totalMonths && (
                   <div style={{ fontSize: 11, color: addPaymentMode === "interestOnly" ? "#f59e0b" : "#1a6b3c", fontWeight: 600, marginTop: 3 }}>
                     = ₹{liabilityForm.amount ? Number(liabilityForm.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"} / month
                     {addPaymentMode === "interestOnly"
-                      ? <span style={{ color: "#f59e0b", marginLeft: 6 }}>(interest only · {liabilityForm.interestRate}% p.a.)</span>
+                      ? <span style={STYLES.s556}>(interest only · {liabilityForm.interestRate}% p.a.)</span>
                       : liabilityForm.interestRate > 0 && (
-                        <span style={{ color: "#f59e0b", marginLeft: 6 }}>
+                        <span style={STYLES.s556}>
                           (incl. {liabilityForm.interestRate}% p.a. interest)
                         </span>
                       )
@@ -8200,13 +9609,13 @@ function LiabilitiesTab({ data, update }) {
             )}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 10, marginBottom: 10 }}>
+        <div style={STYLES.s564}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+            <div style={STYLES.s426}>
+              <label style={STYLES.s53}>
                 {addPaymentMode === "interestOnly" ? "🗓 Interest Due Day" : "Total Months"}
               </label>
-              <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: 2, gap: 1 }}>
+              <div style={STYLES.s555}>
                 <button onClick={() => {
                   setAddPaymentMode("split");
                   const principal = parseFloat(totalAmountInput) || 0;
@@ -8241,10 +9650,10 @@ function LiabilitiesTab({ data, update }) {
                     : {})
                 }));
               }}
-              style={{ width: "100%", boxSizing: "border-box" }} />
+              style={STYLES.s45} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Interest Rate (% p.a.)</label>
+            <label style={STYLES.s132}>Interest Rate (% p.a.)</label>
             <input type="number" placeholder="e.g. 12" value={liabilityForm.interestRate}
               onChange={e => {
                 const rate = parseFloat(e.target.value) || 0;
@@ -8260,21 +9669,21 @@ function LiabilitiesTab({ data, update }) {
                     : {})
                 }));
               }}
-              style={{ width: "100%", boxSizing: "border-box" }} />
+              style={STYLES.s45} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>
+            <label style={STYLES.s132}>
               {addPaymentMode === "interestOnly" ? "🗓 Interest Due Day" : "Payment Day"}
             </label>
-            <input type="number" min="1" max="31" placeholder="e.g. 5" value={liabilityForm.paymentDay} onChange={e => setLiabilityForm(p => ({ ...p, paymentDay: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <input type="number" min="1" max="31" placeholder="e.g. 5" value={liabilityForm.paymentDay} onChange={e => setLiabilityForm(p => ({ ...p, paymentDay: e.target.value }))} style={STYLES.s45} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Start Date</label>
-            <input type="date" value={liabilityForm.startDate} onChange={e => setLiabilityForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+            <label style={STYLES.s132}>Start Date</label>
+            <input type="date" value={liabilityForm.startDate} onChange={e => setLiabilityForm(p => ({ ...p, startDate: e.target.value }))} style={STYLES.s45} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Payment Account</label>
-            <select value={liabilityForm.accountId} onChange={e => setLiabilityForm(p => ({ ...p, accountId: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+            <label style={STYLES.s132}>Payment Account</label>
+            <select value={liabilityForm.accountId} onChange={e => setLiabilityForm(p => ({ ...p, accountId: e.target.value }))} style={STYLES.s45}>
               <option value="">Select account</option>
               {accounts.filter(a => a.type === "Bank").length > 0 && (
                 <optgroup label="🏦 Bank Accounts">
@@ -8301,46 +9710,46 @@ function LiabilitiesTab({ data, update }) {
           </div>
         </div>
         {addPaymentMode === "interestOnly" && (
-          <div style={{ marginBottom: 10, background: "#fffbeb", border: "0.5px solid #f59e0b", borderRadius: 8, padding: "10px 12px" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 8 }}>💰 Capital Payment Settings</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={STYLES.s565}>
+            <div style={STYLES.s559}>💰 Capital Payment Settings</div>
+            <div style={STYLES.s80}>
               <div>
-                <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Due Day</label>
+                <label style={STYLES.s560}>Capital Due Day</label>
                 <input type="number" min="1" max="31" placeholder="e.g. 10"
                   value={liabilityForm.capitalPaymentDay || ""}
                   onChange={e => setLiabilityForm(p => ({ ...p, capitalPaymentDay: e.target.value }))}
-                  style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+                  style={STYLES.s561} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "#92400e", display: "block", marginBottom: 4 }}>Capital Amount (₹)</label>
+                <label style={STYLES.s560}>Capital Amount (₹)</label>
                 <input type="number" placeholder="e.g. 30000"
                   value={liabilityForm.capitalAmount || totalAmountInput || ""}
                   onChange={e => setLiabilityForm(p => ({ ...p, capitalAmount: e.target.value }))}
-                  style={{ width: "100%", boxSizing: "border-box", borderColor: "#f59e0b" }} />
+                  style={STYLES.s561} />
               </div>
             </div>
-            <div style={{ fontSize: 11, color: "#92400e", marginTop: 6 }}>
+            <div style={STYLES.s562}>
               ⓘ Interest paid monthly on day {liabilityForm.paymentDay || "—"} · Capital paid on day {liabilityForm.capitalPaymentDay || "—"}
             </div>
           </div>
         )}
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Notes (optional)</label>
-          <input placeholder="e.g. Interest rate 12%, Principal amount 60000" value={liabilityForm.notes} onChange={e => setLiabilityForm(p => ({ ...p, notes: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s56}>
+          <label style={STYLES.s132}>Notes (optional)</label>
+          <input placeholder="e.g. Interest rate 12%, Principal amount 60000" value={liabilityForm.notes} onChange={e => setLiabilityForm(p => ({ ...p, notes: e.target.value }))} style={STYLES.s45} />
         </div>
-        <button onClick={addLiability} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>+ Add Liability</button>
+        <button onClick={addLiability} style={STYLES.s158}>+ Add Liability</button>
       </Card>
 
       {/* Info Banner */}
-      <div style={{ marginTop: 16, background: "#e8f5ee", border: "0.5px solid #1a6b3c", borderRadius: 10, padding: "0.8rem 1rem", fontSize: 13, color: "#1a6b3c" }}>
+      <div style={STYLES.s566}>
         ℹ️ <strong>Auto-Payment Feature:</strong> On the payment day each month, expenses will be automatically created and linked to the selected account. You can also manually mark payments using the button below.
       </div>
 
       {/* Active Liabilities */}
       {activeLiabilities.length > 0 && (
-        <div style={{ marginTop: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>📊 Active Liabilities</div>
-          <div style={{ display: "grid", gap: 12 }}>
+        <div style={STYLES.s567}>
+          <div style={STYLES.s568}>📊 Active Liabilities</div>
+          <div style={STYLES.s569}>
             {activeLiabilities.map(liability => {
               const account = accounts.find(a => a.id === liability.accountId);
               const progress = (liability.paidMonths / liability.totalMonths) * 100;
@@ -8350,23 +9759,23 @@ function LiabilitiesTab({ data, update }) {
               const relatedExpenses = data.transactions.filter(t => t.emiId === liability.id);
               
               return (
-                <div key={liability.id} style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{liability.name}</div>
-                      <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                <div key={liability.id} style={STYLES.s570}>
+                  <div style={STYLES.s571}>
+                    <div style={STYLES.s354}>
+                      <div style={STYLES.s572}>{liability.name}</div>
+                      <div style={STYLES.s53}>
                         {liability.type} · {liability._paymentMode === "interestOnly"
                           ? <>Interest {fmtCur(liability.amount)}/month (day {liability.paymentDay}{liability.paymentDay==1?'st':liability.paymentDay==2?'nd':liability.paymentDay==3?'rd':'th'}) · Capital {fmtCur(liability.capitalAmount || 0)} (day {liability.capitalPaymentDay || "—"})</>
                           : <>{fmtCur(liability.amount)}/month · Due on {liability.paymentDay}{liability.paymentDay === 1 ? 'st' : liability.paymentDay === 2 ? 'nd' : liability.paymentDay === 3 ? 'rd' : 'th'}</>
                         }
                       </div>
                       {account && (
-                        <div style={{ marginTop: 4, fontSize: 11 }}>
+                        <div style={STYLES.s573}>
                           <span style={{ background: account.type === "Credit Card" ? "#fff3e0" : "#e8f5ee", color: account.type === "Credit Card" ? "#e65100" : "#1a6b3c", borderRadius: 4, padding: "2px 6px", fontWeight: 500 }}>
                             {account.name}
                           </span>
                           {relatedExpenses.length > 0 && (
-                            <span style={{ marginLeft: 8, color: "var(--color-text-secondary)" }}>
+                            <span style={STYLES.s574}>
                               · {relatedExpenses.length} auto-payments logged
                             </span>
                           )}
@@ -8384,24 +9793,24 @@ function LiabilitiesTab({ data, update }) {
                   </div>
                   
                   {/* Progress bar */}
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
-                      <span style={{ color: "var(--color-text-secondary)" }}>Progress: {liability.paidMonths} / {liability.totalMonths} months</span>
+                  <div style={STYLES.s115}>
+                    <div style={STYLES.s575}>
+                      <span style={STYLES.s172}>Progress: {liability.paidMonths} / {liability.totalMonths} months</span>
                       <span style={{ fontWeight: 500, color: remaining === 0 ? "#1a6b3c" : "var(--color-text-primary)" }}>
                         {remaining} {remaining === 1 ? 'month' : 'months'} left
                       </span>
                     </div>
-                    <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 8, overflow: "hidden" }}>
+                    <div style={STYLES.s576}>
                       <div style={{ width: progress + "%", height: "100%", background: progress === 100 ? "#1a6b3c" : "#3b82f6", borderRadius: 4, transition: "width 0.5s" }} />
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
+                    <div style={STYLES.s577}>
                       <span>Paid: {fmtCur(totalPaid)}</span>
                       <span>Total: {fmtCur(totalAmount)}</span>
                     </div>
                   </div>
 
                   {/* Action buttons */}
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={STYLES.s249}>
                     <button 
                       onClick={() => markPaymentMade(liability)}
                       disabled={liability.paidMonths >= liability.totalMonths}
@@ -8421,21 +9830,13 @@ function LiabilitiesTab({ data, update }) {
                     </button>
                     <button 
                       onClick={() => toggleLiabilityActive(liability.id)}
-                      style={{ 
-                        background: "var(--color-background-secondary)", 
-                        border: "0.5px solid var(--color-border-secondary)", 
-                        borderRadius: 8, 
-                        padding: "7px 12px", 
-                        cursor: "pointer", 
-                        fontSize: 13, 
-                        color: "var(--color-text-secondary)" 
-                      }}
+                      style={STYLES.s578}
                     >
                       Pause
                     </button>
                   </div>
                   {liability._paymentMode === "interestOnly" && liability.capitalAmount && (
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <div style={STYLES.s579}>
                       <button
                         onClick={() => markCapitalPaid(liability)}
                         disabled={!!liability.capitalPaid}
@@ -8454,13 +9855,7 @@ function LiabilitiesTab({ data, update }) {
                         <button
                           onClick={() => unmarkCapitalPaid(liability)}
                           title="Undo capital paid"
-                          style={{
-                            background: "none",
-                            border: "0.5px solid #d44",
-                            borderRadius: 8, padding: "7px 12px",
-                            cursor: "pointer", fontSize: 12,
-                            color: "#d44", whiteSpace: "nowrap",
-                          }}
+                          style={STYLES.s580}
                         >
                           ↩ Undo
                         </button>
@@ -8469,7 +9864,7 @@ function LiabilitiesTab({ data, update }) {
                   )}
                   
                   {liability.notes && (
-                    <div style={{ marginTop: 10, padding: "8px", background: "var(--color-background-secondary)", borderRadius: 6, fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    <div style={STYLES.s581}>
                       📝 {liability.notes}
                     </div>
                   )}
@@ -8482,11 +9877,11 @@ function LiabilitiesTab({ data, update }) {
 
       {/* Completed/Paused Liabilities */}
       {completedLiabilities.length > 0 && (
-        <div style={{ marginTop: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <div style={STYLES.s567}>
+          <div style={STYLES.s568}>
             {completedLiabilities.filter(e => e.paidMonths >= e.totalMonths).length > 0 ? "✓ Completed Liabilities" : "⏸ Paused Liabilities"}
           </div>
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={STYLES.s582}>
             {completedLiabilities.map(liability => {
               const isCompleted = liability.paidMonths >= liability.totalMonths;
               const relatedExpenses = data.transactions.filter(t => t.emiId === liability.id);
@@ -8497,54 +9892,54 @@ function LiabilitiesTab({ data, update }) {
                   {/* ── Inline Edit Form ── */}
                   {isEditing ? (
                     <div>
-                      <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 10, color: "#1a6b3c" }}>✏️ Edit Liability</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 8 }}>
+                      <div style={STYLES.s583}>✏️ Edit Liability</div>
+                      <div style={STYLES.s584}>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name</label>
-                          <input value={editLiability.name} onChange={e => setEditLiability(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>Name</label>
+                          <input value={editLiability.name} onChange={e => setEditLiability(p => ({ ...p, name: e.target.value }))} style={STYLES.s202} />
                         </div>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Monthly Amount (₹)</label>
-                          <input type="number" value={editLiability.amount} onChange={e => setEditLiability(p => ({ ...p, amount: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>Monthly Amount (₹)</label>
+                          <input type="number" value={editLiability.amount} onChange={e => setEditLiability(p => ({ ...p, amount: e.target.value }))} style={STYLES.s202} />
                         </div>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Total Months</label>
-                          <input type="number" value={editLiability.totalMonths} onChange={e => setEditLiability(p => ({ ...p, totalMonths: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>Total Months</label>
+                          <input type="number" value={editLiability.totalMonths} onChange={e => setEditLiability(p => ({ ...p, totalMonths: e.target.value }))} style={STYLES.s202} />
                         </div>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Paid Months</label>
-                          <input type="number" value={editLiability.paidMonths} onChange={e => setEditLiability(p => ({ ...p, paidMonths: parseInt(e.target.value) || 0 }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>Paid Months</label>
+                          <input type="number" value={editLiability.paidMonths} onChange={e => setEditLiability(p => ({ ...p, paidMonths: parseInt(e.target.value) || 0 }))} style={STYLES.s202} />
                         </div>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Payment Day</label>
-                          <input type="number" min="1" max="31" value={editLiability.paymentDay} onChange={e => setEditLiability(p => ({ ...p, paymentDay: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>Payment Day</label>
+                          <input type="number" min="1" max="31" value={editLiability.paymentDay} onChange={e => setEditLiability(p => ({ ...p, paymentDay: e.target.value }))} style={STYLES.s202} />
                         </div>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes</label>
-                          <input value={editLiability.notes || ""} onChange={e => setEditLiability(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>Notes</label>
+                          <input value={editLiability.notes || ""} onChange={e => setEditLiability(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" style={STYLES.s202} />
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button onClick={() => setEditLiability(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
-                        <button onClick={saveEditLiability} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Save Changes</button>
+                      <div style={STYLES.s136}>
+                        <button onClick={() => setEditLiability(null)} style={STYLES.s204}>Cancel</button>
+                        <button onClick={saveEditLiability} style={STYLES.s585}>Save Changes</button>
                       </div>
                     </div>
                   ) : (
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>
+                    <div style={STYLES.s322}>
+                      <div style={STYLES.s354}>
+                        <div style={STYLES.s586}>
                           {isCompleted && "✓ "}{liability.name}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                        <div style={STYLES.s72}>
                           {liability.paidMonths} / {liability.totalMonths} months · {fmtCur(liability.amount * liability.paidMonths)} paid
                           {relatedExpenses.length > 0 && ` · ${relatedExpenses.length} logged payments`}
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <div style={STYLES.s587}>
                         {/* Edit */}
                         <button
                           onClick={() => setEditLiability({ ...liability })}
-                          style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 4 }}
+                          style={STYLES.s588}
                           title="Edit liability"
                         >
                           ✏️ Edit
@@ -8562,7 +9957,7 @@ function LiabilitiesTab({ data, update }) {
                                 transactions: toRemove ? p.transactions.filter(t => t.id !== toRemove.id) : p.transactions
                               }));
                             }}
-                            style={{ background: "none", border: "0.5px solid #f0a020", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "#f0a020", display: "flex", alignItems: "center", gap: 4 }}
+                            style={STYLES.s589}
                             title="Undo last payment"
                           >
                             ↩ Undo
@@ -8572,7 +9967,7 @@ function LiabilitiesTab({ data, update }) {
                         {!isCompleted && (
                           <button
                             onClick={() => toggleLiabilityActive(liability.id)}
-                            style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}
+                            style={STYLES.s590}
                           >
                             Resume
                           </button>
@@ -8584,7 +9979,7 @@ function LiabilitiesTab({ data, update }) {
                               deleteLiability(liability.id);
                             }
                           }}
-                          style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "#d44" }}
+                          style={STYLES.s591}
                         >
                           Delete
                         </button>
@@ -8599,7 +9994,7 @@ function LiabilitiesTab({ data, update }) {
       )}
 
       {liabilities.length === 0 && (
-        <div style={{ marginTop: 16 }}>
+        <div style={STYLES.s212}>
           <EmptyState msg="No liabilities added yet. Add your first liability above to start tracking auto-payments." />
         </div>
       )}
@@ -8632,9 +10027,9 @@ function AddSavingsInline({ item, cardAccent, accounts, goalAccounts, addSavings
   }
 
   return (
-    <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
-      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>Log this saving as:</div>
-      <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)", marginBottom: 8 }}>
+    <div style={STYLES.s592}>
+      <div style={STYLES.s593}>Log this saving as:</div>
+      <div style={STYLES.s594}>
         {[["income","📥 Income","#1a6b3c","#e8f5ee"],["expense","📤 Expense","#d44","#fdf0f0"],["savings","💰 Savings","#7c3aed","#f3e8ff"]].map(([v, lbl, color, bg]) => (
           <button key={v} onClick={() => setSaveTxType(v)}
             style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", fontSize: 11, fontWeight: saveTxType === v ? 600 : 400, background: saveTxType === v ? bg : "transparent", color: saveTxType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
@@ -8642,19 +10037,19 @@ function AddSavingsInline({ item, cardAccent, accounts, goalAccounts, addSavings
           </button>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+      <div style={STYLES.s595}>
         <input
           type="text"
           inputMode="decimal"
           placeholder="Amount (₹)"
           value={addAmt}
           onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setAddAmt(v); }}
-          style={{ flex: 1, fontSize: 12, padding: "5px 8px", boxSizing: "border-box" }}
+          style={STYLES.s596}
           autoFocus
         />
       </div>
       {availableAccounts.length > 0 && (
-        <select value={saveBankId} onChange={e => setSaveBankId(e.target.value)} style={{ width: "100%", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }}>
+        <select value={saveBankId} onChange={e => setSaveBankId(e.target.value)} style={STYLES.s597}>
           <option value="">— No account —</option>
           {item.excludeFromNetWorth ? (
             /* Goal Accounts - simple list without optgroups */
@@ -8681,9 +10076,9 @@ function AddSavingsInline({ item, cardAccent, accounts, goalAccounts, addSavings
           )}
         </select>
       )}
-      <div style={{ display: "flex", gap: 6 }}>
+      <div style={STYLES.s167}>
         <button onClick={handleAddSavings} style={{ flex: 1, background: cardAccent, color: "#fff", border: "none", borderRadius: 7, padding: "5px 0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Log Savings</button>
-        <button onClick={() => { setShowAddSave(false); setAddAmt(""); setSaveBankId(""); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+        <button onClick={() => { setShowAddSave(false); setAddAmt(""); setSaveBankId(""); }} style={STYLES.s598}>✕</button>
       </div>
     </div>
   );
@@ -8950,9 +10345,9 @@ function GoalsPageInner({ data, update }) {
     return (
       <div>
         {/* Goal type toggle: Money vs Task */}
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Goal Type</label>
-          <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
+        <div style={STYLES.s56}>
+          <label style={STYLES.s254}>Goal Type</label>
+          <div style={STYLES.s599}>
             {[["money","💰 Money","#1a6b3c","#e8f5ee"],["task","✅ Task","#4da6ff","#e8f0ff"]].map(([v, lbl, color, bg]) => (
               <button key={v} onClick={() => onChange({ ...values, goalType: v })}
                 style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", fontSize: 12, fontWeight: values.goalType === v ? 600 : 400, background: values.goalType === v ? bg : "transparent", color: values.goalType === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
@@ -8961,9 +10356,9 @@ function GoalsPageInner({ data, update }) {
             ))}
           </div>
         </div>
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Name *</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={STYLES.s56}>
+          <label style={STYLES.s181}>Name *</label>
+          <div style={STYLES.s535}>
             {"goalNumber" in values && (
               <input
                 type="number"
@@ -8972,32 +10367,32 @@ function GoalsPageInner({ data, update }) {
                 value={values.goalNumber}
                 onChange={e => onChange({ ...values, goalNumber: e.target.value })}
                 title="Goal order number"
-                style={{ width: 60, boxSizing: "border-box", textAlign: "center", fontWeight: 700 }}
+                style={STYLES.s600}
               />
             )}
-            <input placeholder={values.goalType === "task" ? "e.g. Complete certification, Learn piano" : "e.g. Emergency Fund, New Laptop"} value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={{ flex: 1, boxSizing: "border-box" }} />
+            <input placeholder={values.goalType === "task" ? "e.g. Complete certification, Learn piano" : "e.g. Emergency Fund, New Laptop"} value={values.name} onChange={e => onChange({ ...values, name: e.target.value })} style={STYLES.s449} />
           </div>
         </div>
         {values.goalType === "money" ? (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div style={STYLES.s174}>
             <div>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Target Amount (₹) *</label>
-              <input type="text" inputMode="decimal" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s181}>Target Amount (₹) *</label>
+              <input type="text" inputMode="decimal" placeholder="e.g. 50000" value={values.targetAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, targetAmount: v }); }} style={STYLES.s45} />
             </div>
             <div>
-              <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Already Saved (₹)</label>
-              <input type="text" inputMode="decimal" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s181}>Already Saved (₹)</label>
+              <input type="text" inputMode="decimal" placeholder="0" value={values.savedAmount} onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) onChange({ ...values, savedAmount: v }); }} style={STYLES.s45} />
             </div>
           </div>
         ) : (
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Due Date (optional)</label>
-            <input type="date" value={values.dueDate || ""} onChange={e => onChange({ ...values, dueDate: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          <div style={STYLES.s56}>
+            <label style={STYLES.s181}>Due Date (optional)</label>
+            <input type="date" value={values.dueDate || ""} onChange={e => onChange({ ...values, dueDate: e.target.value })} style={STYLES.s45} />
           </div>
         )}
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Priority</label>
-          <div style={{ display: "flex", gap: 6 }}>
+        <div style={STYLES.s56}>
+          <label style={STYLES.s254}>Priority</label>
+          <div style={STYLES.s167}>
             {PRIORITIES.map(([v, lbl]) => (
               <button key={v} onClick={() => onChange({ ...values, priority: v })}
                 style={{ flex: 1, padding: "5px 0", borderRadius: 7, border: "0.5px solid", borderColor: values.priority === v ? "#1a6b3c" : "var(--color-border-secondary)", background: values.priority === v ? "#e8f5ee" : "transparent", color: values.priority === v ? "#1a6b3c" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: values.priority === v ? 600 : 400 }}>
@@ -9006,15 +10401,15 @@ function GoalsPageInner({ data, update }) {
             ))}
           </div>
         </div>
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Notes (optional)</label>
-          <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+        <div style={STYLES.s56}>
+          <label style={STYLES.s181}>Notes (optional)</label>
+          <input placeholder="Why this goal matters…" value={values.notes} onChange={e => onChange({ ...values, notes: e.target.value })} style={STYLES.s45} />
         </div>
         {values.goalType === "money" && (
-          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px", border: "0.5px solid var(--color-border-secondary)" }}>
+          <div style={STYLES.s601}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>🚫 Exclude from Net Worth</div>
-              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Saved amount won't be counted in your net worth</div>
+              <div style={STYLES.s602}>🚫 Exclude from Net Worth</div>
+              <div style={STYLES.s196}>Saved amount won't be counted in your net worth</div>
             </div>
             <div onClick={() => onChange({ ...values, excludeFromNetWorth: !values.excludeFromNetWorth })}
               style={{ width: 40, height: 22, borderRadius: 11, background: values.excludeFromNetWorth ? "#ef4444" : "var(--color-border-primary)", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
@@ -9022,10 +10417,10 @@ function GoalsPageInner({ data, update }) {
             </div>
           </div>
         )}
-        <div style={{ marginTop: 10 }}>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 6 }}>🔗 Links (optional)</label>
+        <div style={STYLES.s603}>
+          <label style={STYLES.s528}>🔗 Links (optional)</label>
           {(values.urls || [""]).map((url, i) => (
-            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+            <div key={i} style={STYLES.s604}>
               <input
                 type="url"
                 placeholder={`https://… (link ${i + 1})`}
@@ -9035,25 +10430,25 @@ function GoalsPageInner({ data, update }) {
                   updated[i] = e.target.value;
                   onChange({ ...values, urls: updated });
                 }}
-                style={{ flex: 1, boxSizing: "border-box", fontSize: 12 }}
+                style={STYLES.s605}
               />
               {(values.urls || [""]).length > 1 && (
                 <button type="button" onClick={() => {
                   const updated = (values.urls || [""]).filter((_, j) => j !== i);
                   onChange({ ...values, urls: updated });
-                }} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#d44", fontSize: 12, flexShrink: 0 }}>✕</button>
+                }} style={STYLES.s606}>✕</button>
               )}
             </div>
           ))}
           <button type="button" onClick={() => onChange({ ...values, urls: [...(values.urls || [""]), ""] })}
-            style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", border: "0.5px solid #1a6b3c44", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontWeight: 500 }}>
+            style={STYLES.s607}>
             + Add another link
           </button>
         </div>
         {values.goalType === "money" && (
-          <div style={{ marginTop: 10 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>📅 End Date (optional)</label>
-            <input type="date" value={values.dueDate || ""} onChange={e => onChange({ ...values, dueDate: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+          <div style={STYLES.s603}>
+            <label style={STYLES.s181}>📅 End Date (optional)</label>
+            <input type="date" value={values.dueDate || ""} onChange={e => onChange({ ...values, dueDate: e.target.value })} style={STYLES.s45} />
           </div>
         )}
       </div>
@@ -9086,41 +10481,41 @@ function GoalsPageInner({ data, update }) {
         onClick={isInsideFolder ? undefined : () => openGoal(item)}
       >
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={STYLES.s608}>
+          <div style={STYLES.s206}>
             {/* Top row: folder icon + number + chips */}
-            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-              {!isInsideFolder && <span style={{ fontSize: 12 }}>📁</span>}
+            <div style={STYLES.s609}>
+              {!isInsideFolder && <span style={STYLES.s610}>📁</span>}
               {item.goalNumber && (
                 <span style={{ fontSize: 11, fontWeight: 700, color: cardAccent, background: cardAccent + "18", borderRadius: 5, padding: "1px 7px", flexShrink: 0 }}>
                   #{item.goalNumber}
                 </span>
               )}
-              {isTask && <span style={{ fontSize: 10, background: "#e8f0ff", color: "#4da6ff", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>✅ Task</span>}
+              {isTask && <span style={STYLES.s611}>✅ Task</span>}
               <span style={{ fontSize: 10, background: item.priority === "high" ? "#fdf0f0" : item.priority === "medium" ? "#fffbe0" : "#e8f5ee", color: item.priority === "high" ? "#d44" : item.priority === "medium" ? "#b8860b" : "#1a6b3c", borderRadius: 4, padding: "1px 6px", fontWeight: 500 }}>
                 {item.priority === "high" ? "🔴" : item.priority === "medium" ? "🟡" : "🟢"} {item.priority}
               </span>
             </div>
             {/* Name row */}
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3 }}>
-                {item.completed && <span style={{ color: "#1a6b3c", marginRight: 4 }}>✓</span>}
+            <div style={STYLES.s612}>
+              <span style={STYLES.s613}>
+                {item.completed && <span style={STYLES.s614}>✓</span>}
                 {item.name}
               </span>
             </div>
-            {item.notes && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{item.notes}</div>}
+            {item.notes && <div style={STYLES.s196}>{item.notes}</div>}
             {(item.urls && item.urls.length > 0 ? item.urls : item.url ? [item.url] : []).map((u, i) => u ? (
               <a key={i} href={u} target="_blank" rel="noreferrer"
                 onClick={e => e.stopPropagation()}
-                style={{ fontSize: 11, color: "#4da6ff", marginTop: 2, display: "flex", alignItems: "center", gap: 3, overflow: "hidden", maxWidth: "100%" }}
+                style={STYLES.s615}
                 title={u}>
-                <span style={{ flexShrink: 0 }}>🔗</span>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u}</span>
+                <span style={STYLES.s358}>🔗</span>
+                <span style={STYLES.s616}>{u}</span>
               </a>
             ) : null)}
-            {dueDateEl && <div style={{ marginTop: 4 }}>{dueDateEl}</div>}
+            {dueDateEl && <div style={STYLES.s617}>{dueDateEl}</div>}
           </div>
-          <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          <div style={STYLES.s543} onClick={e => e.stopPropagation()}>
             <button onClick={() => toggleComplete(item.id)} title={item.completed ? "Mark incomplete" : "Mark complete"} style={{ width: 26, height: 26, borderRadius: 6, border: `0.5px solid ${item.completed ? "#1a6b3c" : "var(--color-border-secondary)"}`, background: item.completed ? "#e8f5ee" : "transparent", cursor: "pointer", fontSize: 12, color: item.completed ? "#1a6b3c" : "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {item.completed ? "↩" : "✓"}
             </button>
@@ -9130,20 +10525,20 @@ function GoalsPageInner({ data, update }) {
 
         {/* Money goal progress */}
         {!isTask && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
-              <span style={{ color: "var(--color-text-secondary)" }}>Saved: <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{fmtCur(item.savedAmount)}</span></span>
-              <span style={{ color: "var(--color-text-secondary)" }}>Target: <span style={{ fontWeight: 600, color: cardAccent }}>{fmtCur(item.targetAmount)}</span></span>
+          <div style={STYLES.s56}>
+            <div style={STYLES.s618}>
+              <span style={STYLES.s172}>Saved: <span style={STYLES.s619}>{fmtCur(item.savedAmount)}</span></span>
+              <span style={STYLES.s172}>Target: <span style={{ fontWeight: 600, color: cardAccent }}>{fmtCur(item.targetAmount)}</span></span>
             </div>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 7, overflow: "hidden" }}>
+            <div style={STYLES.s620}>
               <div style={{ width: pct + "%", height: "100%", background: pct >= 100 ? "#1a6b3c" : cardAccent, borderRadius: 6, transition: "width 0.5s ease" }} />
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, color: "var(--color-text-secondary)" }}>
+            <div style={STYLES.s621}>
               <span>{pct.toFixed(1)}% complete</span>
-              {remaining > 0 ? <span>{fmtCur(remaining)} remaining</span> : <span style={{ color: "#1a6b3c", fontWeight: 500 }}>🎉 Goal reached!</span>}
+              {remaining > 0 ? <span>{fmtCur(remaining)} remaining</span> : <span style={STYLES.s622}>🎉 Goal reached!</span>}
             </div>
             {item.excludeFromNetWorth && (
-              <div style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 4, background: "#fef2f2", border: "0.5px solid #fecaca", borderRadius: 5, padding: "2px 7px", fontSize: 10, color: "#ef4444", fontWeight: 500 }}>
+              <div style={STYLES.s623}>
                 🚫 Excluded from Net Worth
               </div>
             )}
@@ -9152,8 +10547,8 @@ function GoalsPageInner({ data, update }) {
 
         {/* Task goal completion indicator */}
         {isTask && !item.completed && isInsideFolder && (
-          <div style={{ marginTop: "auto", paddingTop: 8 }} onClick={e => e.stopPropagation()}>
-            <button onClick={() => toggleComplete(item.id)} style={{ width: "100%", background: "#e8f5ee", border: "1px solid #1a6b3c", borderRadius: 8, padding: "6px", cursor: "pointer", fontSize: 12, color: "#1a6b3c", fontWeight: 500 }}>
+          <div style={STYLES.s624} onClick={e => e.stopPropagation()}>
+            <button onClick={() => toggleComplete(item.id)} style={STYLES.s625}>
               ✓ Mark as Done
             </button>
           </div>
@@ -9161,7 +10556,7 @@ function GoalsPageInner({ data, update }) {
 
         {/* Add savings — on grid card (outside folder) */}
         {!isInsideFolder && (
-          <div style={{ marginTop: "auto", paddingTop: 8 }} onClick={e => e.stopPropagation()}>
+          <div style={STYLES.s624} onClick={e => e.stopPropagation()}>
             {!isTask && !item.completed && remaining > 0 && <AddSavingsInline item={item} cardAccent={cardAccent} accounts={accounts} goalAccounts={data.goalAccounts || []} addSavings={addSavings} />}
           </div>
         )}
@@ -9169,7 +10564,7 @@ function GoalsPageInner({ data, update }) {
         {/* "Open" hint on grid cards */}
         {!isInsideFolder && (
           <div style={{ paddingTop: (!isTask && !item.completed && remaining > 0) ? 6 : 8, fontSize: 11, color: cardAccent, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
-            <span>Open folder</span><span style={{ fontSize: 13 }}>›</span>
+            <span>Open folder</span><span style={STYLES.s162}>›</span>
           </div>
         )}
       </div>
@@ -9203,22 +10598,22 @@ function GoalsPageInner({ data, update }) {
     return (
       <div>
         {/* Breadcrumb */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
-          <button onClick={closeGoal} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", transition: "opacity 0.15s", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" }}>
+        <div style={STYLES.s626}>
+          <button onClick={closeGoal} style={STYLES.s627}>
             🎯 Goals
           </button>
-          <span style={{ color: "var(--color-text-secondary)" }}>›</span>
-          <button onClick={closeGoal} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", transition: "opacity 0.15s", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" }}>
+          <span style={STYLES.s172}>›</span>
+          <button onClick={closeGoal} style={STYLES.s627}>
             {activeTab === "needs" ? "🏠 Needs" : "✨ Wants"}
           </button>
-          <span style={{ color: "var(--color-text-secondary)" }}>›</span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", background: "#e8f5ee", color: "#1a6b3c" }}>
+          <span style={STYLES.s172}>›</span>
+          <span style={STYLES.s628}>
             📁 {item.name}
           </span>
         </div>
 
         {/* Inner tabs */}
-        <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 20, gap: 0 }}>
+        <div style={STYLES.s629}>
           {INNER_TABS.map(t => (
             <button key={t.id} onClick={() => setGoalInnerTab(t.id)}
               style={{ padding: "8px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 13,
@@ -9234,33 +10629,33 @@ function GoalsPageInner({ data, update }) {
         {/* ── Transactions tab ── */}
         {goalInnerTab === "transactions" && (
           <div>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>💳 Savings Transactions — {item.name}</div>
+            <div style={STYLES.s466}>💳 Savings Transactions — {item.name}</div>
             {goalTxs.length === 0 ? (
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              <div style={STYLES.s630}>
                 No savings logged yet. Use "+ Add Savings" on the goal card to log one.
               </div>
             ) : (
               <div>
                 {/* Summary */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px,100%),1fr))", gap: 10, marginBottom: 16 }}>
+                <div style={STYLES.s631}>
                   {[
                     { label: "Total Logged", val: fmtCur(goalTxs.reduce((s,t)=>s+Number(t.amount||0),0)), color: "#1a6b3c" },
                     { label: "# of Entries", val: goalTxs.length, color: cardAccent },
                     { label: "Remaining", val: fmtCur(Math.max(0, remaining)), color: remaining <= 0 ? "#1a6b3c" : "#f59e0b" },
                   ].map(c => (
-                    <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
+                    <div key={c.label} style={STYLES.s553}>
+                      <div style={STYLES.s328}>{c.label}</div>
                       <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
                     </div>
                   ))}
                 </div>
                 {/* Table */}
-                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <div style={STYLES.s537}>
+                  <table style={STYLES.s632}>
                     <thead>
-                      <tr style={{ background: "var(--color-background-secondary)" }}>
+                      <tr style={STYLES.s633}>
                         {["Date","Type","Amount","Account","Note","Actions"].map(h => (
-                          <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>{h}</th>
+                          <th key={h} style={STYLES.s634}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -9277,19 +10672,19 @@ function GoalsPageInner({ data, update }) {
                         const isEditing = editingTx && editingTx.id === t.id;
                         
                         return (
-                          <tr key={t.id || i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                          <tr key={t.id || i} style={STYLES.s294}
                             onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
                             onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                            <td style={{ padding: "9px 12px", color: "var(--color-text-secondary)", fontSize: 12 }}>
+                            <td style={STYLES.s635}>
                               {isEditing ? (
                                 <input type="date" value={txEditForm.date} onChange={e => setTxEditForm({...txEditForm, date: e.target.value})}
-                                  style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                                  style={STYLES.s636} />
                               ) : (t.date || "—")}
                             </td>
-                            <td style={{ padding: "9px 12px" }}>
+                            <td style={STYLES.s637}>
                               {isEditing ? (
                                 <select value={txEditForm.type} onChange={e => setTxEditForm({...txEditForm, type: e.target.value})}
-                                  style={{ fontSize: 11, padding: "4px 6px", width: "100%" }}>
+                                  style={STYLES.s638}>
                                   <option value="income">📥 Income</option>
                                   <option value="expense">📤 Expense</option>
                                 </select>
@@ -9297,48 +10692,48 @@ function GoalsPageInner({ data, update }) {
                                 <span style={{ fontSize: 11, color: typeColor, fontWeight: 500 }}>{typeLabel}</span>
                               )}
                             </td>
-                            <td style={{ padding: "9px 12px", fontWeight: 600, color: "#1a6b3c" }}>
+                            <td style={STYLES.s639}>
                               {isEditing ? (
                                 <input type="text" inputMode="decimal" value={txEditForm.amount} 
                                   onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setTxEditForm({...txEditForm, amount: v}); }}
-                                  style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} placeholder="Amount" />
+                                  style={STYLES.s636} placeholder="Amount" />
                               ) : fmtCur(t.amount)}
                             </td>
-                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                            <td style={STYLES.s640}>
                               {isEditing ? (
                                 <select value={txEditForm.bankId} onChange={e => setTxEditForm({...txEditForm, bankId: e.target.value})}
-                                  style={{ fontSize: 11, padding: "4px 6px", width: "100%" }}>
+                                  style={STYLES.s638}>
                                   <option value="">— Select —</option>
                                   {editAccountsList.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                                 </select>
                               ) : (bank ? bank.name : "—")}
                             </td>
-                            <td style={{ padding: "9px 12px", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                            <td style={STYLES.s640}>
                               {isEditing ? (
                                 <input type="text" value={txEditForm.note} onChange={e => setTxEditForm({...txEditForm, note: e.target.value})}
-                                  style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} placeholder="Note" />
+                                  style={STYLES.s636} placeholder="Note" />
                               ) : (t.note || "—")}
                             </td>
-                            <td style={{ padding: "9px 12px" }}>
+                            <td style={STYLES.s637}>
                               {isEditing ? (
-                                <div style={{ display: "flex", gap: 4 }}>
+                                <div style={STYLES.s641}>
                                   <button onClick={() => saveTransactionEdit(item.id, t.amount)}
-                                    style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>
+                                    style={STYLES.s642}>
                                     ✓
                                   </button>
                                   <button onClick={() => { setEditingTx(null); setTxEditForm({ amount: "", date: "", bankId: "", type: "", note: "" }); }}
-                                    style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                                    style={STYLES.s643}>
                                     ✕
                                   </button>
                                 </div>
                               ) : (
-                                <div style={{ display: "flex", gap: 4 }}>
+                                <div style={STYLES.s641}>
                                   <button onClick={() => startEditTransaction(t)} title="Edit"
-                                    style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                                    style={STYLES.s644}>
                                     ✏️
                                   </button>
                                   <button onClick={() => deleteTransaction(t.id, item.id, t.amount)} title="Delete"
-                                    style={{ background: "none", border: "0.5px solid #fecaca", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "#ef4444" }}>
+                                    style={STYLES.s645}>
                                     🗑️
                                   </button>
                                 </div>
@@ -9358,49 +10753,49 @@ function GoalsPageInner({ data, update }) {
         {/* ── Plan tab ── */}
         {goalInnerTab === "plan" && (
           <div>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 14 }}>📅 Savings Plan — {item.name}</div>
+            <div style={STYLES.s466}>📅 Savings Plan — {item.name}</div>
 
             {isTask ? (
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+              <div style={STYLES.s630}>
                 Planning is available for money goals only.
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={STYLES.s646}>
                 {/* Current status */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px,100%),1fr))", gap: 10 }}>
+                <div style={STYLES.s647}>
                   {[
                     { label: "Target", val: fmtCur(item.targetAmount), color: cardAccent },
                     { label: "Saved", val: fmtCur(item.savedAmount), color: "#1a6b3c" },
                     { label: "Remaining", val: fmtCur(Math.max(0, remaining)), color: remaining <= 0 ? "#1a6b3c" : "#f59e0b" },
                   ].map(c => (
-                    <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
+                    <div key={c.label} style={STYLES.s553}>
+                      <div style={STYLES.s328}>{c.label}</div>
                       <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
                     </div>
                   ))}
                 </div>
 
                 {remaining <= 0 ? (
-                  <div style={{ background: "#e8f5ee", borderRadius: 12, padding: "1.2rem 1.4rem", border: "0.5px solid #bbf7d0", textAlign: "center", fontWeight: 600, color: "#1a6b3c", fontSize: 15 }}>
+                  <div style={STYLES.s648}>
                     🎉 Goal reached! No more planning needed.
                   </div>
                 ) : (
                   <>
                     {/* Plan input */}
-                    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Calculate Monthly Savings Needed</div>
-                      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-                        <div style={{ flex: 1, minWidth: 140 }}>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Months to complete</label>
+                    <div style={STYLES.s649}>
+                      <div style={STYLES.s650}>Calculate Monthly Savings Needed</div>
+                      <div style={STYLES.s651}>
+                        <div style={STYLES.s652}>
+                          <label style={STYLES.s254}>Months to complete</label>
                           <input type="number" inputMode="numeric" min="1" placeholder="e.g. 12"
                             value={planMonths} onChange={e => setPlanMonths(e.target.value)}
-                            style={{ width: "100%", boxSizing: "border-box", fontSize: 14, padding: "8px 10px" }} />
+                            style={STYLES.s653} />
                         </div>
                         {perMonth > 0 && (
-                          <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "10px 18px", border: "0.5px solid #bbf7d0", minWidth: 160 }}>
-                            <div style={{ fontSize: 11, color: "#1a6b3c", marginBottom: 2 }}>Monthly target</div>
-                            <div style={{ fontSize: 22, fontWeight: 700, color: "#1a6b3c" }}>{fmtCur(perMonth)}</div>
-                            <div style={{ fontSize: 11, color: "#1a6b3c", marginTop: 2 }}>for {planMonths} month{parseInt(planMonths)!==1?"s":""}</div>
+                          <div style={STYLES.s654}>
+                            <div style={STYLES.s655}>Monthly target</div>
+                            <div style={STYLES.s88}>{fmtCur(perMonth)}</div>
+                            <div style={STYLES.s656}>for {planMonths} month{parseInt(planMonths)!==1?"s":""}</div>
                           </div>
                         )}
                       </div>
@@ -9408,12 +10803,12 @@ function GoalsPageInner({ data, update }) {
 
                     {/* Monthly breakdown */}
                     {perMonth > 0 && (
-                      <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>📆 Month-by-Month Breakdown</div>
-                        <div style={{ overflowX: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <div style={STYLES.s649}>
+                        <div style={STYLES.s650}>📆 Month-by-Month Breakdown</div>
+                        <div style={STYLES.s291}>
+                          <table style={STYLES.s657}>
                             <thead>
-                              <tr style={{ background: "var(--color-background-secondary)" }}>
+                              <tr style={STYLES.s633}>
                                 {["Month","Save","Cumulative","Remaining","Progress"].map(h => (
                                   <th key={h} style={{ padding: "7px 10px", textAlign: h === "Progress" ? "center" : "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", whiteSpace: "nowrap" }}>{h}</th>
                                 ))}
@@ -9428,19 +10823,19 @@ function GoalsPageInner({ data, update }) {
                                 const d = new Date(); d.setMonth(d.getMonth() + i + 1);
                                 const label = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
                                 return (
-                                  <tr key={i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                                  <tr key={i} style={STYLES.s294}
                                     onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
                                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                    <td style={{ padding: "7px 10px", fontWeight: 500 }}>{label}</td>
-                                    <td style={{ padding: "7px 10px", color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(Math.min(perMonth, item.targetAmount - item.savedAmount - perMonth * i))}</td>
-                                    <td style={{ padding: "7px 10px" }}>{fmtCur(capped)}</td>
+                                    <td style={STYLES.s658}>{label}</td>
+                                    <td style={STYLES.s659}>{fmtCur(Math.min(perMonth, item.targetAmount - item.savedAmount - perMonth * i))}</td>
+                                    <td style={STYLES.s660}>{fmtCur(capped)}</td>
                                     <td style={{ padding: "7px 10px", color: rem === 0 ? "#1a6b3c" : "var(--color-text-secondary)" }}>{rem === 0 ? "🎉 Done!" : fmtCur(rem)}</td>
-                                    <td style={{ padding: "7px 10px" }}>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <div style={{ flex: 1, height: 5, borderRadius: 3, background: "var(--color-border-tertiary)", overflow: "hidden", minWidth: 60 }}>
+                                    <td style={STYLES.s660}>
+                                      <div style={STYLES.s408}>
+                                        <div style={STYLES.s661}>
                                           <div style={{ width: pctM + "%", height: "100%", background: pctM >= 100 ? "#1a6b3c" : cardAccent, borderRadius: 3 }} />
                                         </div>
-                                        <span style={{ fontSize: 10, color: "var(--color-text-secondary)", minWidth: 34 }}>{pctM.toFixed(0)}%</span>
+                                        <span style={STYLES.s662}>{pctM.toFixed(0)}%</span>
                                       </div>
                                     </td>
                                   </tr>
@@ -9465,73 +10860,73 @@ function GoalsPageInner({ data, update }) {
     <div>
       {/* Goal Accounts Management Modal */}
       {showGoalAccounts && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(520px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={STYLES.s129}>
+          <div style={STYLES.s663}>
+            <div style={STYLES.s664}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 16 }}>⚙️ Goal Accounts</div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Separate accounts for goals excluded from Net Worth</div>
+                <div style={STYLES.s665}>⚙️ Goal Accounts</div>
+                <div style={STYLES.s324}>Separate accounts for goals excluded from Net Worth</div>
               </div>
               <button onClick={() => { setShowGoalAccounts(false); setEditGoalAcc(null); setGoalAccForm({ name: "", balance: "" }); }}
-                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--color-text-secondary)" }}>✕</button>
+                style={STYLES.s666}>✕</button>
             </div>
 
             {/* Add/Edit Form */}
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px", marginBottom: 16, border: "0.5px solid var(--color-border-tertiary)" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{editGoalAcc ? "✏️ Edit Account" : "➕ Add Account"}</div>
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Account Name</label>
+            <div style={STYLES.s667}>
+              <div style={STYLES.s668}>{editGoalAcc ? "✏️ Edit Account" : "➕ Add Account"}</div>
+              <div style={STYLES.s100}>
+                <label style={STYLES.s181}>Account Name</label>
                 <input placeholder="e.g., Land Savings Jar" value={goalAccForm.name}
                   onChange={e => setGoalAccForm({ ...goalAccForm, name: e.target.value })}
-                  style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "6px 10px" }} />
+                  style={STYLES.s669} />
               </div>
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Initial Balance (₹)</label>
+              <div style={STYLES.s56}>
+                <label style={STYLES.s181}>Initial Balance (₹)</label>
                 <input type="text" inputMode="decimal" placeholder="0" value={goalAccForm.balance}
                   onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setGoalAccForm({ ...goalAccForm, balance: v }); }}
-                  style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "6px 10px" }} />
+                  style={STYLES.s669} />
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={STYLES.s167}>
                 {editGoalAcc ? (
                   <>
-                    <button onClick={saveGoalAccountEdit} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Save Changes</button>
+                    <button onClick={saveGoalAccountEdit} style={STYLES.s670}>Save Changes</button>
                     <button onClick={() => { setEditGoalAcc(null); setGoalAccForm({ name: "", balance: "" }); }}
-                      style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+                      style={STYLES.s671}>Cancel</button>
                   </>
                 ) : (
-                  <button onClick={addGoalAccount} style={{ flex: 1, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>+ Add Account</button>
+                  <button onClick={addGoalAccount} style={STYLES.s670}>+ Add Account</button>
                 )}
               </div>
             </div>
 
             {/* Accounts List */}
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8 }}>
+              <div style={STYLES.s672}>
                 YOUR GOAL ACCOUNTS ({(data.goalAccounts || []).length})
               </div>
               {(data.goalAccounts || []).length === 0 ? (
-                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12, border: "0.5px dashed var(--color-border-secondary)" }}>
+                <div style={STYLES.s673}>
                   No goal accounts yet. Add one above.
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={STYLES.s674}>
                   {(data.goalAccounts || []).map(acc => {
                     const accInc = (data.transactions || []).filter(t => t.type === "income" && String(t.bankId) === String(acc.id) && t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount || 0), 0);
                     const accExp = (data.transactions || []).filter(t => t.type === "expense" && String(t.bankId) === String(acc.id) && t.isGoalAccountTx).reduce((s, t) => s + Number(t.amount || 0), 0);
                     const accBalance = (acc.balance || 0) + accInc - accExp;
                     return (
-                    <div key={acc.id} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "12px 14px", border: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text-primary)" }}>{acc.name}</div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Balance: {fmtCur(accBalance)}</div>
+                    <div key={acc.id} style={STYLES.s675}>
+                      <div style={STYLES.s354}>
+                        <div style={STYLES.s676}>{acc.name}</div>
+                        <div style={STYLES.s196}>Balance: {fmtCur(accBalance)}</div>
                       </div>
-                      <div style={{ display: "flex", gap: 4 }}>
+                      <div style={STYLES.s641}>
                         <button onClick={() => { setEditGoalAcc(acc); setGoalAccForm({ name: acc.name, balance: String(acc.balance || 0) }); }}
-                          style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                          style={STYLES.s644}>
                           ✏️
                         </button>
                         <button onClick={() => deleteGoalAccount(acc.id)}
-                          style={{ background: "none", border: "0.5px solid #fecaca", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "#ef4444" }}>
+                          style={STYLES.s645}>
                           🗑️
                         </button>
                       </div>
@@ -9542,7 +10937,7 @@ function GoalsPageInner({ data, update }) {
               )}
             </div>
 
-            <div style={{ marginTop: 16, padding: "10px 12px", background: "#eff6ff", border: "0.5px solid #bfdbfe", borderRadius: 8, fontSize: 11, color: "#1e40af" }}>
+            <div style={STYLES.s677}>
               💡 <strong>Tip:</strong> Goal accounts are only for goals marked "🚫 Excluded from Net Worth". Regular goals use your main bank accounts.
             </div>
           </div>
@@ -9551,13 +10946,13 @@ function GoalsPageInner({ data, update }) {
 
       {/* Edit modal */}
       {editItem && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(460px, 90vw)", border: "0.5px solid var(--color-border-tertiary)", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit Goal</div>
+        <div style={STYLES.s129}>
+          <div style={STYLES.s678}>
+            <div style={STYLES.s131}>✏️ Edit Goal</div>
             { renderFormFields(editItem, setEditItem) }
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-              <button onClick={() => setEditItem(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEdit} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            <div style={STYLES.s679}>
+              <button onClick={() => setEditItem(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEdit} style={STYLES.s138}>Save</button>
             </div>
           </div>
         </div>
@@ -9566,38 +10961,38 @@ function GoalsPageInner({ data, update }) {
       {/* ── If a goal folder is open, show it ── */}
       {selectedGoal ? (
         <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
+          <div style={STYLES.s426}>
+            <h1 style={STYLES.s179}>Goals</h1>
           </div>
           {renderGoalFolder(selectedGoal)}
         </div>
       ) : (
         /* ── Normal Goals grid view ── */
         <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-            <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>Goals</h1>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setShowGoalAccounts(true)} style={{ background: "var(--color-background-secondary)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+          <div style={STYLES.s680}>
+            <h1 style={STYLES.s179}>Goals</h1>
+            <div style={STYLES.s249}>
+              <button onClick={() => setShowGoalAccounts(true)} style={STYLES.s681}>
                 ⚙️ Goal Accounts
               </button>
-              <button onClick={() => setShowAdd(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              <button onClick={() => setShowAdd(p => !p)} style={STYLES.s158}>
                 {showAdd ? "✕ Cancel" : "+ Add Goal"}
               </button>
             </div>
           </div>
 
           {/* Summary strip */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10, marginBottom: 16 }}>
+          <div style={STYLES.s310}>
             {[
               { label: "Needs Goals", val: needs.length, sub: `${needs.filter(i => i.completed).length} completed`, color: "#4da6ff" },
               { label: "Needs Progress", val: fmtCur(totalNeedsSaved), sub: `of ${fmtCur(totalNeedsTarget)}`, color: "#1a6b3c" },
               { label: "Wants Goals", val: wants.length, sub: `${wants.filter(i => i.completed).length} completed`, color: "#9b59b6" },
               { label: "Wants Progress", val: fmtCur(totalWantsSaved), sub: `of ${fmtCur(totalWantsTarget)}`, color: "#f5a623" },
             ].map(c => (
-              <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+              <div key={c.label} style={STYLES.s553}>
+                <div style={STYLES.s153}>{c.label}</div>
                 <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{c.sub}</div>
+                <div style={STYLES.s196}>{c.sub}</div>
               </div>
             ))}
           </div>
@@ -9605,11 +11000,11 @@ function GoalsPageInner({ data, update }) {
           <div style={{ display: "grid", gridTemplateColumns: showAdd ? "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" : "1fr", gap: 16, alignItems: "start" }}>
             {/* Add form */}
             {showAdd && (
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Add Goal</div>
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
-                  <div style={{ display: "flex", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, overflow: "hidden" }}>
+              <div style={STYLES.s682}>
+                <div style={STYLES.s683}>Add Goal</div>
+                <div style={STYLES.s115}>
+                  <label style={STYLES.s254}>Type</label>
+                  <div style={STYLES.s599}>
                     {[["needs","🏠 Need","#4da6ff","#e8f0ff"],["wants","✨ Want","#9b59b6","#f3e8ff"]].map(([v, lbl, color, bg]) => (
                       <button key={v} onClick={() => switchTab(v)}
                         style={{ flex: 1, padding: "7px 0", border: "none", cursor: "pointer", fontSize: 13, fontWeight: activeTab === v ? 600 : 400, background: activeTab === v ? bg : "transparent", color: activeTab === v ? color : "var(--color-text-secondary)", transition: "all 0.15s" }}>
@@ -9619,30 +11014,30 @@ function GoalsPageInner({ data, update }) {
                   </div>
                 </div>
                 { renderFormFields(form, setForm) }
-                <button onClick={addItem} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, width: "100%" }}>+ Add Goal</button>
+                <button onClick={addItem} style={STYLES.s684}>+ Add Goal</button>
               </div>
             )}
 
             {/* Goals list */}
             <div>
-              <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+              <div style={STYLES.s685}>
                 {[["needs","🏠 Needs"],["wants","✨ Wants"]].map(([v, lbl]) => (
                   <button key={v} onClick={() => switchTab(v)} style={{ padding: "8px 20px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: activeTab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: activeTab === v ? 500 : 400, borderBottom: activeTab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
-                    {lbl} <span style={{ fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: 4, color: "var(--color-text-secondary)" }}>{v === "needs" ? needs.length : wants.length}</span>
+                    {lbl} <span style={STYLES.s686}>{v === "needs" ? needs.length : wants.length}</span>
                   </button>
                 ))}
               </div>
 
               {displayed.length === 0 ? (
-                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                <div style={STYLES.s630}>
                   No {activeTab} goals yet. Click "+ Add Goal" to create one.
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, alignItems: "stretch" }}>
+                <div style={STYLES.s687}>
                   {displayed.sort((a, b) => {
                     if (a.completed !== b.completed) return a.completed ? 1 : -1;
                     return 0;
-                  }).map(item => <div key={item.id} style={{ display: "flex", flexDirection: "column", height: "100%" }}>{renderItemCard(item)}</div>)}
+                  }).map(item => <div key={item.id} style={STYLES.s688}>{renderItemCard(item)}</div>)}
                 </div>
               )}
             </div>
@@ -9685,37 +11080,37 @@ function PercentageCalculator() {
   const cfg    = getConfig();
 
   return (
-    <div style={{ marginTop: 28, background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.3rem 1.4rem" }}>
+    <div style={STYLES.s689}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-        <span style={{ fontSize: 22 }}>🧮</span>
-        <span style={{ fontWeight: 600, fontSize: 16 }}>Percentage Calculator</span>
+      <div style={STYLES.s690}>
+        <span style={STYLES.s19}>🧮</span>
+        <span style={STYLES.s665}>Percentage Calculator</span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 14, alignItems: "start" }}>
+      <div style={STYLES.s691}>
         {/* Input A */}
         <div>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>{cfg.labelA}</label>
+          <label style={STYLES.s254}>{cfg.labelA}</label>
           <input
             type="number"
             inputMode="decimal"
             placeholder={cfg.phA}
             value={a}
             onChange={e => setA(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", fontSize: 15, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", outline: "none", color: "var(--color-text-primary)" }}
+            style={STYLES.s692}
           />
         </div>
 
         {/* Input B */}
         <div>
-          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>{cfg.labelB}</label>
+          <label style={STYLES.s254}>{cfg.labelB}</label>
           <input
             type="number"
             inputMode="decimal"
             placeholder={cfg.phB}
             value={b}
             onChange={e => setB(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", fontSize: 15, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", outline: "none", color: "var(--color-text-primary)" }}
+            style={STYLES.s692}
           />
         </div>
 
@@ -9723,23 +11118,23 @@ function PercentageCalculator() {
         <div style={{ background: result ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 10, padding: "10px 14px", minHeight: 60, display: "flex", flexDirection: "column", justifyContent: "center", border: result ? "0.5px solid #bbf7d0" : "0.5px solid var(--color-border-tertiary)", transition: "all 0.2s" }}>
           {result ? (
             <>
-              <div style={{ fontSize: 11, color: "#1a6b3c", marginBottom: 3, fontWeight: 500 }}>Result</div>
+              <div style={STYLES.s693}>Result</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: result.positive === false ? "#d44" : "#1a6b3c", letterSpacing: "-0.5px" }}>{result.primary}</div>
-              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 3 }}>{result.label}</div>
+              <div style={STYLES.s694}>{result.label}</div>
             </>
           ) : (
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", textAlign: "center" }}>Enter values to calculate</div>
+            <div style={STYLES.s695}>Enter values to calculate</div>
           )}
         </div>
       </div>
 
       {/* Breakdown */}
       {result?.breakdown && (
-        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={STYLES.s696}>
           {result.breakdown.map(({ k, v }) => (
-            <div key={k} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "6px 14px", fontSize: 12 }}>
-              <span style={{ color: "var(--color-text-secondary)" }}>{k}: </span>
-              <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{v}</span>
+            <div key={k} style={STYLES.s697}>
+              <span style={STYLES.s172}>{k}: </span>
+              <span style={STYLES.s619}>{v}</span>
             </div>
           ))}
         </div>
@@ -9760,33 +11155,33 @@ function PriceEditor({ monthEntry, onSave }) {
   }
 
   return (
-    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1.1rem", marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-      <div style={{ fontSize: 22 }}>💰</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Price per unit — {monthEntry.month}</div>
+    <div style={STYLES.s698}>
+      <div style={STYLES.s19}>💰</div>
+      <div style={STYLES.s354}>
+        <div style={STYLES.s278}>Price per unit — {monthEntry.month}</div>
         {editing ? (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={STYLES.s535}>
             <input autoFocus type="text" inputMode="decimal" value={val}
               onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setVal(v); }}
               onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
-              style={{ width: 120, boxSizing: "border-box", fontSize: 14, fontWeight: 600 }}
+              style={STYLES.s699}
               placeholder="e.g. 32" />
-            <button onClick={handleSave} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Save</button>
-            <button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>Cancel</button>
+            <button onClick={handleSave} style={STYLES.s700}>Save</button>
+            <button onClick={() => setEditing(false)} style={STYLES.s701}>Cancel</button>
           </div>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20, fontWeight: 700, color: "#1a6b3c" }}>
-              {monthEntry.price ? fmtCur(monthEntry.price) : <span style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>Not set</span>}
+          <div style={STYLES.s165}>
+            <span style={STYLES.s702}>
+              {monthEntry.price ? fmtCur(monthEntry.price) : <span style={STYLES.s703}>Not set</span>}
             </span>
-            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>per unit</span>
+            <span style={STYLES.s72}>per unit</span>
             <button onClick={() => { setVal(String(monthEntry.price || "")); setEditing(true); }}
-              style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✏️ Edit Price</button>
+              style={STYLES.s704}>✏️ Edit Price</button>
           </div>
         )}
       </div>
       {monthEntry.price && (
-        <div style={{ background: "#e8f5ee", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#1a6b3c" }}>
+        <div style={STYLES.s705}>
           Gross = Qty × ₹{fmt(monthEntry.price)}
         </div>
       )}
@@ -10131,8 +11526,8 @@ function BusinessPageInner({ data, update }) {
     };
     const hovered = hoveredIdx !== null ? sorted[hoveredIdx] : null;
     return (
-      <div style={{ position: "relative" }}>
-        <svg width="100%" viewBox={`0 0 ${W} ${height + pad.t + pad.b}`} style={{ display: "block" }}
+      <div style={STYLES.s563}>
+        <svg width="100%" viewBox={`0 0 ${W} ${height + pad.t + pad.b}`} style={STYLES.s706}
           onMouseLeave={() => setHoveredIdx(null)}>
           <defs>
             <linearGradient id="lgGross" x1="0" y1="0" x2="0" y2="1">
@@ -10165,12 +11560,12 @@ function BusinessPageInner({ data, update }) {
             <g key={e.id}>
               <rect x={xOf(i) - (n > 1 ? chartW / (n - 1) / 2 : 20)} y={pad.t}
                 width={n > 1 ? chartW / (n - 1) : 40} height={chartH}
-                fill="transparent" style={{ cursor: "crosshair" }}
+                fill="transparent" style={STYLES.s707}
                 onMouseEnter={ev => { setHoveredIdx(i); setTooltipPos({ x: ev.nativeEvent.offsetX, y: ev.nativeEvent.offsetY }); }}
                 onMouseMove={ev => setTooltipPos({ x: ev.nativeEvent.offsetX, y: ev.nativeEvent.offsetY })}
               />
-              <circle cx={xOf(i)} cy={yOf(e.grossIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#1a6b3c" style={{ transition: "r 0.1s" }} />
-              <circle cx={xOf(i)} cy={yOf(e.netIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#4da6ff" style={{ transition: "r 0.1s" }} />
+              <circle cx={xOf(i)} cy={yOf(e.grossIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#1a6b3c" style={STYLES.s708} />
+              <circle cx={xOf(i)} cy={yOf(e.netIncome)} r={hoveredIdx === i ? 4.5 : 3} fill="#4da6ff" style={STYLES.s708} />
               <text x={xOf(i)} y={pad.t + chartH + 14} textAnchor="middle" fontSize={8.5}
                 fill={hoveredIdx === i ? "#111" : "#6b7280"} fontWeight={hoveredIdx === i ? "600" : "400"}>
                 {e.month.slice(0, 3)}
@@ -10190,16 +11585,16 @@ function BusinessPageInner({ data, update }) {
             borderRadius: 8, padding: "7px 12px", boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
             zIndex: 50, pointerEvents: "none", minWidth: 140,
           }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 5 }}>{hovered.month}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
-              <span style={{ color: "var(--color-text-secondary)" }}>Gross:</span>
-              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(hovered.grossIncome)}</span>
+            <div style={STYLES.s709}>{hovered.month}</div>
+            <div style={STYLES.s710}>
+              <span style={STYLES.s711} />
+              <span style={STYLES.s172}>Gross:</span>
+              <span style={STYLES.s712}>{fmtCur(hovered.grossIncome)}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4da6ff", display: "inline-block" }} />
-              <span style={{ color: "var(--color-text-secondary)" }}>Net:</span>
-              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(hovered.netIncome)}</span>
+            <div style={STYLES.s713}>
+              <span style={STYLES.s714} />
+              <span style={STYLES.s172}>Net:</span>
+              <span style={STYLES.s715}>{fmtCur(hovered.netIncome)}</span>
             </div>
           </div>
         )}
@@ -10225,8 +11620,8 @@ function BusinessPageInner({ data, update }) {
     };
     const hovered = hoveredIdx !== null ? displayed[hoveredIdx] : null;
     return (
-      <div style={{ position: "relative" }}>
-        <svg width="100%" viewBox={`0 0 ${W} ${chartH + 36}`} style={{ display: "block" }}
+      <div style={STYLES.s563}>
+        <svg width="100%" viewBox={`0 0 ${W} ${chartH + 36}`} style={STYLES.s706}
           onMouseLeave={() => setHoveredIdx(null)}
         >
           <defs>
@@ -10263,15 +11658,15 @@ function BusinessPageInner({ data, update }) {
               <rect
                 x={pad + i * xStep - (xStep > 0 ? xStep / 2 : 20)} y={0}
                 width={xStep > 0 ? xStep : 40} height={chartH + 4}
-                fill="transparent" style={{ cursor: "crosshair" }}
+                fill="transparent" style={STYLES.s707}
                 onMouseEnter={(e) => {
                   setHoveredIdx(i);
                   setTooltipPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
                 }}
                 onMouseMove={(e) => setTooltipPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
               />
-              <circle cx={pad + i * xStep} cy={yOf(s.totalGross)} r={hoveredIdx === i ? 5 : 3.5} fill="#1a6b3c" style={{ transition: "r 0.1s" }} />
-              <circle cx={pad + i * xStep} cy={yOf(s.totalNet)} r={hoveredIdx === i ? 5 : 3.5} fill="#4da6ff" style={{ transition: "r 0.1s" }} />
+              <circle cx={pad + i * xStep} cy={yOf(s.totalGross)} r={hoveredIdx === i ? 5 : 3.5} fill="#1a6b3c" style={STYLES.s708} />
+              <circle cx={pad + i * xStep} cy={yOf(s.totalNet)} r={hoveredIdx === i ? 5 : 3.5} fill="#4da6ff" style={STYLES.s708} />
               <text x={pad + i * xStep} y={chartH + 18} textAnchor="middle" fontSize={9} fill={hoveredIdx === i ? "#111" : "#6b7280"} fontWeight={hoveredIdx === i ? "600" : "400"}>{s.year}</text>
             </g>
           ))}
@@ -10296,18 +11691,18 @@ function BusinessPageInner({ data, update }) {
             pointerEvents: "none",
             minWidth: 140,
           }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 5, color: "var(--color-text-primary)" }}>{hovered.year}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1a6b3c", display: "inline-block" }} />
-              <span style={{ color: "var(--color-text-secondary)" }}>Gross:</span>
-              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(hovered.totalGross)}</span>
+            <div style={STYLES.s716}>{hovered.year}</div>
+            <div style={STYLES.s710}>
+              <span style={STYLES.s717} />
+              <span style={STYLES.s172}>Gross:</span>
+              <span style={STYLES.s712}>{fmtCur(hovered.totalGross)}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4da6ff", display: "inline-block" }} />
-              <span style={{ color: "var(--color-text-secondary)" }}>Net:</span>
-              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(hovered.totalNet)}</span>
+            <div style={STYLES.s710}>
+              <span style={STYLES.s718} />
+              <span style={STYLES.s172}>Net:</span>
+              <span style={STYLES.s715}>{fmtCur(hovered.totalNet)}</span>
             </div>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 4, marginTop: 2 }}>
+            <div style={STYLES.s719}>
               Margin: {hovered.totalGross > 0 ? ((hovered.totalNet / hovered.totalGross) * 100).toFixed(1) : 0}% · {hovered.months} month{hovered.months !== 1 ? "s" : ""}
             </div>
           </div>
@@ -10320,26 +11715,26 @@ function BusinessPageInner({ data, update }) {
     <div>
       {/* Edit modal */}
       {editEntry && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 16, padding: "1.5rem", width: "min(380px, 90vw)", border: "0.5px solid var(--color-border-tertiary)" }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>✏️ Edit {editEntry.month} {editEntry.year}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <div style={STYLES.s129}>
+          <div style={STYLES.s130}>
+            <div style={STYLES.s131}>✏️ Edit {editEntry.month} {editEntry.year}</div>
+            <div style={STYLES.s720}>
               <div>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Gross Income (₹)</label>
+                <label style={STYLES.s181}>Gross Income (₹)</label>
                 <input type="text" inputMode="decimal" value={editEntry.grossIncome}
                   onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditEntry(p => ({ ...p, grossIncome: v })); }}
-                  style={{ width: "100%", boxSizing: "border-box" }} />
+                  style={STYLES.s45} />
               </div>
               <div>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Net Income (₹)</label>
+                <label style={STYLES.s181}>Net Income (₹)</label>
                 <input type="text" inputMode="decimal" value={editEntry.netIncome}
                   onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditEntry(p => ({ ...p, netIncome: v })); }}
-                  style={{ width: "100%", boxSizing: "border-box" }} />
+                  style={STYLES.s45} />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setEditEntry(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancel</button>
-              <button onClick={saveEdit} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            <div style={STYLES.s136}>
+              <button onClick={() => setEditEntry(null)} style={STYLES.s137}>Cancel</button>
+              <button onClick={saveEdit} style={STYLES.s138}>Save</button>
             </div>
           </div>
         </div>
@@ -10348,32 +11743,32 @@ function BusinessPageInner({ data, update }) {
       {/* Preview Modal */}
       {previewBill && (
         <div 
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
+          style={STYLES.s721}
           onClick={() => setPreviewBill(null)}
         >
           <div 
-            style={{ background: "var(--color-background-primary)", borderRadius: 16, width: "min(900px, 95vw)", maxHeight: "90vh", overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}
+            style={STYLES.s722}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.5rem", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={STYLES.s723}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>{previewBill.name}</div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                <div style={STYLES.s424}>{previewBill.name}</div>
+                <div style={STYLES.s53}>
                   {previewBill.size ? `${(previewBill.size / 1024).toFixed(1)} KB` : ""}
                   {previewBill.uploadedAt && ` · Uploaded ${new Date(previewBill.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
                 </div>
               </div>
               <button
                 onClick={() => setPreviewBill(null)}
-                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: "var(--color-text-secondary)", padding: "0 8px" }}
+                style={STYLES.s724}
               >
                 ×
               </button>
             </div>
 
             {/* Modal Body */}
-            <div style={{ flex: 1, overflow: "auto", padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb" }}>
+            <div style={STYLES.s725}>
               {(() => {
                 const mimeType = previewBill.mimeType || "";
                 const isImage = mimeType.startsWith("image/");
@@ -10384,39 +11779,29 @@ function BusinessPageInner({ data, update }) {
                     <img 
                       src={`https://drive.google.com/uc?export=view&id=${previewBill.id}`}
                       alt={previewBill.name}
-                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 8 }}
+                      style={STYLES.s726}
                     />
                   );
                 } else if (isPDF) {
                   return (
                     <iframe
                       src={`https://drive.google.com/file/d/${previewBill.id}/preview`}
-                      style={{ width: "100%", height: "600px", border: "none", borderRadius: 8 }}
+                      style={STYLES.s727}
                       title={previewBill.name}
                     />
                   );
                 } else {
                   return (
-                    <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)" }}>
-                      <div style={{ fontSize: 48, marginBottom: 16 }}>📄</div>
-                      <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>Preview not available</div>
-                      <div style={{ fontSize: 13, marginBottom: 20 }}>{previewBill.name}</div>
+                    <div style={STYLES.s728}>
+                      <div style={STYLES.s729}>📄</div>
+                      <div style={STYLES.s730}>Preview not available</div>
+                      <div style={STYLES.s731}>{previewBill.name}</div>
                       <a
                         href={previewBill.downloadUrl || previewBill.url}
                         download={previewBill.name}
                         target="_blank"
                         rel="noreferrer"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          background: "#1a6b3c",
-                          color: "#fff",
-                          padding: "10px 20px",
-                          borderRadius: 8,
-                          textDecoration: "none",
-                          fontWeight: 500
-                        }}
+                        style={STYLES.s732}
                       >
                         ⬇ Download File
                       </a>
@@ -10427,25 +11812,13 @@ function BusinessPageInner({ data, update }) {
             </div>
 
             {/* Modal Footer */}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", padding: "1rem 1.5rem", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+            <div style={STYLES.s733}>
               <a
                 href={previewBill.downloadUrl || previewBill.url}
                 download={previewBill.name}
                 target="_blank"
                 rel="noreferrer"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "#1a6b3c",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "8px 18px",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  textDecoration: "none"
-                }}
+                style={STYLES.s734}
               >
                 ⬇ Download
               </a>
@@ -10453,33 +11826,13 @@ function BusinessPageInner({ data, update }) {
                 href={previewBill.url}
                 target="_blank"
                 rel="noreferrer"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "#4da6ff",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "8px 18px",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  textDecoration: "none"
-                }}
+                style={STYLES.s735}
               >
                 ↗ Open in Drive
               </a>
               <button
                 onClick={() => setPreviewBill(null)}
-                style={{
-                  background: "none",
-                  border: "0.5px solid var(--color-border-secondary)",
-                  borderRadius: 8,
-                  padding: "8px 18px",
-                  cursor: "pointer",
-                  fontSize: 14,
-                  color: "var(--color-text-secondary)"
-                }}
+                style={STYLES.s736}
               >
                 Close
               </button>
@@ -10490,14 +11843,14 @@ function BusinessPageInner({ data, update }) {
 
       {/* ── BREADCRUMB ── */}
       {(selectedBiz || selectedYear || selectedMonth) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
+        <div style={STYLES.s626}>
           <button onClick={() => { setSelectedBiz(null); setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", transition: "opacity 0.15s", background: !selectedBiz ? "#e8f5ee" : "var(--color-background-secondary)", color: !selectedBiz ? "#1a6b3c" : "var(--color-text-primary)" }}>
             💼 Business
           </button>
           {selectedBiz && (
             <>
-              <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+              <span style={STYLES.s172}>›</span>
               <button onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedNonDayMonth(null); }}
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", transition: "opacity 0.15s", background: !selectedYear ? "#e8f5ee" : "var(--color-background-secondary)", color: !selectedYear ? "#1a6b3c" : "var(--color-text-primary)" }}>
                 📊 {activeBiz?.name || "Business"}
@@ -10506,7 +11859,7 @@ function BusinessPageInner({ data, update }) {
           )}
           {selectedYear && (
             <>
-              <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+              <span style={STYLES.s172}>›</span>
               <button onClick={() => { setSelectedMonth(null); setSelectedNonDayMonth(null); }}
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", transition: "opacity 0.15s", background: !selectedMonth ? "#e8f5ee" : "var(--color-background-secondary)", color: !selectedMonth ? "#1a6b3c" : "var(--color-text-primary)" }}>
                 📅 {selectedYear}
@@ -10515,8 +11868,8 @@ function BusinessPageInner({ data, update }) {
           )}
           {selectedMonth && isDayWise && activeMonthEntry && (
             <>
-              <span style={{ color: "var(--color-text-secondary)" }}>›</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", background: "#e8f5ee", color: "#1a6b3c" }}>
+              <span style={STYLES.s172}>›</span>
+              <span style={STYLES.s628}>
                 📆 {activeMonthEntry.month}
               </span>
             </>
@@ -10525,9 +11878,9 @@ function BusinessPageInner({ data, update }) {
       )}
 
       {/* ── HEADER ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={STYLES.s75}>
+        <div style={STYLES.s462}>
+          <h1 style={STYLES.s737}>
             {!selectedBiz ? "Business"
               : !selectedYear
                 ? (renamingBiz?.id === selectedBiz
@@ -10535,18 +11888,18 @@ function BusinessPageInner({ data, update }) {
                         onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
                         onKeyDown={e => { if (e.key === "Enter") { renameBusiness(selectedBiz, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
                         onBlur={() => { renameBusiness(selectedBiz, renamingBiz.value); setRenamingBiz(null); }}
-                        style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 }} />
-                    : <><span>{activeBiz?.name}</span><button onClick={() => setRenamingBiz({ id: selectedBiz, value: activeBiz?.name || "" })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Rename">✏️</button></>
+                        style={STYLES.s738} />
+                    : <><span>{activeBiz?.name}</span><button onClick={() => setRenamingBiz({ id: selectedBiz, value: activeBiz?.name || "" })} style={STYLES.s739} title="Rename">✏️</button></>
                   )
                 : !selectedMonth
                   ? `${activeBiz?.name} · ${selectedYear}`
-                  : <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  : <span style={STYLES.s740}>
                       {activeBiz?.name} · {selectedYear} ·{" "}
                       {renamingDayMonth ? (
                         <>
                           <select autoFocus value={renamingDayMonthVal}
                             onChange={e => setRenamingDayMonthVal(e.target.value)}
-                            style={{ fontSize: 16, fontFamily: "'DM Serif Display', serif", border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "2px 8px", outline: "none", background: "var(--color-background-secondary)" }}>
+                            style={STYLES.s741}>
                             {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => {
                               const usedByOther = yearEntries.some(e => e.month === m && e.id !== selectedMonth);
                               return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
@@ -10574,21 +11927,21 @@ function BusinessPageInner({ data, update }) {
                               return { ...e, month: renamingDayMonthVal, monthIndex: mIdx, days: newDays, grossIncome: newGross, netIncome: newNet };
                             }));
                             setRenamingDayMonth(false);
-                          }} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "3px 12px", cursor: "pointer", fontSize: 13, color: "#fff", fontWeight: 600 }}>✓</button>
+                          }} style={STYLES.s742}>✓</button>
                           <button onClick={() => setRenamingDayMonth(false)}
-                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>✕</button>
+                            style={STYLES.s743}>✕</button>
                         </>
                       ) : (
                         <>
                           {activeMonthEntry?.month}
                           <button onClick={() => { setRenamingDayMonthVal(activeMonthEntry?.month || ""); setRenamingDayMonth(true); }}
-                            style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }} title="Change month">✏️ Month</button>
+                            style={STYLES.s739} title="Change month">✏️ Month</button>
                         </>
                       )}
                     </span>}
           </h1>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={STYLES.s535}>
           {selectedBiz && !selectedMonth && (
             <button onClick={toggleDayWise} title={isDayWise ? "Day-wise ON — click to disable" : "Enable day-wise tracking"}
               style={{ background: isDayWise ? "#e8f5ee" : "var(--color-background-secondary)", color: isDayWise ? "#1a6b3c" : "var(--color-text-secondary)", border: isDayWise ? "0.5px solid #bbf7d0" : "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "6px 13px", cursor: "pointer", fontSize: 12, fontWeight: isDayWise ? 600 : 400, display: "flex", alignItems: "center", gap: 5 }}>
@@ -10602,22 +11955,22 @@ function BusinessPageInner({ data, update }) {
             </button>
           )}
           {!selectedBiz && (
-            <button onClick={() => setShowAddBiz(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            <button onClick={() => setShowAddBiz(p => !p)} style={STYLES.s158}>
               {showAddBiz ? "✕ Cancel" : "+ New Business"}
             </button>
           )}
           {selectedBiz && !selectedYear && (
-            <button onClick={() => setShowAddYear(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            <button onClick={() => setShowAddYear(p => !p)} style={STYLES.s158}>
               {showAddYear ? "✕ Cancel" : "+ Add Year"}
             </button>
           )}
           {selectedYear && !selectedMonth && (
-            <button onClick={() => { setShowAddMonth(p => !p); setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); }} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            <button onClick={() => { setShowAddMonth(p => !p); setMonthForm({ month: "", rows: [{ qty: "", price: "" }] }); }} style={STYLES.s158}>
               {showAddMonth ? "✕ Cancel" : "+ Add Month"}
             </button>
           )}
           {selectedMonth && isDayWise && (
-            <span style={{ fontSize: 12, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 8, padding: "6px 13px", fontWeight: 500 }}>
+            <span style={STYLES.s744}>
               📝 Type qty in each row
             </span>
           )}
@@ -10628,22 +11981,22 @@ function BusinessPageInner({ data, update }) {
       {!selectedBiz && (
         <>
           {showAddBiz && (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Business Name</label>
+            <div style={STYLES.s745}>
+              <div style={STYLES.s354}>
+                <label style={STYLES.s181}>Business Name</label>
                 <input placeholder="e.g. Coconut, Freelance, Agency" value={newBizName} onChange={e => setNewBizName(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addBusiness()}
-                  style={{ width: "100%", boxSizing: "border-box" }} />
+                  style={STYLES.s45} />
               </div>
-              <button onClick={addBusiness} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create</button>
+              <button onClick={addBusiness} style={STYLES.s158}>Create</button>
             </div>
           )}
           {businesses.length === 0 ? (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            <div style={STYLES.s746}>
               No businesses yet. Click "+ New Business" to create your first one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+            <div style={STYLES.s747}>
               {businesses.map(biz => {
                 const bizYears = [...new Set((biz.data || []).map(e => e.year))];
                 const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
@@ -10659,54 +12012,54 @@ function BusinessPageInner({ data, update }) {
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
-                      style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                      style={STYLES.s748}>🗑</button>
                     <button onClick={ev => { ev.stopPropagation(); setRenamingBiz({ id: biz.id, value: biz.name }); }}
-                      style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, opacity: 0.6, padding: 2 }} title="Rename">✏️</button>
-                    <div style={{ fontSize: 32, marginBottom: 6 }}>🏢</div>
+                      style={STYLES.s749} title="Rename">✏️</button>
+                    <div style={STYLES.s750}>🏢</div>
                     {renamingBiz?.id === biz.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
+                      <div onClick={e => e.stopPropagation()} style={STYLES.s239}>
                         <input autoFocus value={renamingBiz.value}
                           onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
                           onKeyDown={e => { if (e.key === "Enter") { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
                           onBlur={() => { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); }}
-                          style={{ width: "100%", boxSizing: "border-box", fontSize: 18, fontWeight: 700, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "'DM Serif Display', serif", background: "var(--color-background-secondary)" }} />
-                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
+                          style={STYLES.s751} />
+                        <div style={STYLES.s752}>Enter to save · Esc to cancel</div>
                       </div>
                     ) : (
-                      <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
+                      <div style={STYLES.s753}>{biz.name}</div>
                     )}
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
+                    <div style={STYLES.s754}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
 
                     {/* Gross row — always shown */}
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
-                      <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(totalGross)}</span>
+                    <div style={STYLES.s755}>
+                      <span style={STYLES.s172}>Gross</span>
+                      <span style={STYLES.s712}>{fmtCur(totalGross)}</span>
                     </div>
 
                     {/* Net row */}
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: hasLiab ? 4 : 0 }}>
-                      <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
-                      <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(totalNet)}</span>
+                      <span style={STYLES.s172}>Net</span>
+                      <span style={STYLES.s715}>{fmtCur(totalNet)}</span>
                     </div>
 
                     {/* Liabilities breakdown — shown only if any liabilities exist */}
                     {hasLiab && (
                       <>
-                        <div style={{ borderTop: "0.5px dashed var(--color-border-tertiary)", margin: "6px 0" }} />
+                        <div style={STYLES.s756} />
                         {paidLiab > 0 && (
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                            <span style={{ color: "#c0392b" }}>Liabilities (paid)</span>
-                            <span style={{ color: "#c0392b", fontWeight: 600 }}>-{fmtCur(paidLiab)}</span>
+                          <div style={STYLES.s755}>
+                            <span style={STYLES.s757}>Liabilities (paid)</span>
+                            <span style={STYLES.s758}>-{fmtCur(paidLiab)}</span>
                           </div>
                         )}
                         {unpaidLiab > 0 && (
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                            <span style={{ color: "#f59e0b" }}>Liabilities (pending)</span>
-                            <span style={{ color: "#f59e0b", fontWeight: 500 }}>{fmtCur(unpaidLiab)}</span>
+                          <div style={STYLES.s755}>
+                            <span style={STYLES.s759}>Liabilities (pending)</span>
+                            <span style={STYLES.s760}>{fmtCur(unpaidLiab)}</span>
                           </div>
                         )}
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 5, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 2 }}>
-                          <span style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>Final Net</span>
+                        <div style={STYLES.s761}>
+                          <span style={STYLES.s762}>Final Net</span>
                           <span style={{ fontWeight: 700, color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", fontSize: 14 }}>{fmtCur(finalNet)}</span>
                         </div>
                       </>
@@ -10726,14 +12079,14 @@ function BusinessPageInner({ data, update }) {
       {selectedBiz && !selectedYear && (
         <>
           {showAddYear && (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Year</label>
+            <div style={STYLES.s745}>
+              <div style={STYLES.s354}>
+                <label style={STYLES.s181}>Year</label>
                 <input type="text" inputMode="numeric" placeholder="e.g. 2025" value={newYear}
                   onChange={e => setNewYear(e.target.value)} onKeyDown={e => e.key === "Enter" && addYear()}
-                  style={{ width: "100%", boxSizing: "border-box" }} />
+                  style={STYLES.s45} />
               </div>
-              <button onClick={addYear} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create Year</button>
+              <button onClick={addYear} style={STYLES.s158}>Create Year</button>
             </div>
           )}
 
@@ -10745,24 +12098,24 @@ function BusinessPageInner({ data, update }) {
             const unpaidTotal = bizLiabs.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
             const finalNet = totalNet - paidTotal;
             return (
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid #f5c0c0", padding: "1.25rem 1.4rem", marginBottom: 16, borderTop: "3px solid #c0392b" }}>
+              <div style={STYLES.s763}>
                 {/* Header */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>⚖️ Liabilities — {activeBiz.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 6, padding: "3px 9px" }}>
+                <div style={STYLES.s139}>
+                  <div style={STYLES.s764}>⚖️ Liabilities — {activeBiz.name}</div>
+                  <div style={STYLES.s765}>
                     💡 Mark as Paid → deducted from Net Income
                   </div>
                 </div>
 
                 {/* Summary tiles */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
+                <div style={STYLES.s766}>
                   {[
                     { label: "Net Income", val: fmtCur(totalNet), color: "#4da6ff", bg: "#f0f7ff" },
                     { label: "Paid Liabilities", val: paidTotal > 0 ? "-" + fmtCur(paidTotal) : fmtCur(0), color: "#c0392b", bg: "#fff5f5" },
                     { label: "Final Net Income", val: fmtCur(finalNet), color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", bg: finalNet >= 0 ? "#f0faf4" : "#fff5f5" },
                   ].map(c => (
                     <div key={c.label} style={{ background: c.bg, borderRadius: 10, padding: "0.75rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      <div style={STYLES.s593}>{c.label}</div>
                       <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.val}</div>
                     </div>
                   ))}
@@ -10770,17 +12123,17 @@ function BusinessPageInner({ data, update }) {
 
                 {/* Liabilities list */}
                 {bizLiabs.length === 0 ? (
-                  <div style={{ textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, padding: "1.5rem 0", borderTop: "0.5px dashed var(--color-border-tertiary)", borderBottom: "0.5px dashed var(--color-border-tertiary)", marginBottom: 16 }}>
+                  <div style={STYLES.s767}>
                     No liabilities added yet. Use the form below to add one.
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                  <div style={STYLES.s768}>
                     {/* Column headers */}
-                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto auto", gap: 10, alignItems: "center", paddingBottom: 6, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div style={STYLES.s769}>
                       <div/>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Name</div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Amount</div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" }}>Status</div>
+                      <div style={STYLES.s770}>Name</div>
+                      <div style={STYLES.s771}>Amount</div>
+                      <div style={STYLES.s772}>Status</div>
                       <div/>
                     </div>
                     {bizLiabs.map(l => (
@@ -10801,32 +12154,32 @@ function BusinessPageInner({ data, update }) {
                         </span>
                         {/* Delete */}
                         <button onClick={() => deleteBizLiability(activeBiz.id, l.id)}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 0 }}>🗑</button>
+                          style={STYLES.s773}>🗑</button>
                       </div>
                     ))}
                     {/* Totals row */}
                     {bizLiabs.length > 0 && (
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, fontSize: 12, paddingTop: 8, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                        {unpaidTotal > 0 && <span style={{ color: "#c0392b" }}>Pending: {fmtCur(unpaidTotal)}</span>}
-                        {paidTotal > 0 && <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Deducted: -{fmtCur(paidTotal)}</span>}
+                      <div style={STYLES.s774}>
+                        {unpaidTotal > 0 && <span style={STYLES.s757}>Pending: {fmtCur(unpaidTotal)}</span>}
+                        {paidTotal > 0 && <span style={STYLES.s712}>Deducted: -{fmtCur(paidTotal)}</span>}
                       </div>
                     )}
                   </div>
                 )}
 
                 {/* Add form */}
-                <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--color-text-secondary)" }}>+ Add New Liability</div>
-                  <div style={{ display: "flex", gap: 8 }}>
+                <div style={STYLES.s775}>
+                  <div style={STYLES.s776}>+ Add New Liability</div>
+                  <div style={STYLES.s249}>
                     <input placeholder="e.g. Rent, Worker Salary, Loan EMI" value={bizLiabForm.name}
                       onChange={e => setBizLiabForm(p => ({ ...p, name: e.target.value }))}
-                      style={{ flex: 2, boxSizing: "border-box" }} />
+                      style={STYLES.s777} />
                     <input type="number" placeholder="Amount (₹)" value={bizLiabForm.amount}
                       onChange={e => setBizLiabForm(p => ({ ...p, amount: e.target.value }))}
                       onKeyDown={e => e.key === "Enter" && addBizLiability(activeBiz.id)}
-                      style={{ flex: 1, boxSizing: "border-box" }} />
+                      style={STYLES.s449} />
                     <button onClick={() => addBizLiability(activeBiz.id)}
-                      style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      style={STYLES.s778}>
                       + Add
                     </button>
                   </div>
@@ -10835,32 +12188,32 @@ function BusinessPageInner({ data, update }) {
             );
           })()}
           {yearSummary.length === 0 ? (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            <div style={STYLES.s746}>
               No years yet. Click "+ Add Year" to create your first year folder.
             </div>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+              <div style={STYLES.s779}>
                 {[...yearSummary].sort((a, b) => a.year - b.year).map(s => (
                   <div key={s.year} onClick={() => { if (!renamingYear) setSelectedYear(s.year); }}
                     style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingYear?.year === s.year ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
                     onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
                     <button onClick={ev => { ev.stopPropagation(); deleteYear(s.year); }}
-                      style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
-                    <div style={{ fontSize: 28, marginBottom: 4 }}>📁</div>
-                    <div style={{ fontWeight: 700, fontSize: 22, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{s.year}</div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                      <span style={{ color: "#1a6b3c" }}>Gross: {fmtCur(s.totalGross)}</span>
-                      <span style={{ color: "#4da6ff" }}>Net: {fmtCur(s.totalNet)}</span>
+                      style={STYLES.s780}>🗑</button>
+                    <div style={STYLES.s781}>📁</div>
+                    <div style={STYLES.s782}>{s.year}</div>
+                    <div style={STYLES.s754}>{s.months} month{s.months !== 1 ? "s" : ""} of data</div>
+                    <div style={STYLES.s783}>
+                      <span style={STYLES.s548}>Gross: {fmtCur(s.totalGross)}</span>
+                      <span style={STYLES.s784}>Net: {fmtCur(s.totalNet)}</span>
                     </div>
                   </div>
                 ))}
               </div>
               {yearSummary.length > 1 && (
-                <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-                  <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Year-on-Year Performance</div>
+                <div style={STYLES.s682}>
+                  <div style={STYLES.s683}>Year-on-Year Performance</div>
                   <YoYChart summaries={yearSummary} />
                 </div>
               )}
@@ -10874,18 +12227,18 @@ function BusinessPageInner({ data, update }) {
         <>
           {/* Add Month form */}
           {showAddMonth && (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16 }}>
-              <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
+            <div style={STYLES.s785}>
+              <div style={STYLES.s786}>
                 📁 {isDayWise ? "Create Month Folder" : "Add Month"}
               </div>
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 12, marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>💡 Qty × Price = Gross</span>
+              <div style={STYLES.s787}>
+                <span style={STYLES.s788}>💡 Qty × Price = Gross</span>
                 {isDayWise ? "Set price — Gross is auto-calculated from daily quantities" : "Enter total quantity and price for the month"}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: isDayWise ? "1fr 1fr" : "1fr 1fr", gap: 10 }}>
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Month *</label>
-                  <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+                  <label style={STYLES.s181}>Month *</label>
+                  <select value={monthForm.month} onChange={e => setMonthForm(p => ({ ...p, month: e.target.value }))} style={STYLES.s45}>
                     <option value="">Select month</option>
                     {MONTHS.map(m => {
                       const used = yearEntries.some(e => e.month === m);
@@ -10895,42 +12248,42 @@ function BusinessPageInner({ data, update }) {
                 </div>
                 {isDayWise && (
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Price per unit (₹) *</label>
+                    <label style={STYLES.s181}>Price per unit (₹) *</label>
                     <input type="text" inputMode="decimal" placeholder="e.g. 32"
                       value={monthForm.rows[0]?.price || ""}
                       onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[0] = { ...rows[0], price: v }; return { ...p, rows }; }); }}
-                      style={{ width: "100%", boxSizing: "border-box" }} />
+                      style={STYLES.s45} />
                   </div>
                 )}
               </div>
               {!isDayWise && (
-                <div style={{ marginTop: 12 }}>
+                <div style={STYLES.s789}>
                   {/* Header row */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 4, alignItems: "center" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Qty (units)</div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Price per unit (₹)</div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, textAlign: "right" }}>Subtotal</div>
+                  <div style={STYLES.s790}>
+                    <div style={STYLES.s791}>Qty (units)</div>
+                    <div style={STYLES.s791}>Price per unit (₹)</div>
+                    <div style={STYLES.s792}>Subtotal</div>
                     <div />
                   </div>
                   {/* Rows */}
                   {monthForm.rows.map((row, idx) => {
                     const subtotal = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
                     return (
-                      <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                      <div key={idx} style={STYLES.s793}>
                         <input type="text" inputMode="decimal" placeholder="e.g. 120"
                           value={row.qty}
                           onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], qty: v }; return { ...p, rows }; }); }}
-                          style={{ width: "100%", boxSizing: "border-box" }} />
+                          style={STYLES.s45} />
                         <input type="text" inputMode="decimal" placeholder="e.g. 32"
                           value={row.price}
                           onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setMonthForm(p => { const rows = [...p.rows]; rows[idx] = { ...rows[idx], price: v }; return { ...p, rows }; }); }}
-                          style={{ width: "100%", boxSizing: "border-box" }} />
+                          style={STYLES.s45} />
                         <div style={{ fontSize: 12, fontWeight: 600, color: subtotal > 0 ? "#1a6b3c" : "var(--color-text-secondary)", whiteSpace: "nowrap", minWidth: 70, textAlign: "right" }}>
                           {subtotal > 0 ? `₹${fmt(subtotal)}` : "—"}
                         </div>
                         {monthForm.rows.length > 1 ? (
                           <button onClick={() => setMonthForm(p => ({ ...p, rows: p.rows.filter((_, i) => i !== idx) }))}
-                            style={{ flexShrink: 0, background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                            style={STYLES.s794}>
                             ×
                           </button>
                         ) : <div />}
@@ -10938,42 +12291,42 @@ function BusinessPageInner({ data, update }) {
                     );
                   })}
                   {/* Add row + gross total */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                  <div style={STYLES.s795}>
                     <button
                       onClick={() => setMonthForm(p => ({ ...p, rows: [...p.rows, { qty: "", price: "" }] }))}
-                      style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                      style={STYLES.s796}>
                       + Add Row
                     </button>
                     {monthForm.rows.some(r => r.qty && r.price) && (
-                      <div style={{ padding: "6px 14px", background: "#e8f5ee", borderRadius: 8, fontSize: 13, color: "#1a6b3c", fontWeight: 700 }}>
+                      <div style={STYLES.s797}>
                         Gross = ₹{fmt(monthForm.rows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
                       </div>
                     )}
                   </div>
                 </div>
               )}
-              <button onClick={addMonthEntry} style={{ marginTop: 12, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              <button onClick={addMonthEntry} style={STYLES.s798}>
                 {isDayWise ? "📁 Create Month Folder" : "✓ Add Month"}
               </button>
             </div>
           )}
 
           {yearEntries.length === 0 ? (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "2.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            <div style={STYLES.s630}>
               No months added yet for {selectedYear}. Click "+ Add Month" to start.
             </div>
           ) : (
             <>
               {/* Summary stats for year */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+              <div style={STYLES.s799}>
                 {[
                   { label: "Total Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0)), color: "#1a6b3c" },
                   { label: "Total Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0)), color: "#4da6ff" },
                   { label: "Avg Monthly Gross", val: fmtCur(yearEntries.reduce((s, e) => s + e.grossIncome, 0) / yearEntries.length), color: "#f0a020" },
                   { label: "Avg Monthly Net", val: fmtCur(yearEntries.reduce((s, e) => s + e.netIncome, 0) / yearEntries.length), color: "#9b59b6" },
                 ].map(c => (
-                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid var(--color-border-tertiary)" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                  <div key={c.label} style={STYLES.s553}>
+                    <div style={STYLES.s153}>{c.label}</div>
                     <div style={{ fontSize: 18, fontWeight: 600, color: c.color }}>{c.val}</div>
                   </div>
                 ))}
@@ -11006,104 +12359,104 @@ function BusinessPageInner({ data, update }) {
                     setEditing(false);
                   }
                   return (
-                    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginBottom: 16 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <button onClick={() => setSelectedNonDayMonth(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0 }}>←</button>
+                    <div style={STYLES.s800}>
+                      <div style={STYLES.s801}>
+                        <div style={STYLES.s740}>
+                          <button onClick={() => setSelectedNonDayMonth(null)} style={STYLES.s802}>←</button>
                           {renamingMonth ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <select value={editMonth} onChange={e => setEditMonth(e.target.value)} style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
+                            <div style={STYLES.s408}>
+                              <select value={editMonth} onChange={e => setEditMonth(e.target.value)} style={STYLES.s803}>
                                 {ML.map(m => { const used = yearEntries.some(e => e.month === m && e.id !== entry.id); return <option key={m} value={m} disabled={used}>{m}{used?" ✓ already added":""}</option>; })}
                               </select>
-                              <button onClick={saveMonthRename} style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
-                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+                              <button onClick={saveMonthRename} style={STYLES.s804}>✓</button>
+                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }} style={STYLES.s805}>✕</button>
                             </div>
                           ) : (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
-                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                            <div style={STYLES.s408}>
+                              <span style={STYLES.s806}>📋 {entry.month} · {entry.year}</span>
+                              <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }} style={STYLES.s807}>✏️ Month</button>
                             </div>
                           )}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={STYLES.s740}>
                           {!editing
-                            ? <button onClick={() => { setEditRows(breakdown.map(r=>({qty:String(r.qty),price:String(r.price)}))); setEditing(true); }} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>✏️ Edit</button>
-                            : <><button onClick={() => setEditing(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
-                               <button onClick={saveEdits} style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓ Save</button></>}
-                          <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
+                            ? <button onClick={() => { setEditRows(breakdown.map(r=>({qty:String(r.qty),price:String(r.price)}))); setEditing(true); }} style={STYLES.s808}>✏️ Edit</button>
+                            : <><button onClick={() => setEditing(false)} style={STYLES.s204}>Cancel</button>
+                               <button onClick={saveEdits} style={STYLES.s809}>✓ Save</button></>}
+                          <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }} style={STYLES.s810}>🗑</button>
                         </div>
                       </div>
-                      <div style={{ marginBottom: 14 }}>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+                      <div style={STYLES.s43}>
+                        <div style={STYLES.s811}>Breakdown</div>
                         {editing ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 }}>
-                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Qty (units)</div>
-                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Price (₹)</div>
-                              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 }}>Subtotal</div>
+                          <div style={STYLES.s549}>
+                            <div style={STYLES.s812}>
+                              <div style={STYLES.s813}>Qty (units)</div>
+                              <div style={STYLES.s813}>Price (₹)</div>
+                              <div style={STYLES.s814}>Subtotal</div>
                               <div />
                             </div>
                             {editRows.map((row, idx) => {
                               const sub = (parseFloat(row.qty)||0)*(parseFloat(row.price)||0);
                               return (
-                                <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
-                                  <input type="text" inputMode="decimal" placeholder="e.g. 120" value={row.qty} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],qty:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#1a6b3c",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #1a6b3c";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
-                                  <input type="text" inputMode="decimal" placeholder="e.g. 30" value={row.price} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],price:v};return r;}); }} style={{ width:"100%",boxSizing:"border-box",padding:"5px 8px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-secondary)",color:"#9b59b6",outline:"none" }} onFocus={ev=>{ev.target.style.border="1.5px solid #9b59b6";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                <div key={idx} style={STYLES.s815}>
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 120" value={row.qty} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],qty:v};return r;}); }} style={STYLES.s816} onFocus={ev=>{ev.target.style.border="1.5px solid #1a6b3c";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
+                                  <input type="text" inputMode="decimal" placeholder="e.g. 30" value={row.price} onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)) setEditRows(p=>{const r=[...p];r[idx]={...r[idx],price:v};return r;}); }} style={STYLES.s817} onFocus={ev=>{ev.target.style.border="1.5px solid #9b59b6";ev.target.style.background="#fff";}} onBlur={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
                                   <div style={{ fontSize:13,fontWeight:700,color:sub>0?"#1a6b3c":"var(--color-text-secondary)",minWidth:80,textAlign:"right" }}>{sub>0?`₹${fmt(sub)}`:"—"}</div>
-                                  {editRows.length>1 ? <button onClick={()=>setEditRows(p=>p.filter((_,i)=>i!==idx))} style={{ background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:5,padding:"4px 9px",cursor:"pointer",fontSize:13,fontWeight:700 }}>×</button> : <div style={{width:28}}/>}
+                                  {editRows.length>1 ? <button onClick={()=>setEditRows(p=>p.filter((_,i)=>i!==idx))} style={STYLES.s818}>×</button> : <div style={STYLES.s819}/>}
                                 </div>
                               );
                             })}
-                            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4 }}>
-                              <button onClick={()=>setEditRows(p=>[...p,{qty:"",price:""}])} style={{ fontSize:12,background:"#e8f5ee",color:"#1a6b3c",border:"none",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontWeight:600 }}>+ Add Row</button>
-                              {editRows.some(r=>r.qty&&r.price)&&<div style={{fontSize:13,fontWeight:700,color:"#1a6b3c"}}>Gross = ₹{fmt(editRows.reduce((s,r)=>s+(parseFloat(r.qty)||0)*(parseFloat(r.price)||0),0))}</div>}
+                            <div style={STYLES.s820}>
+                              <button onClick={()=>setEditRows(p=>[...p,{qty:"",price:""}])} style={STYLES.s821}>+ Add Row</button>
+                              {editRows.some(r=>r.qty&&r.price)&&<div style={STYLES.s822}>Gross = ₹{fmt(editRows.reduce((s,r)=>s+(parseFloat(r.qty)||0)*(parseFloat(r.price)||0),0))}</div>}
                             </div>
                           </div>
                         ) : (
-                          <div style={{ borderRadius:8,overflow:"hidden",border:"0.5px solid var(--color-border-tertiary)" }}>
-                            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0 }}>
-                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)" }}>Qty (units)</div>
-                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"center" }}>Price (₹)</div>
-                              <div style={{ padding:"6px 10px",background:"var(--color-background-secondary)",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textAlign:"right" }}>Subtotal</div>
+                          <div style={STYLES.s823}>
+                            <div style={STYLES.s824}>
+                              <div style={STYLES.s825}>Qty (units)</div>
+                              <div style={STYLES.s826}>Price (₹)</div>
+                              <div style={STYLES.s827}>Subtotal</div>
                               {breakdown.map((row,idx)=>(
                                 <React.Fragment key={idx}>
-                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#1a6b3c",borderTop:"0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)"}}>units</span></div>
-                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:600,color:"#9b59b6",textAlign:"center",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
-                                  <div style={{ padding:"8px 10px",fontSize:13,fontWeight:700,color:"#1a6b3c",textAlign:"right",borderTop:"0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty*row.price)}</div>
+                                  <div style={STYLES.s828}>{fmt(row.qty)} <span style={STYLES.s829}>units</span></div>
+                                  <div style={STYLES.s830}>₹{fmt(row.price)}</div>
+                                  <div style={STYLES.s831}>₹{fmt(row.qty*row.price)}</div>
                                 </React.Fragment>
                               ))}
                             </div>
                           </div>
                         )}
                       </div>
-                      <div style={{ display:"flex",flexDirection:"column",gap:8,fontSize:13 }}>
-                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#e8f5ee",borderRadius:8 }}>
-                          <span style={{color:"#1a6b3c",fontWeight:600}}>Gross Income</span>
-                          <span style={{color:"#1a6b3c",fontWeight:700,fontSize:16}}>{fmtCur(gross)}</span>
+                      <div style={STYLES.s832}>
+                        <div style={STYLES.s833}>
+                          <span style={STYLES.s506}>Gross Income</span>
+                          <span style={STYLES.s834}>{fmtCur(gross)}</span>
                         </div>
-                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 12px" }}>
-                          <span style={{color:"var(--color-text-secondary)"}}>Spend (₹)</span>
+                        <div style={STYLES.s835}>
+                          <span style={STYLES.s836}>Spend (₹)</span>
                           <input type="text" inputMode="decimal" key={`spend-${entry.id}-${entry.spending}`} defaultValue={entry.spending!=null?String(entry.spending):""} placeholder="0"
                             onBlur={ev => { const sp=ev.target.value.trim()===""?0:parseFloat(ev.target.value.trim()); updateBizData(d=>d.map(en=>en.id!==entry.id?en:{...en,spending:sp,netIncome:(entry.grossIncome||0)-sp})); }}
-                            style={{width:110,padding:"5px 10px",fontSize:13,fontWeight:600,border:"0.5px solid var(--color-border-secondary)",borderRadius:7,background:"var(--color-background-secondary)",color:"#e55",outline:"none",textAlign:"right"}}
+                            style={STYLES.s837}
                             onFocus={ev=>{ev.target.style.border="1.5px solid #e55";ev.target.style.background="#fff";}}
                             onBlurCapture={ev=>{ev.target.style.border="0.5px solid var(--color-border-secondary)";ev.target.style.background="var(--color-background-secondary)";}} />
                         </div>
-                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#eaf4ff",borderRadius:8 }}>
-                          <span style={{color:"#4da6ff",fontWeight:600}}>Net Income</span>
-                          <span style={{color:"#4da6ff",fontWeight:700,fontSize:16}}>{fmtCur(net)}</span>
+                        <div style={STYLES.s838}>
+                          <span style={STYLES.s839}>Net Income</span>
+                          <span style={STYLES.s840}>{fmtCur(net)}</span>
                         </div>
                       </div>
 
                       {/* Bill Attachments Section */}
-                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)" }}>📎 Bill Attachments</span>
+                      <div style={STYLES.s841}>
+                        <div style={STYLES.s255}>
+                          <span style={STYLES.s842}>📎 Bill Attachments</span>
                           <label style={{ cursor: uploadingBill ? "not-allowed" : "pointer" }}>
                             <input
                               type="file"
                               accept="*/*"
-                              style={{ display: "none" }}
+                              style={STYLES.s390}
                               disabled={uploadingBill}
                               onChange={async (e) => {
                                 const file = e.target.files?.[0];
@@ -11130,49 +12483,32 @@ function BusinessPageInner({ data, update }) {
 
                         {/* Bills list */}
                         {(entry.bills || []).length === 0 ? (
-                          <div style={{ textAlign: "center", padding: "1.5rem", color: "var(--color-text-secondary)", fontSize: 12, background: "var(--color-background-secondary)", borderRadius: 8 }}>
+                          <div style={STYLES.s843}>
                             No bills attached yet
                           </div>
                         ) : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div style={STYLES.s549}>
                             {(entry.bills || []).map((bill, idx) => (
                               <div
                                 key={bill.id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  padding: "8px 12px",
-                                  background: "var(--color-background-secondary)",
-                                  borderRadius: 6,
-                                  border: "0.5px solid var(--color-border-tertiary)"
-                                }}
+                                style={STYLES.s844}
                               >
-                                <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                                  <span style={{ fontSize: 16 }}>📄</span>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <div style={STYLES.s845}>
+                                  <span style={STYLES.s6}>📄</span>
+                                  <div style={STYLES.s206}>
+                                    <div style={STYLES.s846}>
                                       {bill.name}
                                     </div>
-                                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                                    <div style={STYLES.s752}>
                                       {bill.size ? `${(bill.size / 1024).toFixed(1)} KB` : ""}
                                       {bill.uploadedAt && ` · ${new Date(bill.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`}
                                     </div>
                                   </div>
                                 </div>
-                                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                <div style={STYLES.s441}>
                                   <button
                                     onClick={() => setPreviewBill(bill)}
-                                    style={{
-                                      background: "#4da6ff",
-                                      color: "#fff",
-                                      border: "none",
-                                      borderRadius: 4,
-                                      padding: "4px 10px",
-                                      fontSize: 11,
-                                      fontWeight: 500,
-                                      cursor: "pointer"
-                                    }}
+                                    style={STYLES.s847}
                                   >
                                     👁 Preview
                                   </button>
@@ -11181,18 +12517,7 @@ function BusinessPageInner({ data, update }) {
                                     download={bill.name}
                                     target="_blank"
                                     rel="noreferrer"
-                                    style={{
-                                      background: "#1a6b3c",
-                                      color: "#fff",
-                                      border: "none",
-                                      borderRadius: 4,
-                                      padding: "4px 10px",
-                                      fontSize: 11,
-                                      fontWeight: 500,
-                                      textDecoration: "none",
-                                      display: "inline-flex",
-                                      alignItems: "center"
-                                    }}
+                                    style={STYLES.s848}
                                   >
                                     ⬇ Download
                                   </a>
@@ -11221,9 +12546,9 @@ function BusinessPageInner({ data, update }) {
                       </div>
 
                       {/* Notes Section */}
-                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)" }}>📝 Notes</span>
+                      <div style={STYLES.s841}>
+                        <div style={STYLES.s849}>
+                          <span style={STYLES.s842}>📝 Notes</span>
                         </div>
                         <textarea
                           key={`notes-${entry.id}`}
@@ -11234,20 +12559,7 @@ function BusinessPageInner({ data, update }) {
                             const val = ev.target.value;
                             updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, notes: val }));
                           }}
-                          style={{
-                            width: "100%",
-                            boxSizing: "border-box",
-                            resize: "vertical",
-                            fontSize: 13,
-                            color: "var(--color-text-primary)",
-                            background: "var(--color-background-secondary)",
-                            border: "0.5px solid var(--color-border-secondary)",
-                            borderRadius: 8,
-                            padding: "8px 10px",
-                            fontFamily: "inherit",
-                            lineHeight: 1.5,
-                            outline: "none",
-                          }}
+                          style={STYLES.s850}
                           onFocus={ev => { ev.target.style.border = "1.5px solid #4da6ff"; ev.target.style.background = "#fff"; }}
                           onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
                         />
@@ -11259,44 +12571,44 @@ function BusinessPageInner({ data, update }) {
               })()}
 
               {/* ── Month folder cards grid (hidden while detail is open) ── */}
-              {!selectedNonDayMonth && <><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, marginBottom: 16 }}>
+              {!selectedNonDayMonth && <><div style={STYLES.s851}>
                 {yearEntries.map(e => {
                   const dayCount = (e.days || []).length;
                   const gross = e.grossIncome || 0;
                   return (
                     <div key={e.id}
                       onClick={() => { if (isDayWise) { setSelectedMonth(e.id); setShowAddDay(false); } else { setSelectedNonDayMonth(e.id); } }}
-                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.1rem", cursor: "pointer", borderTop: "3px solid #4da6ff", position: "relative" }}
+                      style={STYLES.s852}
                       onMouseEnter={ev => { ev.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; }}
                       onMouseLeave={ev => ev.currentTarget.style.boxShadow = "none"}>
                       {/* Delete btn */}
                       <button onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
-                        style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                        style={STYLES.s780}>🗑</button>
                       {/* Folder icon + name */}
-                      <div style={{ fontSize: 28, marginBottom: 4 }}>{isDayWise ? "📁" : "📋"}</div>
-                      <div style={{ fontWeight: 700, fontSize: 18, fontFamily: "'DM Serif Display', serif", marginBottom: 6 }}>{e.month}</div>
+                      <div style={STYLES.s781}>{isDayWise ? "📁" : "📋"}</div>
+                      <div style={STYLES.s853}>{e.month}</div>
 
                       {isDayWise ? (
                         <>
                           {/* Day-wise: show price pill + gross summary */}
-                          <div style={{ fontSize: 11, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 8px", display: "inline-block", marginBottom: 8, fontWeight: 500 }}>
+                          <div style={STYLES.s854}>
                             ₹{e.price ? fmt(e.price) : "—"} / unit
                           </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
-                              <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(gross)}</span>
+                          <div style={STYLES.s855}>
+                            <div style={STYLES.s856}>
+                              <span style={STYLES.s172}>Gross</span>
+                              <span style={STYLES.s712}>{fmtCur(gross)}</span>
                             </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--color-text-secondary)" }}>Spend</span>
-                              <span style={{ color: "#e55", fontWeight: 600 }}>{fmtCur(e.spending || 0)}</span>
+                            <div style={STYLES.s856}>
+                              <span style={STYLES.s172}>Spend</span>
+                              <span style={STYLES.s857}>{fmtCur(e.spending || 0)}</span>
                             </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
-                              <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(e.netIncome || 0)}</span>
+                            <div style={STYLES.s856}>
+                              <span style={STYLES.s172}>Net</span>
+                              <span style={STYLES.s715}>{fmtCur(e.netIncome || 0)}</span>
                             </div>
                           </div>
-                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
+                          <div style={STYLES.s858}>
                             <span style={{ fontSize: 11, color: dayCount > 0 ? "#1a6b3c" : "var(--color-text-secondary)", background: dayCount > 0 ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 6, padding: "2px 8px" }}>
                               📅 {dayCount} day{dayCount !== 1 ? "s" : ""} recorded
                             </span>
@@ -11305,18 +12617,18 @@ function BusinessPageInner({ data, update }) {
                       ) : (
                         <>
                           {/* Non-day-wise: show only Gross & Net — click card to open detail */}
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, marginTop: 4 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
-                              <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+                          <div style={STYLES.s859}>
+                            <div style={STYLES.s322}>
+                              <span style={STYLES.s172}>Gross</span>
+                              <span style={STYLES.s860}>{fmtCur(gross)}</span>
                             </div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
-                              <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(e.netIncome || 0)}</span>
+                            <div style={STYLES.s322}>
+                              <span style={STYLES.s172}>Net</span>
+                              <span style={STYLES.s861}>{fmtCur(e.netIncome || 0)}</span>
                             </div>
                           </div>
-                          <div style={{ marginTop: 10, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, textAlign: "center" }}>
-                            <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>📂 Click to view details</span>
+                          <div style={STYLES.s862}>
+                            <span style={STYLES.s72}>📂 Click to view details</span>
                           </div>
                         </>
                       )}
@@ -11326,8 +12638,8 @@ function BusinessPageInner({ data, update }) {
               </div>
 
               {/* Chart — below month cards */}
-              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginTop: 4 }}>
-                <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>Monthly Performance — {selectedYear}</div>
+              <div style={STYLES.s863}>
+                <div style={STYLES.s683}>Monthly Performance — {selectedYear}</div>
                 <LineChart entries={yearEntries} />
               </div>
               </>}
@@ -11382,87 +12694,87 @@ function BusinessPageInner({ data, update }) {
           }
 
           return (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem 1.4rem", marginTop: 4 }}>
+            <div style={STYLES.s864}>
               {/* Header */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={STYLES.s801}>
+                <div style={STYLES.s740}>
                   <button onClick={() => setSelectedNonDayMonth(null)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
+                    style={STYLES.s865}>←</button>
                   {renamingMonth ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={STYLES.s408}>
                       <select value={editMonth} onChange={e => setEditMonth(e.target.value)}
-                        style={{ fontSize: 14, fontWeight: 600, border: "1.5px solid #1a6b3c", borderRadius: 7, padding: "4px 8px", background: "#fff", color: "#111", outline: "none" }}>
+                        style={STYLES.s803}>
                         {MONTHS_LIST.map(m => {
                           const usedByOther = yearEntries.some(e => e.month === m && e.id !== entry.id);
                           return <option key={m} value={m} disabled={usedByOther}>{m}{usedByOther ? " ✓ already added" : ""}</option>;
                         })}
                       </select>
                       <button onClick={saveMonthRename}
-                        style={{ background: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>✓</button>
+                        style={STYLES.s804}>✓</button>
                       <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(false); }}
-                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>✕</button>
+                        style={STYLES.s805}>✕</button>
                     </div>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontWeight: 700, fontSize: 17, fontFamily: "'DM Serif Display', serif" }}>📋 {entry.month} · {entry.year}</span>
+                    <div style={STYLES.s408}>
+                      <span style={STYLES.s806}>📋 {entry.month} · {entry.year}</span>
                       <button onClick={() => { setEditMonth(entry.month); setRenamingMonth(true); }}
                         title="Change month"
-                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary)" }}>✏️ Month</button>
+                        style={STYLES.s807}>✏️ Month</button>
                     </div>
                   )}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={STYLES.s740}>
                   {!editing ? (
                     <button onClick={() => { setEditRows(breakdown.map(r => ({ qty: String(r.qty), price: String(r.price) }))); setEditing(true); }}
-                      style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                      style={STYLES.s808}>
                       ✏️ Edit
                     </button>
                   ) : (
                     <>
                       <button onClick={() => setEditing(false)}
-                        style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        style={STYLES.s204}>
                         Cancel
                       </button>
                       <button onClick={saveEdits}
-                        style={{ background: "#1a6b3c", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "#fff", fontWeight: 600 }}>
+                        style={STYLES.s809}>
                         ✓ Save
                       </button>
                     </>
                   )}
                   <button onClick={ev => { ev.stopPropagation(); deleteEntry(entry.id); setSelectedNonDayMonth(null); }}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 15, opacity: 0.5 }}>🗑</button>
+                    style={STYLES.s810}>🗑</button>
                 </div>
               </div>
 
               {/* Breakdown */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Breakdown</div>
+              <div style={STYLES.s43}>
+                <div style={STYLES.s811}>Breakdown</div>
 
                 {editing ? (
                   /* ── Edit mode ── */
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={STYLES.s549}>
                     {/* Column headers */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, marginBottom: 2 }}>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Qty (units)</div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>Price (₹)</div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, textAlign: "right", minWidth: 80 }}>Subtotal</div>
+                    <div style={STYLES.s812}>
+                      <div style={STYLES.s813}>Qty (units)</div>
+                      <div style={STYLES.s813}>Price (₹)</div>
+                      <div style={STYLES.s814}>Subtotal</div>
                       <div />
                     </div>
                     {editRows.map((row, idx) => {
                       const sub = (parseFloat(row.qty) || 0) * (parseFloat(row.price) || 0);
                       return (
-                        <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "center" }}>
+                        <div key={idx} style={STYLES.s815}>
                           <input type="text" inputMode="decimal" placeholder="e.g. 120"
                             value={row.qty}
                             onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], qty: v }; return r; }); }}
-                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#1a6b3c", outline: "none" }}
+                            style={STYLES.s866}
                             onFocus={ev => { ev.target.style.border = "1.5px solid #1a6b3c"; ev.target.style.background = "#fff"; }}
                             onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
                           />
                           <input type="text" inputMode="decimal" placeholder="e.g. 30"
                             value={row.price}
                             onChange={e => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) setEditRows(p => { const r = [...p]; r[idx] = { ...r[idx], price: v }; return r; }); }}
-                            style={{ width: "100%", boxSizing: "border-box", padding: "5px 8px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "#9b59b6", outline: "none" }}
+                            style={STYLES.s867}
                             onFocus={ev => { ev.target.style.border = "1.5px solid #9b59b6"; ev.target.style.background = "#fff"; }}
                             onBlur={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
                           />
@@ -11471,19 +12783,19 @@ function BusinessPageInner({ data, update }) {
                           </div>
                           {editRows.length > 1 ? (
                             <button onClick={() => setEditRows(p => p.filter((_, i) => i !== idx))}
-                              style={{ background: "#fee2e2", color: "#ef4444", border: "none", borderRadius: 5, padding: "4px 9px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>×</button>
-                          ) : <div style={{ width: 28 }} />}
+                              style={STYLES.s868}>×</button>
+                          ) : <div style={STYLES.s869} />}
                         </div>
                       );
                     })}
                     {/* Add row + live gross */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                    <div style={STYLES.s795}>
                       <button onClick={() => setEditRows(p => [...p, { qty: "", price: "" }])}
-                        style={{ fontSize: 12, background: "#e8f5ee", color: "#1a6b3c", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                        style={STYLES.s796}>
                         + Add Row
                       </button>
                       {editRows.some(r => r.qty && r.price) && (
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1a6b3c" }}>
+                        <div style={STYLES.s870}>
                           Gross = ₹{fmt(editRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0))}
                         </div>
                       )}
@@ -11491,16 +12803,16 @@ function BusinessPageInner({ data, update }) {
                   </div>
                 ) : (
                   /* ── View mode ── */
-                  <div style={{ borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 }}>
-                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>Qty (units)</div>
-                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "center" }}>Price (₹)</div>
-                      <div style={{ padding: "6px 10px", background: "var(--color-background-secondary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textAlign: "right" }}>Subtotal</div>
+                  <div style={STYLES.s871}>
+                    <div style={STYLES.s872}>
+                      <div style={STYLES.s873}>Qty (units)</div>
+                      <div style={STYLES.s874}>Price (₹)</div>
+                      <div style={STYLES.s875}>Subtotal</div>
                       {breakdown.map((row, idx) => (
                         <React.Fragment key={idx}>
-                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#1a6b3c", borderTop: "0.5px solid var(--color-border-tertiary)" }}>{fmt(row.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-secondary)" }}>units</span></div>
-                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: "#9b59b6", textAlign: "center", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.price)}</div>
-                          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, color: "#1a6b3c", textAlign: "right", borderTop: "0.5px solid var(--color-border-tertiary)" }}>₹{fmt(row.qty * row.price)}</div>
+                          <div style={STYLES.s876}>{fmt(row.qty)} <span style={STYLES.s877}>units</span></div>
+                          <div style={STYLES.s878}>₹{fmt(row.price)}</div>
+                          <div style={STYLES.s879}>₹{fmt(row.qty * row.price)}</div>
                         </React.Fragment>
                       ))}
                     </div>
@@ -11509,13 +12821,13 @@ function BusinessPageInner({ data, update }) {
               </div>
 
               {/* Gross / Spend / Net */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#e8f5ee", borderRadius: 8 }}>
-                  <span style={{ color: "#1a6b3c", fontWeight: 600 }}>Gross Income</span>
-                  <span style={{ color: "#1a6b3c", fontWeight: 700, fontSize: 16 }}>{fmtCur(gross)}</span>
+              <div style={STYLES.s880}>
+                <div style={STYLES.s881}>
+                  <span style={STYLES.s712}>Gross Income</span>
+                  <span style={STYLES.s860}>{fmtCur(gross)}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px" }}>
-                  <span style={{ color: "var(--color-text-secondary)" }}>Spend (₹)</span>
+                <div style={STYLES.s882}>
+                  <span style={STYLES.s172}>Spend (₹)</span>
                   <input
                     type="text" inputMode="decimal"
                     key={`detail-spend-${entry.id}-${entry.spending}`}
@@ -11526,14 +12838,14 @@ function BusinessPageInner({ data, update }) {
                       const netIncome = (entry.grossIncome || 0) - spending;
                       updateBizData(d => d.map(en => en.id !== entry.id ? en : { ...en, spending, netIncome }));
                     }}
-                    style={{ width: 110, padding: "5px 10px", fontSize: 13, fontWeight: 600, border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, background: "var(--color-background-secondary)", color: "#e55", outline: "none", textAlign: "right" }}
+                    style={STYLES.s883}
                     onFocus={ev => { ev.target.style.border = "1.5px solid #e55"; ev.target.style.background = "#fff"; }}
                     onBlurCapture={ev => { ev.target.style.border = "0.5px solid var(--color-border-secondary)"; ev.target.style.background = "var(--color-background-secondary)"; }}
                   />
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#eaf4ff", borderRadius: 8 }}>
-                  <span style={{ color: "#4da6ff", fontWeight: 600 }}>Net Income</span>
-                  <span style={{ color: "#4da6ff", fontWeight: 700, fontSize: 16 }}>{fmtCur(net)}</span>
+                <div style={STYLES.s884}>
+                  <span style={STYLES.s715}>Net Income</span>
+                  <span style={STYLES.s861}>{fmtCur(net)}</span>
                 </div>
               </div>
             </div>
@@ -11644,7 +12956,7 @@ function BusinessPageInner({ data, update }) {
               const spending = activeMonthEntry.spending || 0;
               const netIncome = totalGross - spending;
               return (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))", gap: 10, marginBottom: 16 }}>
+                <div style={STYLES.s885}>
                   {[
                     { label: "Days Filled",   val: `${filledDays.length} / ${dayEntries.length}`, color: "#f0a020" },
                     { label: "Total Quantity", val: fmt(totalQtyAll) + " units",                   color: "#9b59b6" },
@@ -11653,7 +12965,7 @@ function BusinessPageInner({ data, update }) {
                     { label: "Net Income",     val: fmtCur(netIncome),                             color: "#4da6ff" },
                   ].map(c => (
                     <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem 1rem", border: c.label === "Spending" ? "0.5px solid #fca5a5" : "0.5px solid var(--color-border-tertiary)" }}>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                      <div style={STYLES.s153}>{c.label}</div>
                       {c.editable ? (
                         <input
                           type="text" inputMode="decimal"
@@ -11665,7 +12977,7 @@ function BusinessPageInner({ data, update }) {
                             const net = totalGross - s;
                             updateBizData(d => d.map(en => en.id !== selectedMonth ? en : { ...en, spending: s, netIncome: net }));
                           }}
-                          style={{ fontSize: 18, fontWeight: 600, color: "#e55", border: "none", background: "transparent", outline: "none", width: "100%", padding: 0 }}
+                          style={STYLES.s886}
                           onFocus={e => { e.target.style.borderBottom = "1.5px solid #e55"; }}
                           onBlurCapture={e => { e.target.style.borderBottom = "none"; }}
                         />
@@ -11679,44 +12991,44 @@ function BusinessPageInner({ data, update }) {
             })()}
 
             {/* Inline editable daily table */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+            <div style={STYLES.s537}>
               {/* Table header bar */}
-              <div style={{ padding: "0.75rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 500, fontSize: 15 }}>Daily Quantities — {activeMonthEntry.month} {selectedYear}</span>
+              <div style={STYLES.s887}>
+                <span style={STYLES.s92}>Daily Quantities — {activeMonthEntry.month} {selectedYear}</span>
                 {activeMonthEntry.price
-                  ? <span style={{ fontSize: 11, background: "#e8f5ee", color: "#1a6b3c", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>💰 ₹{fmt(activeMonthEntry.price)}/unit</span>
-                  : <span style={{ fontSize: 11, color: "#e55", background: "#fff0f0", borderRadius: 6, padding: "2px 8px" }}>⚠ Set a price above first</span>}
-                <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                  ? <span style={STYLES.s888}>💰 ₹{fmt(activeMonthEntry.price)}/unit</span>
+                  : <span style={STYLES.s889}>⚠ Set a price above first</span>}
+                <div style={STYLES.s890}>
                   <button onClick={addQtyCol}
-                    style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #1a6b3c", background: "#e8f5ee", color: "#1a6b3c", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                    style={STYLES.s891}>
                     + Add Column
                   </button>
                   {qtyCols.length > 1 && (
                     <button onClick={() => removeQtyCol(qtyCols[qtyCols.length - 1].id)}
-                      style={{ padding: "4px 12px", borderRadius: 7, border: "0.5px solid #e55", background: "#fff0f0", color: "#e55", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                      style={STYLES.s892}>
                       − Remove Last
                     </button>
                   )}
                 </div>
               </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <table style={STYLES.s632}>
                 <thead>
-                  <tr style={{ background: "var(--color-background-secondary)" }}>
-                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Date</th>
-                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Day</th>
+                  <tr style={STYLES.s633}>
+                    <th style={STYLES.s893}>Date</th>
+                    <th style={STYLES.s894}>Day</th>
                     {qtyCols.map((col, ci) => (
-                      <th key={col.id} style={{ padding: "4px 8px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, minWidth: 90 }}>
+                      <th key={col.id} style={STYLES.s895}>
                         <input
                           defaultValue={col.label}
                           onBlur={e => renameQtyCol(col.id, e.target.value)}
-                          style={{ border: "none", background: "transparent", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", width: "100%", outline: "none", cursor: "text", padding: "2px 4px", borderRadius: 4 }}
+                          style={STYLES.s896}
                           onFocus={e => { e.target.style.background = "var(--color-background-primary)"; e.target.style.border = "1px solid var(--color-border-secondary)"; }}
                           onBlurCapture={e => { e.target.style.background = "transparent"; e.target.style.border = "none"; }}
                           title="Click to rename"
                         />
                       </th>
                     ))}
-                    <th style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>Total Qty</th>
+                    <th style={STYLES.s893}>Total Qty</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -11734,7 +13046,7 @@ function BusinessPageInner({ data, update }) {
                         {qtyCols.map((col, ci) => {
                           const val = getColVal(d, col.id);
                           return (
-                            <td key={col.id} style={{ padding: "4px 8px", width: 100 }}>
+                            <td key={col.id} style={STYLES.s897}>
                               <input
                                 type="text"
                                 inputMode="decimal"
@@ -11759,14 +13071,14 @@ function BusinessPageInner({ data, update }) {
                 </tbody>
                 {filledDays.length > 0 && (
                   <tfoot>
-                    <tr style={{ borderTop: "2px solid var(--color-border-secondary)", background: "var(--color-background-secondary)" }}>
-                      <td style={{ padding: "9px 14px", fontWeight: 600 }} colSpan={2}>Total</td>
+                    <tr style={STYLES.s898}>
+                      <td style={STYLES.s899} colSpan={2}>Total</td>
                       {qtyCols.map(col => (
-                        <td key={col.id} style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                        <td key={col.id} style={STYLES.s900}>
                           {fmt(dayEntries.reduce((s,d) => s + (getColVal(d, col.id) || 0), 0))}
                         </td>
                       ))}
-                      <td style={{ padding: "9px 14px", fontWeight: 700, color: "#1a6b3c" }}>
+                      <td style={STYLES.s900}>
                         {fmt(dayEntries.reduce((s,d) => s + (getTotalQty(d) || 0), 0))}
                       </td>
                     </tr>
@@ -11921,23 +13233,23 @@ function DocsPage({ data, update }) {
   function GridCard({ emoji, name, sub, isRenaming, renamingVal, onRenameChange, onRenameKey, onRenameBlur, onClick, onRename, onDelete }) {
     return (
       <div onClick={onClick}
-        style={{ position: "relative", padding: "18px 16px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, cursor: "pointer", userSelect: "none" }}
+        style={STYLES.s901}
         onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.1)"}
         onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
-        <div style={{ fontSize: 30, marginBottom: 8 }}>{emoji}</div>
+        <div style={STYLES.s902}>{emoji}</div>
         {isRenaming ? (
           <input autoFocus value={renamingVal} onClick={e => e.stopPropagation()}
             onChange={onRenameChange}
             onKeyDown={onRenameKey}
             onBlur={onRenameBlur}
-            style={{ width: "100%", fontSize: 13, fontWeight: 600, padding: "2px 4px", borderRadius: 4, border: "1px solid #1a6b3c", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            style={STYLES.s903} />
         ) : (
-          <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+          <div style={STYLES.s904}>{name}</div>
         )}
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>{sub}</div>
-        <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 2 }} onClick={e => e.stopPropagation()}>
-          <button onClick={onRename} title="Rename" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2, opacity: 0.5 }}>✏️</button>
-          <button onClick={onDelete} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2, opacity: 0.5 }}>🗑️</button>
+        <div style={STYLES.s905}>{sub}</div>
+        <div style={STYLES.s906} onClick={e => e.stopPropagation()}>
+          <button onClick={onRename} title="Rename" style={STYLES.s907}>✏️</button>
+          <button onClick={onDelete} title="Delete" style={STYLES.s907}>🗑️</button>
         </div>
       </div>
     );
@@ -11946,11 +13258,11 @@ function DocsPage({ data, update }) {
   // ── add-item input row (shared) ───────────────────────────────────────────
   function AddRow({ value, onChange, onConfirm, onCancel, placeholder }) {
     return (
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, padding: "12px 14px", background: "var(--color-background-secondary)", borderRadius: 10 }}>
+      <div style={STYLES.s908}>
         <input autoFocus value={value} onChange={e => onChange(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") onConfirm(); if (e.key === "Escape") onCancel(); }}
           placeholder={placeholder}
-          style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--color-border-primary)", fontSize: 14, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+          style={STYLES.s909} />
         <button onClick={onConfirm} style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }}>Create</button>
       </div>
     );
@@ -11959,14 +13271,14 @@ function DocsPage({ data, update }) {
   // ── breadcrumb ────────────────────────────────────────────────────────────
   function Breadcrumb() {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
+      <div style={STYLES.s626}>
         <button onClick={() => { setSelectedFolder(null); setSelectedSub(null); }}
           style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", padding: "5px 10px", fontSize: 12 }}>
           🗂️ Docs
         </button>
         {activeFolder && (
           <>
-            <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+            <span style={STYLES.s172}>›</span>
             <button onClick={() => setSelectedSub(null)}
               style={{ ...btnBase, background: selectedSub ? "var(--color-background-secondary)" : "#e8f5ee", color: selectedSub ? "var(--color-text-primary)" : "#1a6b3c", padding: "5px 10px", fontSize: 12 }}>
               📁 {activeFolder.name}
@@ -11975,7 +13287,7 @@ function DocsPage({ data, update }) {
         )}
         {activeSub && (
           <>
-            <span style={{ color: "var(--color-text-secondary)" }}>›</span>
+            <span style={STYLES.s172}>›</span>
             <span style={{ ...btnBase, background: "#e8f5ee", color: "#1a6b3c", padding: "5px 10px", fontSize: 12 }}>
               📂 {activeSub.name}
             </span>
@@ -11992,15 +13304,15 @@ function DocsPage({ data, update }) {
   function subDocCount(sub) { return (sub.docs || []).length; }
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+    <div style={STYLES.s910}>
 
       {/* ══ LEVEL 0: Root — folder grid ══════════════════════════════════════ */}
       {!selectedFolder && (
         <>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={STYLES.s139}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>🗂️ Docs</h2>
-              <p style={{ margin: "3px 0 0", fontSize: 13, color: "var(--color-text-secondary)" }}>Organise documents in folders and subfolders, synced to Google Drive.</p>
+              <h2 style={STYLES.s911}>🗂️ Docs</h2>
+              <p style={STYLES.s912}>Organise documents in folders and subfolders, synced to Google Drive.</p>
             </div>
             <button onClick={() => setShowAddFolder(v => !v)} style={{ ...btnBase, background: showAddFolder ? "#fee2e2" : "#1a6b3c", color: "#fff" }}>
               {showAddFolder ? "✕ Cancel" : "+ New Folder"}
@@ -12013,11 +13325,11 @@ function DocsPage({ data, update }) {
                 onCancel={() => { setShowAddFolder(false); setNewFolderName(""); }} placeholder="Folder name…" />
             )}
             {folders.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
+              <div style={STYLES.s913}>
                 No folders yet. Click <strong>+ New Folder</strong> to get started.
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 }}>
+              <div style={STYLES.s914}>
                 {folders.map(folder => (
                   <GridCard key={folder.id}
                     emoji="📁" name={folder.name}
@@ -12041,8 +13353,8 @@ function DocsPage({ data, update }) {
       {selectedFolder && !selectedSub && activeFolder && (
         <>
           <Breadcrumb />
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📁 {activeFolder.name}</h2>
+          <div style={STYLES.s139}>
+            <h2 style={STYLES.s915}>📁 {activeFolder.name}</h2>
             <button onClick={() => setShowAddSub(v => !v)} style={{ ...btnBase, background: showAddSub ? "#fee2e2" : "#1a6b3c", color: "#fff" }}>
               {showAddSub ? "✕ Cancel" : "+ New Subfolder"}
             </button>
@@ -12054,11 +13366,11 @@ function DocsPage({ data, update }) {
                 onCancel={() => { setShowAddSub(false); setNewSubName(""); }} placeholder="Subfolder name…" />
             )}
             {subfolders.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
+              <div style={STYLES.s913}>
                 No subfolders yet. Click <strong>+ New Subfolder</strong> to organise your documents.
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 }}>
+              <div style={STYLES.s914}>
                 {subfolders.map(sub => (
                   <GridCard key={sub.id}
                     emoji="📂" name={sub.name}
@@ -12083,10 +13395,10 @@ function DocsPage({ data, update }) {
         <>
           <Breadcrumb />
           <div style={cardStyle}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <span style={{ fontWeight: 600, fontSize: 15 }}>Documents · {docs.length} file{docs.length !== 1 ? "s" : ""}</span>
+            <div style={STYLES.s139}>
+              <span style={STYLES.s65}>Documents · {docs.length} file{docs.length !== 1 ? "s" : ""}</span>
               <label style={{ cursor: uploadingDoc ? "not-allowed" : "pointer" }}>
-                <input type="file" accept="*/*" style={{ display: "none" }} disabled={uploadingDoc}
+                <input type="file" accept="*/*" style={STYLES.s390} disabled={uploadingDoc}
                   onChange={async e => { const file = e.target.files?.[0]; if (file) await uploadDoc(file); e.target.value = ""; }} />
                 <span style={{ ...btnBase, background: uploadingDoc ? "#ccc" : "#1a6b3c", color: "#fff", pointerEvents: uploadingDoc ? "none" : "auto" }}>
                   {uploadingDoc ? "⏳ Uploading…" : "+ Upload Doc"}
@@ -12095,22 +13407,22 @@ function DocsPage({ data, update }) {
             </div>
 
             {docs.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-secondary)", borderRadius: 10 }}>
+              <div style={STYLES.s913}>
                 No documents yet. Click <strong>+ Upload Doc</strong> to add files.
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={STYLES.s674}>
                 {docs.map(doc => (
-                  <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--color-background-secondary)", borderRadius: 10, border: "0.5px solid var(--color-border-tertiary)" }}>
-                    <span style={{ fontSize: 22, flexShrink: 0 }}>{getFileIcon(doc.mimeType, doc.name)}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                  <div key={doc.id} style={STYLES.s916}>
+                    <span style={STYLES.s917}>{getFileIcon(doc.mimeType, doc.name)}</span>
+                    <div style={STYLES.s206}>
+                      <div style={STYLES.s846}>{doc.name}</div>
+                      <div style={STYLES.s196}>
                         {doc.size ? `${(doc.size / 1024).toFixed(1)} KB` : ""}
                         {doc.uploadedAt && ` · ${new Date(doc.uploadedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <div style={STYLES.s441}>
                       <button onClick={() => setPreviewDoc(doc)} style={{ ...btnBase, background: "#4da6ff", color: "#fff", padding: "5px 10px", fontSize: 11 }}>👁 Preview</button>
                       <a href={doc.downloadUrl || doc.url} download={doc.name} target="_blank" rel="noreferrer"
                         style={{ ...btnBase, background: "#1a6b3c", color: "#fff", padding: "5px 10px", fontSize: 11, textDecoration: "none" }}>⬇ Download</a>
@@ -12124,7 +13436,7 @@ function DocsPage({ data, update }) {
               </div>
             )}
 
-            <div style={{ marginTop: 16, fontSize: 11, color: "var(--color-text-secondary)" }}>
+            <div style={STYLES.s918}>
               🔒 Files saved in <strong>FinTracker/Docs/{activeFolder?.name}/{activeSub.name}/</strong> on your Google Drive.
             </div>
           </div>
@@ -12133,20 +13445,20 @@ function DocsPage({ data, update }) {
 
       {/* ── Preview modal ── */}
       {previewDoc && (
-        <div onClick={() => setPreviewDoc(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "var(--color-background-primary)", borderRadius: 14, width: "100%", maxWidth: 760, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "0.5px solid var(--color-border-secondary)" }}>
-              <span style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{previewDoc.name}</span>
-              <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 12 }}>
+        <div onClick={() => setPreviewDoc(null)} style={STYLES.s919}>
+          <div onClick={e => e.stopPropagation()} style={STYLES.s920}>
+            <div style={STYLES.s921}>
+              <span style={STYLES.s922}>{previewDoc.name}</span>
+              <div style={STYLES.s923}>
                 <a href={previewDoc.url} target="_blank" rel="noreferrer" style={{ ...btnBase, background: "#1a6b3c", color: "#fff", padding: "6px 12px", fontSize: 12, textDecoration: "none" }}>Open in Drive</a>
                 <button onClick={() => setPreviewDoc(null)} style={{ ...btnBase, background: "var(--color-background-secondary)", color: "var(--color-text-primary)", padding: "6px 12px", fontSize: 12 }}>✕ Close</button>
               </div>
             </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
+            <div style={STYLES.s924}>
               {(previewDoc.mimeType || "").includes("image") ? (
-                <img src={previewDoc.url} alt={previewDoc.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                <img src={previewDoc.url} alt={previewDoc.name} style={STYLES.s925} />
               ) : (
-                <iframe src={`https://drive.google.com/file/d/${previewDoc.id}/preview`} style={{ width: "100%", height: "100%", border: "none", minHeight: 420 }} title={previewDoc.name} allow="autoplay" />
+                <iframe src={`https://drive.google.com/file/d/${previewDoc.id}/preview`} style={STYLES.s926} title={previewDoc.name} allow="autoplay" />
               )}
             </div>
           </div>
@@ -12388,41 +13700,41 @@ function ProjectsPage({ data, update }) {
     <div>
       {/* Breadcrumb */}
       {project && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontSize: 13, flexWrap: "wrap" }}>
+        <div style={STYLES.s626}>
           <button onClick={() => { setSelectedProject(null); setShowAddTask(false); setEditTaskId(null); }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", transition: "opacity 0.15s", background: "var(--color-background-secondary)", color: "var(--color-text-primary)" }}>
+            style={STYLES.s627}>
             📋 Projects
           </button>
-          <span style={{ color: "var(--color-text-secondary)" }}>›</span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", background: "#e8f5ee", color: "#1a6b3c" }}>
+          <span style={STYLES.s172}>›</span>
+          <span style={STYLES.s628}>
             📁 {project.name}
           </span>
         </div>
       )}
       
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={STYLES.s75}>
+        <div style={STYLES.s165}>
           {project && (
-            <button onClick={() => { setSelectedProject(null); setShowAddTask(false); setEditTaskId(null); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+            <button onClick={() => { setSelectedProject(null); setShowAddTask(false); setEditTaskId(null); }} style={STYLES.s927}>
               ← Back
             </button>
           )}
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>
+          <h1 style={STYLES.s737}>
             {project
               ? (renamingProject?.id === project.id
                   ? <input autoFocus value={renamingProject.value}
                       onChange={e => setRenamingProject(p => ({ ...p, value: e.target.value }))}
                       onKeyDown={e => { if (e.key === "Enter") { renameProject(project.id, renamingProject.value); setRenamingProject(null); } if (e.key === "Escape") setRenamingProject(null); }}
                       onBlur={() => { renameProject(project.id, renamingProject.value); setRenamingProject(null); }}
-                      style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", border: "0.5px solid #1a6b3c", borderRadius: 7, padding: "2px 10px", outline: "none", background: "var(--color-background-secondary)", minWidth: 160 }} />
-                  : <><span>{project.name}</span><button onClick={() => setRenamingProject({ id: project.id, value: project.name })} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", fontFamily: "inherit" }}>✏️</button></>
+                      style={STYLES.s738} />
+                  : <><span>{project.name}</span><button onClick={() => setRenamingProject({ id: project.id, value: project.name })} style={STYLES.s739}>✏️</button></>
                 )
               : "Projects"}
           </h1>
         </div>
         {!project && (
-          <button onClick={() => setShowAddProject(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+          <button onClick={() => setShowAddProject(p => !p)} style={STYLES.s158}>
             {showAddProject ? "✕ Cancel" : "+ New Project"}
           </button>
         )}
@@ -12430,19 +13742,19 @@ function ProjectsPage({ data, update }) {
 
       {/* Add project form */}
       {showAddProject && !project && (
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end" }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Project Name</label>
+        <div style={STYLES.s745}>
+          <div style={STYLES.s354}>
+            <label style={STYLES.s181}>Project Name</label>
             <input
               placeholder="e.g. Website Redesign, Q3 Campaign…"
               value={newProjectName}
               onChange={e => setNewProjectName(e.target.value)}
               onKeyDown={e => e.key === "Enter" && addProject()}
-              style={{ width: "100%", boxSizing: "border-box" }}
+              style={STYLES.s45}
               autoFocus
             />
           </div>
-          <button onClick={addProject} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>Create Project</button>
+          <button onClick={addProject} style={STYLES.s404}>Create Project</button>
         </div>
       )}
 
@@ -12450,12 +13762,12 @@ function ProjectsPage({ data, update }) {
       {!project && (
         <>
           {projects.length === 0 ? (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+            <div style={STYLES.s928}>
+              <div style={STYLES.s230}>📋</div>
               No projects yet. Click "+ New Project" to create your first one.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+            <div style={STYLES.s929}>
               {projects.map(pr => {
                 const done = (pr.todos || []).filter(t => t.done).length;
                 const total = (pr.todos || []).length;
@@ -12479,31 +13791,31 @@ function ProjectsPage({ data, update }) {
                     onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
                   >
                     <button onClick={ev => { ev.stopPropagation(); deleteProject(pr.id); }}
-                      style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>🗑</button>
+                      style={STYLES.s930}>🗑</button>
                     <button onClick={ev => { ev.stopPropagation(); setRenamingProject({ id: pr.id, value: pr.name }); }}
-                      style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.55, padding: 2 }} title="Rename">✏️</button>
-                    <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+                      style={STYLES.s931} title="Rename">✏️</button>
+                    <div style={STYLES.s932}>📁</div>
                     {renamingProject?.id === pr.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
+                      <div onClick={e => e.stopPropagation()} style={STYLES.s239}>
                         <input autoFocus value={renamingProject.value}
                           onChange={e => setRenamingProject(p => ({ ...p, value: e.target.value }))}
                           onKeyDown={e => { if (e.key === "Enter") { renameProject(pr.id, renamingProject.value); setRenamingProject(null); } if (e.key === "Escape") setRenamingProject(null); }}
                           onBlur={() => { renameProject(pr.id, renamingProject.value); setRenamingProject(null); }}
-                          style={{ width: "100%", boxSizing: "border-box", fontSize: 15, fontWeight: 600, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "inherit", background: "var(--color-background-secondary)" }} />
-                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
+                          style={STYLES.s933} />
+                        <div style={STYLES.s752}>Enter to save · Esc to cancel</div>
                       </div>
                     ) : (
-                      <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, paddingRight: 20 }}>{pr.name}</div>
+                      <div style={STYLES.s934}>{pr.name}</div>
                     )}
-                    <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 10 }}>
+                    <div style={STYLES.s182}>
                       {total} task{total !== 1 ? "s" : ""} · {(pr.files || []).length} file{(pr.files || []).length !== 1 ? "s" : ""}
                     </div>
                     {total > 0 && (
                       <>
-                        <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 4 }}>
+                        <div style={STYLES.s935}>
                           <div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 4, transition: "width 0.4s" }} />
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{done}/{total} done · {pct}%</div>
+                        <div style={STYLES.s72}>{done}/{total} done · {pct}%</div>
                       </>
                     )}
                   </div>
@@ -12522,15 +13834,15 @@ function ProjectsPage({ data, update }) {
           <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden", ...(leftTab === "notes" ? { gridColumn: "1 / -1", display: "flex", flexDirection: "column", height: "100%" } : {}), minWidth: 0 }}>
 
             {/* Tab bar */}
-            <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 4px", flexShrink: 0 }}>
+            <div style={STYLES.s936}>
               <button style={tabStyle(leftTab === "tasks")} onClick={() => setLeftTab("tasks")}>
-                ✅ Tasks {pendingTodos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({pendingTodos.length})</span>}
+                ✅ Tasks {pendingTodos.length > 0 && <span style={STYLES.s937}>({pendingTodos.length})</span>}
               </button>
               <button style={tabStyle(leftTab === "completed")} onClick={() => setLeftTab("completed")}>
-                ☑️ Completed {completedTodos.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({completedTodos.length})</span>}
+                ☑️ Completed {completedTodos.length > 0 && <span style={STYLES.s937}>({completedTodos.length})</span>}
               </button>
               <button style={tabStyle(leftTab === "notes")} onClick={() => setLeftTab("notes")}>
-                📝 Notes {notes.length > 0 && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 4 }}>({notes.length})</span>}
+                📝 Notes {notes.length > 0 && <span style={STYLES.s937}>({notes.length})</span>}
               </button>
             </div>
 
@@ -12538,29 +13850,29 @@ function ProjectsPage({ data, update }) {
             {leftTab === "tasks" && (
               <div>
                 {/* Add Task button */}
-                <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                <div style={STYLES.s938}>
                   {!showAddTask ? (
-                    <button onClick={() => setShowAddTask(true)} style={{ width: "100%", background: "none", border: "1px dashed var(--color-border-secondary)", borderRadius: 8, padding: "7px", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)", textAlign: "left" }}>
+                    <button onClick={() => setShowAddTask(true)} style={STYLES.s939}>
                       + Add task…
                     </button>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={STYLES.s674}>
                       <div>
-                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Task Name *</label>
+                        <label style={STYLES.s181}>Task Name *</label>
                         <input
                           placeholder="e.g. Design homepage mockup"
                           value={taskForm.name}
                           onChange={e => setTaskForm(f => ({ ...f, name: e.target.value }))}
-                          style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }}
+                          style={STYLES.s940}
                           autoFocus
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 5 }}>
-                          Task Types <span style={{ color: "var(--color-text-secondary)", fontWeight: 400 }}>(select one or more)</span>
-                          {taskForm.types.length > 0 && <span style={{ marginLeft: 6, color: "#1a6b3c", fontWeight: 600 }}>· {taskForm.types.length} selected · {Math.round(100/taskForm.types.length)}% each</span>}
+                        <label style={STYLES.s941}>
+                          Task Types <span style={STYLES.s942}>(select one or more)</span>
+                          {taskForm.types.length > 0 && <span style={STYLES.s943}>· {taskForm.types.length} selected · {Math.round(100/taskForm.types.length)}% each</span>}
                         </label>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                        <div style={STYLES.s944}>
                           {TASK_TYPES.map(t => {
                             const sel = taskForm.types.includes(t);
                             return (
@@ -12572,19 +13884,19 @@ function ProjectsPage({ data, update }) {
                           })}
                         </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div style={STYLES.s80}>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label>
-                          <input type="date" value={taskForm.startDate} onChange={e => setTaskForm(f => ({ ...f, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>Start Date</label>
+                          <input type="date" value={taskForm.startDate} onChange={e => setTaskForm(f => ({ ...f, startDate: e.target.value }))} style={STYLES.s202} />
                         </div>
                         <div>
-                          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>ETA (Due Date)</label>
-                          <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                          <label style={STYLES.s181}>ETA (Due Date)</label>
+                          <input type="date" value={taskForm.eta} onChange={e => setTaskForm(f => ({ ...f, eta: e.target.value }))} style={STYLES.s202} />
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button onClick={() => { setShowAddTask(false); setTaskForm({ name: "", types: [], eta: "" }); }} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
-                        <button onClick={addTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Add Task</button>
+                      <div style={STYLES.s136}>
+                        <button onClick={() => { setShowAddTask(false); setTaskForm({ name: "", types: [], eta: "" }); }} style={STYLES.s204}>Cancel</button>
+                        <button onClick={addTask} style={STYLES.s945}>Add Task</button>
                       </div>
                     </div>
                   )}
@@ -12592,14 +13904,14 @@ function ProjectsPage({ data, update }) {
 
                 {/* Deadlines */}
                 {todos.length === 0 ? (
-                  <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                  <div style={STYLES.s946}>
                     No tasks yet. Click "+ Add task…" to get started.
                   </div>
                 ) : (
                   <div>
                     {pendingTodos.length > 0 && (
                       <>
-                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>DEADLINES ({pendingTodos.length})</div>
+                    <div style={STYLES.s947}>DEADLINES ({pendingTodos.length})</div>
                     {pendingTodos
                       .slice()
                       .sort((a, b) => {
@@ -12609,16 +13921,16 @@ function ProjectsPage({ data, update }) {
                         return new Date(a.eta) - new Date(b.eta);
                       })
                       .map(t => (
-                        <div key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                        <div key={t.id} style={STYLES.s294}>
                           {editTaskId === t.id ? (
-                            <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7, background: "var(--color-background-secondary)" }}>
-                              <input value={editTaskForm.name} onChange={e => setEditTaskForm(f => ({ ...f, name: e.target.value }))} placeholder="Task name" style={{ width: "100%", boxSizing: "border-box", fontSize: 13 }} autoFocus />
+                            <div style={STYLES.s948}>
+                              <input value={editTaskForm.name} onChange={e => setEditTaskForm(f => ({ ...f, name: e.target.value }))} placeholder="Task name" style={STYLES.s940} autoFocus />
                               <div>
-                                <label style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>
+                                <label style={STYLES.s949}>
                                   Task Types
-                                  {editTaskForm.types.length > 0 && <span style={{ marginLeft: 5, color: "#1a6b3c", fontWeight: 600 }}>· {editTaskForm.types.length} · {Math.round(100/editTaskForm.types.length)}% each</span>}
+                                  {editTaskForm.types.length > 0 && <span style={STYLES.s950}>· {editTaskForm.types.length} · {Math.round(100/editTaskForm.types.length)}% each</span>}
                                 </label>
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                <div style={STYLES.s951}>
                                   {TASK_TYPES.map(tt => {
                                     const sel = editTaskForm.types.includes(tt);
                                     return (
@@ -12630,29 +13942,29 @@ function ProjectsPage({ data, update }) {
                                   })}
                                 </div>
                               </div>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                              <div style={STYLES.s952}>
                                 <div>
-                                  <label style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 }}>Start Date</label>
-                                  <input type="date" value={editTaskForm.startDate} onChange={e => setEditTaskForm(f => ({ ...f, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                                  <label style={STYLES.s953}>Start Date</label>
+                                  <input type="date" value={editTaskForm.startDate} onChange={e => setEditTaskForm(f => ({ ...f, startDate: e.target.value }))} style={STYLES.s202} />
                                 </div>
                                 <div>
-                                  <label style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "block", marginBottom: 2 }}>Due Date</label>
-                                  <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                                  <label style={STYLES.s953}>Due Date</label>
+                                  <input type="date" value={editTaskForm.eta} onChange={e => setEditTaskForm(f => ({ ...f, eta: e.target.value }))} style={STYLES.s202} />
                                 </div>
                               </div>
-                              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                                <button onClick={() => setEditTaskId(null)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)" }}>Cancel</button>
-                                <button onClick={saveEditTask} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Save</button>
+                              <div style={STYLES.s954}>
+                                <button onClick={() => setEditTaskId(null)} style={STYLES.s805}>Cancel</button>
+                                <button onClick={saveEditTask} style={STYLES.s955}>Save</button>
                               </div>
                             </div>
                           ) : (
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px" }}>
+                            <div style={STYLES.s956}>
                               <button
                                 onClick={() => toggleTodo(t.id)}
                                 style={{ width: 18, height: 18, borderRadius: 4, border: t.done ? "1.5px solid #1a6b3c" : "1.5px solid var(--color-border-secondary)", background: t.done ? "#e8f5ee" : "transparent", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}
                               >{t.done ? "✓" : ""}</button>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, wordBreak: "break-word" }}>{t.text}</div>
+                              <div style={STYLES.s206}>
+                                <div style={STYLES.s957}>{t.text}</div>
                                 {/* Task types — clickable to mark each as done */}
                                 {(() => {
                                   const types = t.taskTypes && t.taskTypes.length > 0
@@ -12663,9 +13975,9 @@ function ProjectsPage({ data, update }) {
                                   const doneCnt = completedTypes.filter(ct => types.includes(ct)).length;
                                   const subtaskPct = types.length > 0 ? Math.round((doneCnt / types.length) * 100) : 0;
                                   return (
-                                    <div style={{ marginBottom: 6 }}>
+                                    <div style={STYLES.s958}>
                                       {/* Segmented bar showing completion per type */}
-                                      <div style={{ display: "flex", borderRadius: 4, overflow: "hidden", height: 5, marginBottom: 5 }}>
+                                      <div style={STYLES.s959}>
                                         {types.map((tp, i) => {
                                           const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
                                           const isDone = completedTypes.includes(tp);
@@ -12673,7 +13985,7 @@ function ProjectsPage({ data, update }) {
                                         })}
                                       </div>
                                       {/* Clickable type chips */}
-                                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                      <div style={STYLES.s951}>
                                         {types.map((tp, i) => {
                                           const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
                                           const isDone = completedTypes.includes(tp);
@@ -12694,12 +14006,12 @@ function ProjectsPage({ data, update }) {
                                         })}
                                       </div>
                                       {/* Subtask progress bar */}
-                                      <div style={{ marginTop: 5 }}>
-                                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
+                                      <div style={STYLES.s960}>
+                                        <div style={STYLES.s961}>
                                           <span>Subtask Progress</span>
                                           <span style={{ fontWeight: 600, color: subtaskPct === 100 ? "#1a6b3c" : "var(--color-text-secondary)" }}>{doneCnt}/{types.length} · {subtaskPct}%</span>
                                         </div>
-                                        <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+                                        <div style={STYLES.s962}>
                                           <div style={{ width: subtaskPct + "%", height: "100%", background: subtaskPct === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 3, transition: "width 0.4s" }} />
                                         </div>
                                       </div>
@@ -12708,11 +14020,11 @@ function ProjectsPage({ data, update }) {
                                 })()}
                                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: (t.startDate || t.eta) ? 6 : 0 }}>
                                   {t.startDate && (
-                                    <span style={{ fontSize: 10, color: "#4da6ff", fontWeight: 500 }}>🚀 Start: {new Date(t.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                                    <span style={STYLES.s963}>🚀 Start: {new Date(t.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                                   )}
                                   {t.eta
                                     ? <span style={{ fontSize: 10, color: etaColor(t.eta), fontWeight: 500 }}>📅 Due: {formatEta(t.eta)}</span>
-                                    : (!t.startDate && <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>No deadline</span>)
+                                    : (!t.startDate && <span style={STYLES.s83}>No deadline</span>)
                                   }
                                 </div>
                                 {/* Time timeline progress bar — only shown when ETA is set */}
@@ -12742,23 +14054,23 @@ function ProjectsPage({ data, update }) {
                                   const barColor = delayed ? "#d44" : pct >= 90 ? "#f0a020" : pct >= 70 ? "#f59e0b" : "#4da6ff";
                                   return (
                                     <div>
-                                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2 }}>
-                                        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                      <div style={STYLES.s961}>
+                                        <span style={STYLES.s964}>
                                           Time Elapsed
-                                          {delayed && <span style={{ background: "#fde8e8", color: "#d44", borderRadius: 3, padding: "0px 4px", fontWeight: 700, fontSize: 8, letterSpacing: 0.3 }}>⚠ DELAYED</span>}
+                                          {delayed && <span style={STYLES.s965}>⚠ DELAYED</span>}
                                         </span>
                                         <span style={{ color: barColor, fontWeight: 600 }}>{pct}%</span>
                                       </div>
-                                      <div style={{ background: "var(--color-background-secondary)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+                                      <div style={STYLES.s962}>
                                         <div style={{ width: pct + "%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.4s" }} />
                                       </div>
                                     </div>
                                   );
                                 })()}
                               </div>
-                              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                                <button onClick={() => startEditTask(t)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "2px 4px" }} title="Edit">✏️</button>
-                                <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                              <div style={STYLES.s543}>
+                                <button onClick={() => startEditTask(t)} style={STYLES.s966} title="Edit">✏️</button>
+                                <button onClick={() => deleteTodo(t.id)} style={STYLES.s967}>✕</button>
                               </div>
                             </div>
                           )}
@@ -12777,33 +14089,33 @@ function ProjectsPage({ data, update }) {
             {leftTab === "completed" && (
               <div>
                 {completedTodos.length === 0 ? (
-                  <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>No completed tasks yet.</div>
+                  <div style={STYLES.s946}>No completed tasks yet.</div>
                 ) : (
                   <>
-                    <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500, background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={STYLES.s968}>
                       <span>✅ COMPLETED ({completedTodos.length})</span>
-                      <span style={{ fontSize: 10, color: "#1a6b3c" }}>↩ to reopen</span>
+                      <span style={STYLES.s969}>↩ to reopen</span>
                     </div>
                     {completedTodos.map(t => {
                       const types = t.taskTypes && t.taskTypes.length > 0 ? t.taskTypes : (t.taskType ? [t.taskType] : []);
                       return (
-                        <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
-                          <button onClick={() => toggleTodo(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)", wordBreak: "break-word", marginBottom: 3 }}>{t.text}</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 2 }}>
+                        <div key={t.id} style={STYLES.s970}>
+                          <button onClick={() => toggleTodo(t.id)} style={STYLES.s971}>✓</button>
+                          <div style={STYLES.s206}>
+                            <div style={STYLES.s972}>{t.text}</div>
+                            <div style={STYLES.s973}>
                               {types.map((tp, i) => {
                                 const colors = ["#1a6b3c","#4da6ff","#f0a020","#9b59b6","#e74c3c","#1abc9c","#e67e22","#3498db","#e91e63","#607d8b"];
                                 return (
                                   <span key={tp} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, background: colors[i%colors.length]+"14", color: colors[i%colors.length], fontWeight: 600, opacity: 0.7 }}>{tp} · {Math.round(100/types.length)}%</span>
                                 );
                               })}
-                              {t.eta && <span style={{ fontSize: 9, color: "var(--color-text-secondary)", opacity: 0.7 }}>📅 {formatEta(t.eta)}</span>}
+                              {t.eta && <span style={STYLES.s974}>📅 {formatEta(t.eta)}</span>}
                             </div>
                           </div>
-                          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                            <button onClick={() => toggleTodo(t.id)} style={{ background: "none", border: "0.5px solid #1a6b3c44", borderRadius: 5, cursor: "pointer", fontSize: 10, color: "#1a6b3c", padding: "2px 7px", fontWeight: 500 }} title="Reopen task">↩ Reopen</button>
-                            <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "2px 4px" }}>✕</button>
+                          <div style={STYLES.s543}>
+                            <button onClick={() => toggleTodo(t.id)} style={STYLES.s975} title="Reopen task">↩ Reopen</button>
+                            <button onClick={() => deleteTodo(t.id)} style={STYLES.s967}>✕</button>
                           </div>
                         </div>
                       );
@@ -12848,17 +14160,17 @@ function ProjectsPage({ data, update }) {
               const activeNote = notes.find(n => n.id === activeNoteId) || null;
               const NOTE_COLORS = ["#ffffff", "#fef9c3", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe", "#fee2e2", "#ffedd5"];
               return (
-                <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <div style={STYLES.s976}>
                   {/* LEFT sidebar */}
-                  <div style={{ width: 200, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column" }}>
-                    <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>{notes.length} note{notes.length !== 1 ? "s" : ""}</span>
-                      <button onClick={addNote} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 500 }}>+ New</button>
+                  <div style={STYLES.s977}>
+                    <div style={STYLES.s978}>
+                      <span style={STYLES.s979}>{notes.length} note{notes.length !== 1 ? "s" : ""}</span>
+                      <button onClick={addNote} style={STYLES.s980}>+ New</button>
                     </div>
-                    <div style={{ flex: 1, overflowY: "auto" }}>
+                    <div style={STYLES.s981}>
                       {notes.length === 0 ? (
-                        <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 12 }}>
-                          <div style={{ fontSize: 28, marginBottom: 6 }}>📝</div>No notes yet
+                        <div style={STYLES.s982}>
+                          <div style={STYLES.s932}>📝</div>No notes yet
                         </div>
                       ) : notes.map(note => {
                         const isActive = activeNote && activeNote.id === note.id;
@@ -12886,9 +14198,9 @@ function ProjectsPage({ data, update }) {
                       makeDefaultMindmap={makeDefaultMindmap}
                     />
                   ) : (
-                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", flexDirection: "column", gap: 10 }}>
-                      <div style={{ fontSize: 36 }}>📝</div>
-                      <div style={{ fontSize: 13 }}>Select a note or create one</div>
+                    <div style={STYLES.s983}>
+                      <div style={STYLES.s185}>📝</div>
+                      <div style={STYLES.s162}>Select a note or create one</div>
                     </div>
                   )}
                 </div>
@@ -12898,38 +14210,38 @@ function ProjectsPage({ data, update }) {
 
           {/* RIGHT — Project summary / stats (hidden when viewing Notes) */}
           {leftTab !== "notes" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={STYLES.s264}>
             {/* Summary card */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.1rem 1.2rem" }}>
-              <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 12 }}>Project Overview</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
-                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
-                  <div style={{ fontSize: 22, fontWeight: 600, color: "#4da6ff" }}>{todos.length}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Total Tasks</div>
+            <div style={STYLES.s984}>
+              <div style={STYLES.s985}>Project Overview</div>
+              <div style={STYLES.s986}>
+                <div style={STYLES.s987}>
+                  <div style={STYLES.s988}>{todos.length}</div>
+                  <div style={STYLES.s196}>Total Tasks</div>
                 </div>
-                <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
-                  <div style={{ fontSize: 22, fontWeight: 600, color: "#1a6b3c" }}>{doneTodos}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Completed</div>
+                <div style={STYLES.s989}>
+                  <div style={STYLES.s990}>{doneTodos}</div>
+                  <div style={STYLES.s196}>Completed</div>
                 </div>
-                <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "0.8rem", textAlign: "center" }}>
-                  <div style={{ fontSize: 22, fontWeight: 600, color: "var(--color-text-secondary)" }}>{files.length}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>Files</div>
+                <div style={STYLES.s987}>
+                  <div style={STYLES.s991}>{files.length}</div>
+                  <div style={STYLES.s196}>Files</div>
                 </div>
               </div>
               {todos.length > 0 && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+                  <div style={STYLES.s992}>
                     <span>Subtask Progress</span>
-                    <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{doneSubtasks}/{totalSubtasks} · {subtaskPctOverall}%</span>
+                    <span style={STYLES.s993}>{doneSubtasks}/{totalSubtasks} · {subtaskPctOverall}%</span>
                   </div>
-                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 6 }}>
+                  <div style={STYLES.s994}>
                     <div style={{ width: subtaskPctOverall + "%", height: "100%", background: subtaskPctOverall === 100 ? "#1a6b3c" : "#4da6ff", borderRadius: 6, transition: "width 0.4s" }} />
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+                  <div style={STYLES.s995}>
                     <span>Tasks Done</span>
                     <span>{doneTodos}/{todos.length} ({Math.round(doneTodos / todos.length * 100)}%)</span>
                   </div>
-                  <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 4, overflow: "hidden" }}>
+                  <div style={STYLES.s996}>
                     <div style={{ width: (doneTodos / todos.length * 100) + "%", height: "100%", background: doneTodos === todos.length ? "#1a6b3c" : "#b6ddc2", borderRadius: 4, transition: "width 0.4s" }} />
                   </div>
                 </div>
@@ -12953,39 +14265,39 @@ function ProjectsPage({ data, update }) {
               return (
                 <>
                   {/* ── Card 1: Work Log (today) ── */}
-                  <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                    <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontWeight: 500, fontSize: 14 }}>📋 Work Log</span>
+                  <div style={STYLES.s311}>
+                    <div style={STYLES.s997}>
+                      <span style={STYLES.s52}>📋 Work Log</span>
                       {todayEntries.length > 0 && (
-                        <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{doneTodayCount}/{todayEntries.length} done today</span>
+                        <span style={STYLES.s72}>{doneTodayCount}/{todayEntries.length} done today</span>
                       )}
                     </div>
-                    <div style={{ padding: "10px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", gap: 8 }}>
+                    <div style={STYLES.s998}>
                       <input
                         placeholder="What did you work on today?"
                         value={newDayEntry}
                         onChange={e => setNewDayEntry(e.target.value)}
                         onKeyDown={e => e.key === "Enter" && addDayEntry()}
-                        style={{ flex: 1, fontSize: 13, padding: "5px 8px", boxSizing: "border-box" }}
+                        style={STYLES.s999}
                       />
-                      <button onClick={addDayEntry} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>+ Add</button>
+                      <button onClick={addDayEntry} style={STYLES.s1000}>+ Add</button>
                     </div>
                     {todayEntries.length === 0 ? (
-                      <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>No entries for today yet.</div>
+                      <div style={STYLES.s1001}>No entries for today yet.</div>
                     ) : (
                       <div>
                         {todayEntries.filter(e => !e.done).map(e => (
-                          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                            <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid var(--color-border-secondary)", background: "transparent", cursor: "pointer", flexShrink: 0 }} />
-                            <span style={{ flex: 1, fontSize: 13 }}>{e.text}</span>
-                            <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                          <div key={e.id} style={STYLES.s1002}>
+                            <button onClick={() => toggleDayEntry(e.id)} style={STYLES.s1003} />
+                            <span style={STYLES.s1004}>{e.text}</span>
+                            <button onClick={() => deleteDayEntry(e.id)} style={STYLES.s1005}>✕</button>
                           </div>
                         ))}
                         {todayEntries.filter(e => e.done).map(e => (
-                          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: 0.55 }}>
-                            <button onClick={() => toggleDayEntry(e.id)} style={{ width: 18, height: 18, borderRadius: 4, border: "1.5px solid #1a6b3c", background: "#e8f5ee", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 10 }}>✓</button>
-                            <span style={{ flex: 1, fontSize: 13, textDecoration: "line-through", color: "var(--color-text-secondary)" }}>{e.text}</span>
-                            <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>✕</button>
+                          <div key={e.id} style={STYLES.s1006}>
+                            <button onClick={() => toggleDayEntry(e.id)} style={STYLES.s1007}>✓</button>
+                            <span style={STYLES.s1008}>{e.text}</span>
+                            <button onClick={() => deleteDayEntry(e.id)} style={STYLES.s1005}>✕</button>
                           </div>
                         ))}
                       </div>
@@ -12994,12 +14306,12 @@ function ProjectsPage({ data, update }) {
 
                   {/* ── Card 2: History (past days) ── */}
                   {pastDates.length > 0 && (
-                    <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-                      <div style={{ padding: "0.9rem 1.1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span style={{ fontWeight: 500, fontSize: 14 }}>🗂 History</span>
-                        <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{pastDates.length} day{pastDates.length !== 1 ? "s" : ""}</span>
+                    <div style={STYLES.s311}>
+                      <div style={STYLES.s997}>
+                        <span style={STYLES.s52}>🗂 History</span>
+                        <span style={STYLES.s72}>{pastDates.length} day{pastDates.length !== 1 ? "s" : ""}</span>
                       </div>
-                      <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                      <div style={STYLES.s1009}>
                         {pastDates.map(d => {
                           const entries = grouped[d];
                           const done = entries.filter(e => e.done).length;
@@ -13013,7 +14325,7 @@ function ProjectsPage({ data, update }) {
                                 onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
                                 onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? "#f0f7f3" : "transparent"; }}
                               >
-                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={STYLES.s740}>
                                   <span style={{ fontSize: 10, color: "var(--color-text-secondary)", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▶</span>
                                   <span style={{ fontSize: 13, color: "var(--color-text-primary)", fontWeight: isExpanded ? 600 : 400 }}>
                                     {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
@@ -13023,12 +14335,12 @@ function ProjectsPage({ data, update }) {
                               </div>
                               {/* Expanded entries with delete */}
                               {isExpanded && (
-                                <div style={{ background: "var(--color-background-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                                <div style={STYLES.s1010}>
                                   {entries.map(e => (
                                     <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px 7px 30px", borderBottom: "0.5px solid var(--color-border-tertiary)", opacity: e.done ? 0.65 : 1 }}>
                                       <button onClick={() => toggleDayEntry(e.id)} style={{ width: 16, height: 16, borderRadius: 3, border: e.done ? "1.5px solid #1a6b3c" : "1.5px solid var(--color-border-secondary)", background: e.done ? "#e8f5ee" : "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#1a6b3c", fontSize: 9 }}>{e.done ? "✓" : ""}</button>
                                       <span style={{ flex: 1, fontSize: 12, textDecoration: e.done ? "line-through" : "none", color: e.done ? "var(--color-text-secondary)" : "var(--color-text-primary)" }}>{e.text}</span>
-                                      <button onClick={() => deleteDayEntry(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px", flexShrink: 0 }}>✕</button>
+                                      <button onClick={() => deleteDayEntry(e.id)} style={STYLES.s1011}>✕</button>
                                     </div>
                                   ))}
                                 </div>
@@ -13080,7 +14392,7 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
             placeholder="Note title…"
             value={localTitle}
             onChange={e => { setLocalTitle(e.target.value); triggerSave(e.target.value, localContent); }}
-            style={{ flex: 1, fontSize: 13, fontWeight: 600, border: "none", background: "transparent", outline: "none", color: "var(--color-text-primary)", padding: 0 }}
+            style={STYLES.s1012}
             autoFocus={!note.title && !note.content}
           />
         ) : (
@@ -13089,12 +14401,12 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
           </div>
         )}
         {/* Color picker */}
-        <div style={{ position: "relative" }}>
+        <div style={STYLES.s563}>
           <button onClick={() => setShowColors(s => !s)} style={{ width: 16, height: 16, borderRadius: "50%", background: note.color || "#fff", border: "1px solid var(--color-border-secondary)", cursor: "pointer", flexShrink: 0 }} title="Note color" />
           {showColors && (
             <>
-              <div onClick={() => setShowColors(false)} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
-              <div style={{ position: "absolute", right: 0, top: 22, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 6, zIndex: 100, display: "flex", gap: 5, flexWrap: "wrap", width: 114 }}>
+              <div onClick={() => setShowColors(false)} style={STYLES.s1013} />
+              <div style={STYLES.s1014}>
                 {colors.map(c => (
                   <button key={c} onClick={() => { onUpdate(note.id, { color: c }); setShowColors(false); }}
                     style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid var(--color-border-secondary)", cursor: "pointer" }} />
@@ -13104,11 +14416,11 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
           )}
         </div>
         {editing ? (
-          <button onClick={() => setEditing(false)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>Done</button>
+          <button onClick={() => setEditing(false)} style={STYLES.s1015}>Done</button>
         ) : (
-          <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.5, padding: "0 2px" }} title="Edit">✏️</button>
+          <button onClick={() => setEditing(true)} style={STYLES.s1016} title="Edit">✏️</button>
         )}
-        <button onClick={() => onDelete(note.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 12, opacity: 0.5, padding: "0 2px" }}>🗑</button>
+        <button onClick={() => onDelete(note.id)} style={STYLES.s1005}>🗑</button>
       </div>
       {/* Note body */}
       {editing ? (
@@ -13117,18 +14429,18 @@ function NoteBlock({ note, onUpdate, onDelete, colors }) {
           value={localContent}
           onChange={e => { setLocalContent(e.target.value); triggerSave(localTitle, e.target.value); }}
           rows={5}
-          style={{ width: "100%", boxSizing: "border-box", border: "none", background: "transparent", resize: "vertical", outline: "none", fontSize: 13, padding: "8px 10px", lineHeight: 1.6, fontFamily: "inherit", color: "var(--color-text-primary)" }}
+          style={STYLES.s1017}
         />
       ) : (
         note.content ? (
-          <div onClick={() => setEditing(true)} style={{ padding: "8px 10px", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap", cursor: "text", minHeight: 32 }}>{note.content}</div>
+          <div onClick={() => setEditing(true)} style={STYLES.s1018}>{note.content}</div>
         ) : (
-          <div onClick={() => setEditing(true)} style={{ padding: "8px 10px", fontSize: 12, color: "var(--color-text-secondary)", fontStyle: "italic", cursor: "text" }}>Click to add content…</div>
+          <div onClick={() => setEditing(true)} style={STYLES.s1019}>Click to add content…</div>
         )
       )}
       {/* Footer */}
       {note.updatedAt && (
-        <div style={{ padding: "4px 10px 6px", fontSize: 10, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+        <div style={STYLES.s1020}>
           Updated {fmt(note.updatedAt)}
         </div>
       )}
@@ -13184,9 +14496,9 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
       }}
     >
       {/* Top drag bar with color dots + delete */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px 4px", borderBottom: "1px solid rgba(0,0,0,0.06)", cursor: "grab" }}>
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <span style={{ fontSize: 9, color: "rgba(0,0,0,0.25)", marginRight: 2, letterSpacing: 1 }}>⠿</span>
+      <div style={STYLES.s1021}>
+        <div style={STYLES.s1022}>
+          <span style={STYLES.s1023}>⠿</span>
           {COLORS.map(c => (
             <button key={c} onMouseDown={e => { e.stopPropagation(); onUpdate(note.id, { color: c }); }}
               style={{ width: 11, height: 11, borderRadius: "50%", background: c, border: note.color === c ? "2px solid #1a6b3c" : "1px solid rgba(0,0,0,0.18)", cursor: "pointer", padding: 0, flexShrink: 0 }} />
@@ -13218,15 +14530,7 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
         }}
         placeholder="Type here… click ✕ to delete"
         rows={3}
-        style={{
-          background: "transparent", border: "none", outline: "none",
-          resize: "none", fontSize: 12.5, lineHeight: 1.65,
-          color: "#333", fontFamily: "inherit",
-          width: "100%", boxSizing: "border-box",
-          userSelect: "text", cursor: "text",
-          padding: "7px 10px 2px",
-          minHeight: 60,
-        }}
+        style={STYLES.s1024}
         onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
       />
 
@@ -13240,7 +14544,7 @@ function CanvasStickyNote({ note, pan, onUpdate, onDelete, onMoveEnd }) {
           window.addEventListener("mousemove", move);
           window.addEventListener("mouseup", up);
         }}
-        style={{ alignSelf: "flex-end", cursor: "ew-resize", fontSize: 10, color: "rgba(0,0,0,0.22)", padding: "0 6px 2px", lineHeight: 1 }}
+        style={STYLES.s1025}
         title="Drag to resize">⟺</div>
     </div>
   );
@@ -13429,14 +14733,14 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
   const btn      = { border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 11, background: "none" };
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+    <div style={STYLES.s1026}>
 
       {/* ── Toolbar ── */}
-      <div style={{ padding: "6px 12px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.97)", flexShrink: 0, flexWrap: "wrap" }}>
+      <div style={STYLES.s1027}>
         <button onClick={undo} disabled={!canUndo} title="Undo Ctrl+Z" style={{ ...btn, opacity: canUndo ? 1 : 0.3 }}>↩ Undo</button>
         <button onClick={redo} disabled={!canRedo} title="Redo Ctrl+Y" style={{ ...btn, opacity: canRedo ? 1 : 0.3 }}>↪ Redo</button>
 
-        <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+        <div style={STYLES.s1028} />
 
         {/* ── TEXT button — replaces Note ── */}
         <button onClick={addTextBlockCenter} title="Add text anywhere on canvas (or double-click canvas)"
@@ -13449,7 +14753,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           ＋ Central Idea
         </button>
 
-        <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
+        <div style={STYLES.s1028} />
 
         {/* Canvas bg color dots */}
         {NOTE_COLORS.map(c => (
@@ -13459,24 +14763,24 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
 
         {/* Node selected actions */}
         {selNode && (<>
-          <div style={{ width: 1, height: 16, background: "var(--color-border-secondary)" }} />
-          <span style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>Node:</span>
+          <div style={STYLES.s1028} />
+          <span style={STYLES.s83}>Node:</span>
           <button onClick={() => { setEditingId(selNode.id); setEditLabel(selNode.label); }} style={{ ...btn }}>✏️ Rename</button>
           {!selNode.isRoot && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
           {selNode.isRoot && nodes.filter(n => n.isRoot).length > 1 && <button onClick={() => deleteNode(selected)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑</button>}
-          <div style={{ display: "flex", gap: 3 }}>
+          <div style={STYLES.s1029}>
             {NC.map(c => <button key={c} onClick={() => changeNodeColor(selected, c)} style={{ width: 13, height: 13, borderRadius: "50%", background: c, border: selNode.color === c ? "2px solid #6d28d9" : "1px solid #ccc", cursor: "pointer", padding: 0 }} />)}
           </div>
         </>)}
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+        <div style={STYLES.s1030}>
           <button onClick={() => setPan({ x: 0, y: 0 })} style={{ ...btn, color: "var(--color-text-secondary)" }}>⊙ Reset</button>
           <button onClick={() => deleteNote(note.id)} style={{ ...btn, color: "#d44", borderColor: "#d44" }}>🗑 Delete note</button>
         </div>
       </div>
 
       {/* ── Canvas ── */}
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
+      <div style={STYLES.s1031}>
         <div
           onMouseDown={onCanvasMouseDown}
           onMouseMove={onMouseMove}
@@ -13486,7 +14790,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           style={{ position: "relative", width: 2800, height: 2000, background: note.color || "#f0eff8", cursor: panStart ? "grabbing" : "default", userSelect: "none" }}
         >
           {/* SVG edges */}
-          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+          <svg style={STYLES.s1032}>
             <g transform={`translate(${pan.x},${pan.y})`}>
               {visibleEdges.map(edge => {
                 const f = nodes.find(n => n.id === edge.from), t = nodes.find(n => n.id === edge.to);
@@ -13515,7 +14819,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
                   </div>
                   {/* + child */}
                   <div onMouseDown={e => { e.stopPropagation(); addChild(node.id); }} title="Add child"
-                    style={{ position:"absolute", right:-11, top:"50%", transform:"translateY(-50%)", width:20, height:20, borderRadius:"50%", background:"#1a6b3c", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, cursor:"pointer", zIndex:20, boxShadow:"0 1px 4px rgba(0,0,0,0.18)", lineHeight:1 }}>+</div>
+                    style={STYLES.s1033}>+</div>
                   {hasKids && (
                     <div onMouseDown={e => { e.stopPropagation(); toggleCollapse(node.id); }} title={isCol ? `Show ${kidCount}` : "Collapse"}
                       style={{ position:"absolute", bottom:-11, left:"50%", transform:"translateX(-50%)", width:20, height:20, borderRadius:"50%", background: isCol?"#6d28d9":"#e5e7eb", color: isCol?"#fff":"#6b7280", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, cursor:"pointer", zIndex:20, border:"1.5px solid "+(isCol?"#5b21b6":"#d1d5db") }}>
@@ -13536,12 +14840,12 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
                 onMouseDown={e => onTextBlockMouseDown(e, tb.id)}
                 style={{ height: 20, cursor: dragging?.id === tb.id ? "grabbing" : "grab", display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 2, background: "rgba(109,40,217,0.07)", borderRadius: "4px 4px 0 0", paddingLeft: 4, borderBottom: "1px dashed rgba(109,40,217,0.2)" }}>
                 {/* Formatting mini-bar */}
-                <div style={{ display: "flex", gap: 3, alignItems: "center" }} onMouseDown={e => e.stopPropagation()}>
+                <div style={STYLES.s1034} onMouseDown={e => e.stopPropagation()}>
                   <button onClick={() => updateTextBlock(tb.id, { bold: !tb.bold })}
                     style={{ background: tb.bold ? "#6d28d9" : "none", border: "0.5px solid #ccc", borderRadius: 3, padding: "0 4px", fontSize: 10, fontWeight: 700, cursor: "pointer", color: tb.bold ? "#fff" : "#555", lineHeight: "13px" }}>B</button>
                   <select value={tb.fontSize || 16} onChange={e => updateTextBlock(tb.id, { fontSize: parseInt(e.target.value) })}
                     onMouseDown={e => e.stopPropagation()}
-                    style={{ fontSize: 9, border: "0.5px solid #ccc", borderRadius: 3, padding: "0 2px", cursor: "pointer", background: "#fff", height: 14 }}>
+                    style={STYLES.s1035}>
                     {[10,12,14,16,18,20,24,28,32,40].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                   {/* Color dots for text */}
@@ -13552,7 +14856,7 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
                 </div>
                 {/* Delete */}
                 <button onMouseDown={e => e.stopPropagation()} onClick={() => deleteTextBlock(tb.id)}
-                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#d44", padding: 0, lineHeight: 1, marginLeft: 4 }}>✕</button>
+                  style={STYLES.s1036}>✕</button>
               </div>
               {/* The editable text */}
               <div
@@ -13581,17 +14885,17 @@ function MergedNoteEditor({ note, updateNote, deleteNote, onEsc, NOTE_COLORS, ma
           ))}
 
           {/* Canvas hint */}
-          <div style={{ position:"absolute", bottom:10, right:14, fontSize:10, color:"#c0bedd", pointerEvents:"none", textAlign:"right", lineHeight:1.7 }}>
-            <b style={{color:"#6d28d9"}}>T Text</b> in toolbar or <b>double-click</b> empty space to add text<br/>
-            <span style={{color:"#7c3aed"}}>＋ Central Idea</span> = add new idea · <span style={{color:"#a78bfa"}}>+</span> = add child · drag purple bar = move text
+          <div style={STYLES.s1037}>
+            <b style={STYLES.s1038}>T Text</b> in toolbar or <b>double-click</b> empty space to add text<br/>
+            <span style={STYLES.s1039}>＋ Central Idea</span> = add new idea · <span style={STYLES.s1040}>+</span> = add child · drag purple bar = move text
           </div>
         </div>
       </div>
 
       {/* Note title bar at bottom */}
-      <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", flexShrink: 0, padding: "8px 16px" }}>
+      <div style={STYLES.s1041}>
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Note title…"
-          style={{ display:"block", width:"100%", boxSizing:"border-box", border:"none", outline:"none", background:"transparent", fontSize:14, fontWeight:600, fontFamily:"inherit", color:"var(--color-text-primary)" }} />
+          style={STYLES.s1042} />
       </div>
     </div>
   );
@@ -13625,7 +14929,7 @@ function DraggableList({ items, onReorder, renderItem, keyFn }) {
   function cleanup() { dragIdx.current = null; setDragOver(null); }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={STYLES.s549}>
       {items.map((item, i) => (
         <div key={keyFn(item)}
           draggable
@@ -13638,10 +14942,10 @@ function DraggableList({ items, onReorder, renderItem, keyFn }) {
             border: dragOver === i ? "1.5px dashed #1a6b3c" : "0.5px solid var(--color-border-tertiary)",
             transition: "background 0.12s, border 0.12s", cursor: "default", userSelect: "none" }}>
           {/* Drag handle */}
-          <div style={{ padding: "0 4px 0 10px", color: "#bbb", fontSize: 16, cursor: "grab", flexShrink: 0, lineHeight: 1 }}
+          <div style={STYLES.s1043}
             title="Drag to reorder">⠿</div>
           {/* Row content fills the rest */}
-          <div style={{ flex: 1, minWidth: 0 }}>{renderItem(item, i)}</div>
+          <div style={STYLES.s206}>{renderItem(item, i)}</div>
         </div>
       ))}
     </div>
@@ -13653,19 +14957,19 @@ function StatCard({ label, value, sub, icon, danger, pnl, big, accent, tooltip }
   const color = pnl !== undefined ? (pnl >= 0 ? "#1a6b3c" : "#d44") : danger ? "#d44" : "var(--color-text-primary)";
   return (
     <div title={tooltip} style={{ background: accent ? "#e8f5ee" : "var(--color-background-secondary)", borderRadius: 12, padding: big ? "1.2rem" : "0.9rem", border: "0.5px solid var(--color-border-tertiary)", cursor: tooltip ? "help" : "default" }}>
-      {icon && <div style={{ fontSize: 14, color: "#1a6b3c", marginBottom: 4 }}>{icon}</div>}
-      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{label}</div>
+      {icon && <div style={STYLES.s1044}>{icon}</div>}
+      <div style={STYLES.s153}>{label}</div>
       <div style={{ fontSize: big ? 28 : 18, fontWeight: 500, color, fontFamily: big ? "'DM Serif Display', serif" : "inherit" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>{sub}</div>}
+      {sub && <div style={STYLES.s905}>{sub}</div>}
     </div>
   );
 }
 
 function Card({ title, children, action }) {
   return (
-    <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem 1.1rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 10 }}>
-        <span style={{ fontWeight: 500, fontSize: 15 }}>{title}</span>
+    <div style={STYLES.s682}>
+      <div style={STYLES.s1045}>
+        <span style={STYLES.s92}>{title}</span>
         {action}
       </div>
       {children}
@@ -13675,8 +14979,8 @@ function Card({ title, children, action }) {
 
 function TabBar({ tabs, active, setActive, labels }) {
   return (
-    <div style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", marginBottom: 4 }}>
-      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content" }}>
+    <div style={STYLES.s1046}>
+      <div style={STYLES.s1047}>
         {tabs.map((t, i) => (
           <button key={t} onClick={() => setActive(t)} style={{ padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: active === t ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: active === t ? 500 : 400, borderBottom: active === t ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1, whiteSpace: "nowrap" }}>
             {labels ? labels[i] : t}
@@ -13689,7 +14993,7 @@ function TabBar({ tabs, active, setActive, labels }) {
 
 function PeriodBar({ periods, active, setActive }) {
   return (
-    <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+    <div style={STYLES.s1048}>
       {periods.map(p => (
         <button key={p} onClick={() => setActive(p)} style={{ padding: "4px 12px", borderRadius: 6, border: "0.5px solid", borderColor: active === p ? "#1a6b3c" : "var(--color-border-secondary)", background: active === p ? "#1a6b3c" : "transparent", color: active === p ? "#fff" : "var(--color-text-secondary)", fontSize: 12, cursor: "pointer" }}>{p}</button>
       ))}
@@ -13699,15 +15003,15 @@ function PeriodBar({ periods, active, setActive }) {
 
 function LabelInput({ label, placeholder, value, onChange, type = "text" }) {
   return (
-    <div style={{ marginBottom: 10 }}>
-      {label && <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{label}</label>}
-      <input type={type} placeholder={placeholder} value={value || ""} onChange={e => onChange(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+    <div style={STYLES.s56}>
+      {label && <label style={STYLES.s1049}>{label}</label>}
+      <input type={type} placeholder={placeholder} value={value || ""} onChange={e => onChange(e.target.value)} style={STYLES.s45} />
     </div>
   );
 }
 
 function GreenBtn({ onClick, label }) {
-  return <button onClick={onClick} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500, marginTop: 6 }}>{label}</button>;
+  return <button onClick={onClick} style={STYLES.s1050}>{label}</button>;
 }
 
 function GoogleBtn({ onClick, disabled, label }) {
@@ -13721,7 +15025,7 @@ function GoogleBtn({ onClick, disabled, label }) {
 
 function Tabs({ tabs, active, setActive }) {
   return (
-    <div style={{ display: "flex", gap: 4 }}>
+    <div style={STYLES.s641}>
       {tabs.map(t => <button key={t} onClick={() => setActive(t)} style={{ padding: "2px 8px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: active === t ? "#1a6b3c" : "var(--color-text-secondary)" }}>{t}</button>)}
     </div>
   );
@@ -13732,37 +15036,37 @@ function HealthBar({ label, value, target, invert, unit, hint }) {
   const color = good ? "#1a6b3c" : value > (invert ? target * 1.2 : target * 0.5) ? "#f0a020" : "#d44";
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 13 }}>
+      <div style={STYLES.s1051}>
         <span>{label}</span>
         <span style={{ color, fontWeight: 500 }}>{value?.toFixed(1)}{unit}</span>
       </div>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: 4, height: 6, overflow: "hidden" }}>
+      <div style={STYLES.s1052}>
         <div style={{ width: Math.min(value, 100) + "%", height: "100%", background: color, borderRadius: 4, transition: "width 0.5s" }} />
       </div>
-      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{hint}</div>
+      <div style={STYLES.s196}>{hint}</div>
     </div>
   );
 }
 
 function EmptyState({ msg }) {
-  return <p style={{ color: "var(--color-text-secondary)", fontSize: 13, textAlign: "center", padding: "1.5rem 0" }}>{msg}</p>;
+  return <p style={STYLES.s1053}>{msg}</p>;
 }
 
 function ThreeDotMenu({ onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ position: "relative", display: "inline-block" }}>
+    <div style={STYLES.s1054}>
       <button
         onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
-        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "var(--color-text-secondary)", padding: "2px 6px", borderRadius: 4, lineHeight: 1 }}
+        style={STYLES.s1055}
       >⋮</button>
       {open && (
         <>
           {/* backdrop to close */}
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 199 }} />
-          <div style={{ position: "absolute", right: 0, top: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 200, minWidth: 110, overflow: "hidden" }}>
-            <button onClick={() => { setOpen(false); onEdit(); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text-primary)" }}>✏️ Edit</button>
-            <button onClick={() => { setOpen(false); onDelete(); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#d44" }}>🗑 Delete</button>
+          <div onClick={() => setOpen(false)} style={STYLES.s1056} />
+          <div style={STYLES.s1057}>
+            <button onClick={() => { setOpen(false); onEdit(); }} style={STYLES.s1058}>✏️ Edit</button>
+            <button onClick={() => { setOpen(false); onDelete(); }} style={STYLES.s1059}>🗑 Delete</button>
           </div>
         </>
       )}
@@ -14059,7 +15363,7 @@ function PortfolioHub({ data, update }) {
   function NavBar({ nodes, activeId, onSelect, indent = 0 }) {
     const borderColor = "#1a6b3c";
     return (
-      <div style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
+      <div style={STYLES.s1060}>
         <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", minWidth: "max-content", paddingLeft: indent }}>
           {nodes.map(t => {
             const isActive = activeId === t.id;
@@ -14097,7 +15401,7 @@ function PortfolioHub({ data, update }) {
       {l1Active.id === "assetType" && l1Active.children && (() => {
         const l2ActiveId = l2Active?.id || l1Active.children[0].id;
         return (
-          <div style={{ marginTop: 2, paddingLeft: 12, background: "var(--color-background-secondary)", borderRadius: "0 0 0 0" }}>
+          <div style={STYLES.s1061}>
             <NavBar nodes={l1Active.children} activeId={l2ActiveId} onSelect={setTab} indent={0} />
           </div>
         );
@@ -14107,7 +15411,7 @@ function PortfolioHub({ data, update }) {
       {l1Active.id === "assetType" && l2Active?.id === "equity" && l2Active.children && (() => {
         const l3ActiveId = l3Active?.id || l2Active.children[0].id;
         return (
-          <div style={{ marginTop: 0, paddingLeft: 24, background: "var(--color-background-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+          <div style={STYLES.s1062}>
             <NavBar nodes={l2Active.children} activeId={l3ActiveId} onSelect={setTab} />
           </div>
         );
@@ -14117,27 +15421,27 @@ function PortfolioHub({ data, update }) {
       {l1Active.id === "assetType" && l2Active?.id === "equity" && l3Active?.id === "analyzer" && l3Active.children && (() => {
         const l4ActiveId = l4Active?.id || l3Active.children[0].id;
         return (
-          <div style={{ marginTop: 0, paddingLeft: 40, background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-secondary)" }}>
+          <div style={STYLES.s1063}>
             <NavBar nodes={l3Active.children} activeId={l4ActiveId} onSelect={setTab} />
           </div>
         );
       })()}
 
-      <div style={{ marginTop: 20 }}>
+      <div style={STYLES.s567}>
 
       {/* ── OVERALL TAB ── */}
       {tab === "overall" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={STYLES.s646}>
 
           {/* Assets summary card */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-              <span style={{ fontWeight: 600, fontSize: 16 }}>📈 Assets</span>
-              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+          <div style={STYLES.s1064}>
+            <div style={STYLES.s1065}>
+              <span style={STYLES.s665}>📈 Assets</span>
+              <span style={STYLES.s72}>
                 {Object.keys(indPrices).length > 0 ? "Live prices loaded" : "Open tabs below & click Refresh to load prices"}
               </span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+            <div style={STYLES.s1066}>
               {[
                 { label: "Invested",      val: fmtCur(totalInvested),  color: "var(--color-text-primary)" },
                 { label: "Current Value", val: fmtCur(totalCurrent),   color: "#1a6b3c" },
@@ -14158,8 +15462,8 @@ function PortfolioHub({ data, update }) {
                   color: pnlColor(totalDayChange),
                 },
               ].map(c => (
-                <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "10px 12px" }}>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+                <div key={c.label} style={STYLES.s327}>
+                  <div style={STYLES.s153}>{c.label}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.val}</div>
                   {c.sub && <div style={{ fontSize: 11, color: c.color, marginTop: 2, fontWeight: 500 }}>{c.sub}</div>}
                 </div>
@@ -14167,7 +15471,7 @@ function PortfolioHub({ data, update }) {
             </div>
 
             {/* Breakdown by category */}
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+            <div style={STYLES.s1067}>
               {[
                 { label: "🇮🇳 Indian Stocks", invested: indInvested, current: indCurrent },
                 { label: "🇺🇸 US Stocks",     invested: usInvested,  current: usCurrent  },
@@ -14177,10 +15481,10 @@ function PortfolioHub({ data, update }) {
                 const ret = c.current - c.invested;
                 const pct = c.invested > 0 ? (ret / c.invested) * 100 : 0;
                 return (
-                  <div key={c.label} style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px", cursor: "pointer" }}
+                  <div key={c.label} style={STYLES.s1068}
                     onClick={() => setTab(c.label.includes("Indian") ? "indian" : c.label.includes("US") ? "us" : c.label.includes("PF") ? "pf" : "mf")}>
-                    <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 4 }}>{c.label}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtCur(c.current)}</div>
+                    <div style={STYLES.s1069}>{c.label}</div>
+                    <div style={STYLES.s1070}>{fmtCur(c.current)}</div>
                     <div style={{ fontSize: 11, color: pnlColor(ret), marginTop: 2 }}>
                       {ret >= 0 ? "+" : ""}{fmtCur(ret)} ({pct >= 0 ? "+" : ""}{pct.toFixed(1)}%)
                     </div>
@@ -14191,30 +15495,30 @@ function PortfolioHub({ data, update }) {
           </div>
 
           {/* Nifty 50 live card */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-              <span style={{ fontWeight: 600, fontSize: 16 }}>📊 Market Indices</span>
+          <div style={STYLES.s1064}>
+            <div style={STYLES.s1065}>
+              <span style={STYLES.s665}>📊 Market Indices</span>
               <button onClick={() => { fetchNifty(); fetchGold(); }} disabled={niftyLoading && goldLoading}
                 style={{ fontSize: 12, color: "#1a6b3c", background: "none", border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 10px", cursor: "pointer", opacity: (niftyLoading && goldLoading) ? 0.5 : 1 }}>
                 {(niftyLoading || goldLoading) ? "↻ Loading…" : "↻ Refresh"}
               </button>
             </div>
 
-            {niftyError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 10 }}>⚠ {niftyError}</div>}
+            {niftyError && <div style={STYLES.s1071}>⚠ {niftyError}</div>}
 
             {niftyData ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+              <div style={STYLES.s1072}>
                 {/* Big value */}
                 <div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>Nifty 50</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px" }}>
+                  <div style={STYLES.s278}>Nifty 50</div>
+                  <div style={STYLES.s1073}>
                     {Number(niftyData.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                   </div>
                 </div>
 
                 {/* Day change */}
                 <div style={{ background: niftyData.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 130 }}>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change</div>
+                  <div style={STYLES.s328}>Day Change</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(niftyData.change) }}>
                     {niftyData.change >= 0 ? "▲ +" : "▼ "}{Number(niftyData.change).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                   </div>
@@ -14222,54 +15526,54 @@ function PortfolioHub({ data, update }) {
 
                 {/* Day change % */}
                 <div style={{ background: niftyData.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "10px 16px", minWidth: 110 }}>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change %</div>
+                  <div style={STYLES.s328}>Day Change %</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(niftyData.changePct) }}>
                     {niftyData.changePct >= 0 ? "+" : ""}{Number(niftyData.changePct).toFixed(2)}%
                   </div>
                 </div>
 
                 {niftyUpdated && (
-                  <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>
+                  <div style={STYLES.s1074}>
                     Updated {niftyUpdated}<br/>15-min delayed
                   </div>
                 )}
               </div>
             ) : niftyLoading ? (
-              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Fetching Nifty 50…</div>
+              <div style={STYLES.s1075}>Fetching Nifty 50…</div>
             ) : (
-              <div style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "1rem 0" }}>Click Refresh to load market data.</div>
+              <div style={STYLES.s1075}>Click Refresh to load market data.</div>
             )}
 
             {/* ── Gold Price separator ── */}
-            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 16, paddingTop: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                🥇 Gold Price <span style={{ fontSize: 10, fontWeight: 400 }}>(per gram · INR)</span>
+            <div style={STYLES.s1076}>
+              <div style={STYLES.s1077}>
+                🥇 Gold Price <span style={STYLES.s1078}>(per gram · INR)</span>
               </div>
-              {goldError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {goldError}</div>}
+              {goldError && <div style={STYLES.s1079}>⚠ {goldError}</div>}
               {goldData ? (
-                <div style={{ display: "flex", flexDirection: "row", gap: 24, flexWrap: "wrap" }}>
+                <div style={STYLES.s1080}>
                   {[
                     { label: "24K (999 fine)",     price: goldData.price24k, change: goldData.change,              changePct: goldData.changePct },
                     { label: "22K (916 hallmark)", price: goldData.price22k, change: goldData.change * (22 / 24),  changePct: goldData.changePct },
                   ].map(k => (
-                    <div key={k.label} style={{ flex: 1, minWidth: 260, background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                    <div key={k.label} style={STYLES.s1081}>
                       {/* Karat label + price */}
-                      <div style={{ minWidth: 120 }}>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>{k.label}</div>
-                        <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--color-text-primary)" }}>
+                      <div style={STYLES.s1082}>
+                        <div style={STYLES.s278}>{k.label}</div>
+                        <div style={STYLES.s1083}>
                           {k.price.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
                         </div>
                       </div>
                       {/* Day Change */}
                       <div style={{ background: k.change >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "8px 14px" }}>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change</div>
+                        <div style={STYLES.s328}>Day Change</div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: k.change >= 0 ? "#1a6b3c" : "#d44" }}>
                           {k.change >= 0 ? "▲ +" : "▼ "}{Math.abs(k.change).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                         </div>
                       </div>
                       {/* Day Change % */}
                       <div style={{ background: k.changePct >= 0 ? "#e8f5ee" : "#fdf0f0", borderRadius: 10, padding: "8px 14px" }}>
-                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Day Change %</div>
+                        <div style={STYLES.s328}>Day Change %</div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: k.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
                           {k.changePct >= 0 ? "+" : ""}{Number(k.changePct).toFixed(2)}%
                         </div>
@@ -14277,15 +15581,15 @@ function PortfolioHub({ data, update }) {
                     </div>
                   ))}
                   {goldUpdated && (
-                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", width: "100%" }}>
+                    <div style={STYLES.s1084}>
                       Updated {goldUpdated} · 15-min delayed
                     </div>
                   )}
                 </div>
               ) : goldLoading ? (
-                <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Fetching gold prices…</div>
+                <div style={STYLES.s141}>Fetching gold prices…</div>
               ) : (
-                <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Click Refresh to load gold prices.</div>
+                <div style={STYLES.s141}>Click Refresh to load gold prices.</div>
               )}
             </div>
           </div>
@@ -14295,7 +15599,7 @@ function PortfolioHub({ data, update }) {
       {tab === "indian"   && <PortfolioPage data={data} update={update} title="Indian Stocks" holdingsKey="portfolioHoldings" defaultExchange="NSE" />}
       {tab === "us"       && <PortfolioPage data={data} update={update} title="US Stocks"     holdingsKey="usHoldings"          defaultExchange="US"  />}
       {tab === "mf"       && <MutualFundsPage data={data} update={update} />}
-      {tab === "analysis" && <div style={{ marginTop: 4 }}><PortfolioAnalysisView data={data} /></div>}
+      {tab === "analysis" && <div style={STYLES.s617}><PortfolioAnalysisView data={data} /></div>}
       {tab === "compare"  && <ComparativeAnalysisView data={data} />}
       {tab === "pf"       && <PFAccountPage data={data} update={update} />}
       </div>
@@ -14385,25 +15689,25 @@ function PFAccountPage({ data, update }) {
   const [pfTab, setPfTab] = useState("contributions"); // "contributions" | "withdrawals"
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+    <div style={STYLES.s1085}>
 
       {/* ── Summary Cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={STYLES.s1086}>
         {[
           { label: "💰 Total Balance",     val: fmtR(balance),       color: "#1a6b3c" },
           { label: "👤 Employee Share",    val: fmtR(netEmployee),   color: "var(--color-text-primary)" },
           { label: "🏢 Employer Share",    val: fmtR(netEmployer),   color: "#4da6ff" },
           { label: "📤 Total Withdrawn",   val: fmtR(totalWithdrawn), color: "#d44" },
         ].map(c => (
-          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+          <div key={c.label} style={STYLES.s1087}>
+            <div style={STYLES.s153}>{c.label}</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
           </div>
         ))}
       </div>
 
       {/* ── Action Buttons ── */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={STYLES.s1088}>
         <button style={btnPrimary} onClick={() => { setShowAddForm(v => !v); setShowWithdraw(false); }}>
           {showAddForm ? "✕ Cancel" : "+ Add Monthly Contribution"}
         </button>
@@ -14415,30 +15719,30 @@ function PFAccountPage({ data, update }) {
       {/* ── Add Contribution Form ── */}
       {showAddForm && (
         <div style={{ ...cardStyle, border: "1px solid #1a6b3c33" }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14 }}>➕ Add Monthly PF Contribution</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div style={STYLES.s1089}>➕ Add Monthly PF Contribution</div>
+          <div style={STYLES.s174}>
             <div>
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Month</div>
+              <div style={STYLES.s118}>Month</div>
               <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={inputStyle} />
             </div>
             <div>
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total PF Amount (₹)</div>
+              <div style={STYLES.s118}>Total PF Amount (₹)</div>
               <input type="number" placeholder="e.g. 5000" value={pfAmount} onChange={e => setPfAmount(e.target.value)} style={inputStyle} min="0" />
             </div>
           </div>
           {pfAmount > 0 && (
-            <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 14px", flex: 1, minWidth: 140 }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>👤 Employee (50%)</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#1a6b3c" }}>{fmtR(parseFloat(pfAmount) * 0.5)}</div>
+            <div style={STYLES.s1090}>
+              <div style={STYLES.s1091}>
+                <div style={STYLES.s72}>👤 Employee (50%)</div>
+                <div style={STYLES.s1092}>{fmtR(parseFloat(pfAmount) * 0.5)}</div>
               </div>
-              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 14px", flex: 1, minWidth: 140 }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>🏢 Employer (50%)</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#4da6ff" }}>{fmtR(parseFloat(pfAmount) * 0.5)}</div>
+              <div style={STYLES.s1091}>
+                <div style={STYLES.s72}>🏢 Employer (50%)</div>
+                <div style={STYLES.s1093}>{fmtR(parseFloat(pfAmount) * 0.5)}</div>
               </div>
             </div>
           )}
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={STYLES.s249}>
             <button style={btnPrimary} onClick={saveContribution}>Save Contribution</button>
             <button style={btnGhost} onClick={() => setShowAddForm(false)}>Cancel</button>
           </div>
@@ -14456,17 +15760,17 @@ function PFAccountPage({ data, update }) {
         const postBalance  = balance - amt;
         return (
           <div style={{ ...cardStyle, border: "1px solid #d4433333" }}>
-            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>📤 PF Withdrawal</div>
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 14 }}>
-              Available balance: <strong style={{ color: "#1a6b3c" }}>{fmtR(balance)}</strong>
+            <div style={STYLES.s1094}>📤 PF Withdrawal</div>
+            <div style={STYLES.s70}>
+              Available balance: <strong style={STYLES.s548}>{fmtR(balance)}</strong>
               {" · "}👤 Employee: <strong>{fmtR(netEmployee)}</strong>
-              {" · "}🏢 Employer: <strong style={{ color: "#4da6ff" }}>{fmtR(netEmployer)}</strong>
+              {" · "}🏢 Employer: <strong style={STYLES.s784}>{fmtR(netEmployer)}</strong>
             </div>
 
             {/* Withdraw Source */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Withdraw From</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={STYLES.s115}>
+              <div style={STYLES.s343}>Withdraw From</div>
+              <div style={STYLES.s252}>
                 {[
                   { val: "employee", label: "👤 Employee", color: "#1a6b3c", avail: netEmployee },
                   { val: "employer", label: "🏢 Employer", color: "#4da6ff", avail: netEmployer },
@@ -14481,53 +15785,53 @@ function PFAccountPage({ data, update }) {
                       transition: "all 0.15s"
                     }}>
                     {opt.label}
-                    <span style={{ display: "block", fontSize: 10, fontWeight: 400, marginTop: 1, color: "var(--color-text-secondary)" }}>Avail: {fmtR(opt.avail)}</span>
+                    <span style={STYLES.s1095}>Avail: {fmtR(opt.avail)}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div style={STYLES.s174}>
               <div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Withdrawal Date</div>
+                <div style={STYLES.s118}>Withdrawal Date</div>
                 <input type="date" value={wdDate} onChange={e => setWdDate(e.target.value)} style={inputStyle} />
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>Amount (₹)</div>
+                <div style={STYLES.s118}>Amount (₹)</div>
                 <input type="number" placeholder="e.g. 10000" value={wdAmount} onChange={e => setWdAmount(e.target.value)} style={inputStyle} min="0" max={availableForSource} />
               </div>
             </div>
 
             {/* Post-withdrawal preview */}
             {amt > 0 && amt <= availableForSource && (
-              <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 8 }}>📊 Balance After Withdrawal</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              <div style={STYLES.s1096}>
+                <div style={STYLES.s672}>📊 Balance After Withdrawal</div>
+                <div style={STYLES.s1097}>
                   {[
                     { label: "💰 Total", val: postBalance, color: "#1a6b3c" },
                     { label: "👤 Employee", val: postEmployee, color: "var(--color-text-primary)" },
                     { label: "🏢 Employer", val: postEmployer, color: "#4da6ff" },
                   ].map(c => (
-                    <div key={c.label} style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 2 }}>{c.label}</div>
+                    <div key={c.label} style={STYLES.s122}>
+                      <div style={STYLES.s1098}>{c.label}</div>
                       <div style={{ fontSize: 15, fontWeight: 700, color: c.val < 0 ? "#d44" : c.color }}>{fmtR(Math.max(0, c.val))}</div>
                     </div>
                   ))}
                 </div>
                 {wdSource === "both" && amt > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center" }}>
+                  <div style={STYLES.s1099}>
                     Deducting {fmtR(previewEmployeeWd)} from Employee · {fmtR(previewEmployerWd)} from Employer
                   </div>
                 )}
               </div>
             )}
             {amt > availableForSource && amt > 0 && (
-              <div style={{ background: "#fff0f0", border: "1px solid #d44", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#d44", fontWeight: 500 }}>
+              <div style={STYLES.s1100}>
                 ⚠ Amount exceeds available {wdSource === "employee" ? "Employee" : wdSource === "employer" ? "Employer" : "Total"} balance of {fmtR(availableForSource)}
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={STYLES.s249}>
               <button style={{ ...btnPrimary, background: "#d44" }} onClick={saveWithdrawal}>Confirm Withdrawal</button>
               <button style={btnGhost} onClick={() => { setShowWithdraw(false); setWdAmount(""); setWdSource("both"); }}>Cancel</button>
             </div>
@@ -14536,7 +15840,7 @@ function PFAccountPage({ data, update }) {
       })()}
 
       {/* ── Sub-tabs ── */}
-      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+      <div style={STYLES.s685}>
         {[{ id: "contributions", label: `📋 Contributions (${contributions.length})` }, { id: "withdrawals", label: `📤 Withdrawals (${withdrawals.length})` }].map(t => (
           <button key={t.id} onClick={() => setPfTab(t.id)} style={{ padding: "8px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: pfTab === t.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: pfTab === t.id ? 600 : 400, borderBottom: pfTab === t.id ? "2.5px solid #1a6b3c" : "2.5px solid transparent", marginBottom: -1 }}>
             {t.label}
@@ -14548,37 +15852,37 @@ function PFAccountPage({ data, update }) {
       {pfTab === "contributions" && (
         <div style={cardStyle}>
           {contributions.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            <div style={STYLES.s1101}>
               No contributions yet. Click "Add Monthly Contribution" to get started.
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <table style={STYLES.s632}>
               <thead>
-                <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                <tr style={STYLES.s294}>
                   {["Month", "Total PF", "👤 Employee (50%)", "🏢 Employer (50%)", ""].map(h => (
-                    <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>{h}</th>
+                    <th key={h} style={STYLES.s1102}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {[...contributions].reverse().map(c => (
-                  <tr key={c.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                    <td style={{ padding: "10px 10px", fontWeight: 600 }}>{c.month}</td>
-                    <td style={{ padding: "10px 10px", fontWeight: 600 }}>{fmtR(c.pfAmount)}</td>
-                    <td style={{ padding: "10px 10px", color: "#1a6b3c", fontWeight: 500 }}>{fmtR(c.employee)}</td>
-                    <td style={{ padding: "10px 10px", color: "#4da6ff", fontWeight: 500 }}>{fmtR(c.employer)}</td>
-                    <td style={{ padding: "10px 10px" }}>
-                      <button onClick={() => deleteContribution(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" }}>🗑</button>
+                  <tr key={c.id} style={STYLES.s294}>
+                    <td style={STYLES.s1103}>{c.month}</td>
+                    <td style={STYLES.s1103}>{fmtR(c.pfAmount)}</td>
+                    <td style={STYLES.s1104}>{fmtR(c.employee)}</td>
+                    <td style={STYLES.s1105}>{fmtR(c.employer)}</td>
+                    <td style={STYLES.s1106}>
+                      <button onClick={() => deleteContribution(c.id)} style={STYLES.s1107}>🗑</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: "1px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
-                  <td style={{ padding: "10px 10px", fontWeight: 700 }}>Total</td>
-                  <td style={{ padding: "10px 10px", fontWeight: 700 }}>{fmtR(totalContrib)}</td>
-                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#1a6b3c" }}>{fmtR(totalEmployee)}</td>
-                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#4da6ff" }}>{fmtR(totalEmployer)}</td>
+                <tr style={STYLES.s1108}>
+                  <td style={STYLES.s1109}>Total</td>
+                  <td style={STYLES.s1109}>{fmtR(totalContrib)}</td>
+                  <td style={STYLES.s1110}>{fmtR(totalEmployee)}</td>
+                  <td style={STYLES.s1111}>{fmtR(totalEmployer)}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -14591,15 +15895,15 @@ function PFAccountPage({ data, update }) {
       {pfTab === "withdrawals" && (
         <div style={cardStyle}>
           {withdrawals.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 13 }}>
+            <div style={STYLES.s1101}>
               No withdrawals recorded yet.
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <table style={STYLES.s632}>
               <thead>
-                <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                <tr style={STYLES.s294}>
                   {["Date", "Amount", "👤 Employee", "🏢 Employer", "Source", ""].map(h => (
-                    <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600 }}>{h}</th>
+                    <th key={h} style={STYLES.s1102}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -14610,27 +15914,27 @@ function PFAccountPage({ data, update }) {
                   const srcLabel = w.source === "employee" ? "👤 Employee" : w.source === "employer" ? "🏢 Employer" : "👥 Both";
                   const srcColor = w.source === "employee" ? "#1a6b3c" : w.source === "employer" ? "#4da6ff" : "#7c3aed";
                   return (
-                    <tr key={w.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                      <td style={{ padding: "10px 10px", fontWeight: 600 }}>{w.date}</td>
-                      <td style={{ padding: "10px 10px", color: "#d44", fontWeight: 600 }}>{fmtR(w.amount)}</td>
+                    <tr key={w.id} style={STYLES.s294}>
+                      <td style={STYLES.s1103}>{w.date}</td>
+                      <td style={STYLES.s1112}>{fmtR(w.amount)}</td>
                       <td style={{ padding: "10px 10px", color: empWd > 0 ? "#1a6b3c" : "var(--color-text-secondary)", fontWeight: 500 }}>{empWd > 0 ? fmtR(empWd) : "—"}</td>
                       <td style={{ padding: "10px 10px", color: erpWd > 0 ? "#4da6ff" : "var(--color-text-secondary)", fontWeight: 500 }}>{erpWd > 0 ? fmtR(erpWd) : "—"}</td>
-                      <td style={{ padding: "10px 10px" }}>
+                      <td style={STYLES.s1106}>
                         <span style={{ background: `${srcColor}18`, color: srcColor, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>{srcLabel}</span>
                       </td>
-                      <td style={{ padding: "10px 10px" }}>
-                        <button onClick={() => deleteWithdrawal(w.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 14, padding: "2px 6px" }}>🗑</button>
+                      <td style={STYLES.s1106}>
+                        <button onClick={() => deleteWithdrawal(w.id)} style={STYLES.s1107}>🗑</button>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: "1px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
-                  <td style={{ padding: "10px 10px", fontWeight: 700 }}>Total Withdrawn</td>
-                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#d44" }}>{fmtR(totalWithdrawn)}</td>
-                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#1a6b3c" }}>{fmtR(totalWithdrawnEmployee)}</td>
-                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "#4da6ff" }}>{fmtR(totalWithdrawnEmployer)}</td>
+                <tr style={STYLES.s1108}>
+                  <td style={STYLES.s1109}>Total Withdrawn</td>
+                  <td style={STYLES.s1113}>{fmtR(totalWithdrawn)}</td>
+                  <td style={STYLES.s1110}>{fmtR(totalWithdrawnEmployee)}</td>
+                  <td style={STYLES.s1111}>{fmtR(totalWithdrawnEmployer)}</td>
                   <td colSpan={2}></td>
                 </tr>
               </tfoot>
@@ -14834,33 +16138,33 @@ function DividendView({ data }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
+    <div style={STYLES.s1114}>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+      <div style={STYLES.s1115}>
         {[
           { label: "💰 Est. Annual Dividend", val: loaded ? fmtCur(totalAnnualInr) : "—", color: "#1a6b3c" },
           { label: "📅 Est. Monthly Income",  val: loaded ? fmtCur(monthlyEstInr)  : "—", color: "#1a6b3c" },
           { label: "✅ Dividend-Paying",       val: loaded ? `${payingRows.length} stocks` : "—", color: "var(--color-text-primary)" },
           { label: "⬜ Non-Paying / ETFs",     val: loaded ? `${nonPayingCnt} stocks` : "—", color: "var(--color-text-secondary)" },
         ].map(c => (
-          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+          <div key={c.label} style={STYLES.s1087}>
+            <div style={STYLES.s153}>{c.label}</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
           </div>
         ))}
       </div>
 
       {/* Table card */}
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+      <div style={STYLES.s1064}>
+        <div style={STYLES.s1116}>
           <div>
-            <span style={{ fontWeight: 600, fontSize: 16 }}>💰 Dividend-Paying Holdings</span>
-            <span style={{ fontSize: 11, color: "var(--color-text-secondary)", marginLeft: 10 }}>Click column headers to sort · Non-paying stocks are hidden</span>
+            <span style={STYLES.s665}>💰 Dividend-Paying Holdings</span>
+            <span style={STYLES.s1117}>Click column headers to sort · Non-paying stocks are hidden</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={STYLES.s165}>
             {lastUpdated && !loading && (
-              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Updated {lastUpdated}</span>
+              <span style={STYLES.s72}>Updated {lastUpdated}</span>
             )}
             <button onClick={() => fetchDividends(indHoldings)} disabled={loading}
               style={{ padding: "5px 14px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", fontSize: 12, color: "var(--color-text-secondary)", opacity: loading ? 0.6 : 1 }}>
@@ -14871,21 +16175,21 @@ function DividendView({ data }) {
 
         {/* Progress bar while loading */}
         {loading && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+          <div style={STYLES.s115}>
+            <div style={STYLES.s995}>
               <span>Fetching dividend data from Yahoo Finance…</span>
               <span>{progress.done}/{progress.total}</span>
             </div>
-            <div style={{ height: 4, background: "var(--color-border-tertiary)", borderRadius: 4, overflow: "hidden" }}>
+            <div style={STYLES.s1118}>
               <div style={{ height: "100%", background: "#1a6b3c", borderRadius: 4, width: progress.total ? `${(progress.done / progress.total) * 100}%` : "0%", transition: "width 0.3s" }} />
             </div>
           </div>
         )}
 
-        {error && <div style={{ fontSize: 13, color: "#d44", marginBottom: 10 }}>⚠ {error}</div>}
+        {error && <div style={STYLES.s1119}>⚠ {error}</div>}
 
         {loaded && payingRows.length === 0 && !loading && (
-          <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--color-text-secondary)", fontSize: 14 }}>
+          <div style={STYLES.s1120}>
             {allH.length === 0
               ? "No Indian holdings found. Add stocks in the Indian Stocks tab."
               : "No dividend-paying Indian stocks found in your portfolio yet."}
@@ -14893,56 +16197,56 @@ function DividendView({ data }) {
         )}
 
         {(payingRows.length > 0 || loading) && (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <div style={STYLES.s291}>
+            <table style={STYLES.s632}>
               <thead>
-                <tr style={{ background: "var(--color-background-secondary)" }}>
-                  <th style={{ padding: "8px 10px", textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", width: 32 }}></th>
+                <tr style={STYLES.s633}>
+                  <th style={STYLES.s1121}></th>
                   <SortTh col="symbol" label="Stock" />
-                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Qty</th>
+                  <th style={STYLES.s1122}>Qty</th>
                   <SortTh col="rate"   label="Div / Share" right />
                   <SortTh col="yield"  label="Yield %" right />
                   <SortTh col="annual" label="Annual (₹)" right />
-                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Payout Ratio</th>
-                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>5yr Avg Yield</th>
-                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Ex-Date</th>
-                  <th style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>Pay Date</th>
+                  <th style={STYLES.s1122}>Payout Ratio</th>
+                  <th style={STYLES.s1122}>5yr Avg Yield</th>
+                  <th style={STYLES.s1122}>Ex-Date</th>
+                  <th style={STYLES.s1122}>Pay Date</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((r, i) => (
-                  <tr key={r.id || i} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                  <tr key={r.id || i} style={STYLES.s294}
                     onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <td style={{ padding: "8px 10px", textAlign: "center" }}>{r.region === "IN" ? "🇮🇳" : "🇺🇸"}</td>
-                    <td style={{ padding: "8px 10px" }}>
-                      <div style={{ fontWeight: 600 }}>{r.symbol}</div>
-                      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{r.name || r.ticker}</div>
+                    <td style={STYLES.s1123}>{r.region === "IN" ? "🇮🇳" : "🇺🇸"}</td>
+                    <td style={STYLES.s1124}>
+                      <div style={STYLES.s279}>{r.symbol}</div>
+                      <div style={STYLES.s72}>{r.name || r.ticker}</div>
                     </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--color-text-secondary)" }}>{r.qty}</td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 500, color: "#1a6b3c" }}>
+                    <td style={STYLES.s1125}>{r.qty}</td>
+                    <td style={STYLES.s1126}>
                       {r.divRate > 0 ? (r.isUS ? fmtUSD(r.divRate) : fmtCur(r.divRate)) : "—"}
                     </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                    <td style={STYLES.s1127}>
                       {r.divYield > 0
                         ? <span style={{ fontWeight: 600, color: r.divYield >= 0.04 ? "#1a6b3c" : r.divYield >= 0.02 ? "#f59e0b" : "var(--color-text-primary)" }}>
                             {(r.divYield * 100).toFixed(2)}%
                           </span>
                         : "—"}
                     </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: "#1a6b3c" }}>
+                    <td style={STYLES.s1128}>
                       {r.annualDivInr > 0 ? fmtCur(r.annualDivInr) : "—"}
                     </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    <td style={STYLES.s1129}>
                       {r.payoutR || "—"}
                     </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    <td style={STYLES.s1129}>
                       {r.fiveYrY || "—"}
                     </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    <td style={STYLES.s1129}>
                       {r.exDate || "—"}
                     </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    <td style={STYLES.s1129}>
                       {r.payDate || "—"}
                     </td>
                   </tr>
@@ -14952,7 +16256,7 @@ function DividendView({ data }) {
           </div>
         )}
 
-        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 14, lineHeight: 1.6 }}>
+        <p style={STYLES.s1130}>
           ⓘ Dividend data from Yahoo Finance (fetched live in browser). Shows Indian portfolio stocks only. Annual (₹) = div/share × qty. Yield: green ≥ 4%, amber ≥ 2%. Non-paying stocks & ETFs are hidden.
         </p>
 
@@ -15253,7 +16557,7 @@ function ComparativeAnalysisView({ data }) {
     const ttX = tooltip ? tooltip.svgX : null;
 
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair" }}
+      <svg viewBox={`0 0 ${W} ${H}`} style={STYLES.s1131}
         onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
         {/* Grid */}
         {yTicks.map(y => (
@@ -15419,20 +16723,20 @@ function ComparativeAnalysisView({ data }) {
   const BAR_MAX = Math.max(...categories.map(c => c.current), 1);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4 }}>
+    <div style={STYLES.s1114}>
 
       {/* ── Benchmark Chart ── */}
-      <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.2rem 1.4rem" }}>
+      <div style={STYLES.s1064}>
 
         {/* Header row */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <div style={STYLES.s1132}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>📈 Portfolio vs Benchmark</div>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>All series indexed to 100 at start. Portfolio shown as implied growth from your avg buy price.</div>
+            <div style={STYLES.s65}>📈 Portfolio vs Benchmark</div>
+            <div style={STYLES.s196}>All series indexed to 100 at start. Portfolio shown as implied growth from your avg buy price.</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={STYLES.s462}>
             {/* Period selector */}
-            <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 2, gap: 1 }}>
+            <div style={STYLES.s1133}>
               {PERIOD_OPTIONS.map(p => (
                 <button key={p.id} onClick={() => setPeriod(p.id)}
                   style={{ padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
@@ -15450,7 +16754,7 @@ function ComparativeAnalysisView({ data }) {
         </div>
 
         {/* Legend + toggles */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+        <div style={STYLES.s1134}>
           {/* My Portfolio toggle */}
           <button onClick={() => setShowPortfolio(v => !v)}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${showPortfolio ? "#1a6b3c" : "var(--color-border-secondary)"}`,
@@ -15474,7 +16778,7 @@ function ComparativeAnalysisView({ data }) {
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: active ? b.color : "var(--color-border-primary)" }} />
                 <span>{b.label}</span>
                 {liveData && (
-                  <span style={{ fontWeight: 700, marginLeft: 2 }}>
+                  <span style={STYLES.s1135}>
                     {Number(liveData.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                     <span style={{ fontWeight: 500, marginLeft: 3, color: liveData.changePct >= 0 ? "#1a6b3c" : "#d44" }}>
                       ({liveData.changePct >= 0 ? "+" : ""}{liveData.changePct.toFixed(2)}%)
@@ -15482,29 +16786,29 @@ function ComparativeAnalysisView({ data }) {
                   </span>
                 )}
                 {!liveData && lastPct != null && (
-                  <span style={{ fontWeight: 500, marginLeft: 2 }}>({lastPct >= 0 ? "+" : ""}{lastPct}%)</span>
+                  <span style={STYLES.s1136}>({lastPct >= 0 ? "+" : ""}{lastPct}%)</span>
                 )}
               </button>
             );
           })}
-          {benchUpdated && <span style={{ fontSize: 10, color: "var(--color-text-secondary)", marginLeft: "auto" }}>Updated {benchUpdated} · {period === "1d" ? "hourly bars" : "15-min delayed"}</span>}
+          {benchUpdated && <span style={STYLES.s1074}>Updated {benchUpdated} · {period === "1d" ? "hourly bars" : "15-min delayed"}</span>}
         </div>
 
-        {benchError && <div style={{ fontSize: 12, color: "#d44", marginBottom: 8 }}>⚠ {benchError}</div>}
+        {benchError && <div style={STYLES.s1079}>⚠ {benchError}</div>}
 
         {/* Chart */}
-        <div style={{ overflowX: "auto" }}>
+        <div style={STYLES.s291}>
           <BenchmarkChart />
         </div>
 
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 8 }}>
+        <div style={STYLES.s1137}>
           ⓘ Click legend buttons to show/hide lines. "My Portfolio" shows your total return spread across the selected period (dashed green line). Benchmark data via Yahoo Finance.
           {period === "1d" && " · 1D shows today's hourly bars (intraday 5-min data is unavailable for NSE indices via public API)."}
         </div>
       </div>
 
       {/* ── Summary KPI cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+      <div style={STYLES.s1066}>
         {[
           { label: "Total Invested",   val: fmtC(totalInvested), color: "var(--color-text-primary)" },
           { label: "Total Current",    val: fmtC(totalCurrent),  color: "#1a6b3c" },
@@ -15513,8 +16817,8 @@ function ComparativeAnalysisView({ data }) {
             color: pColor(totalReturn) },
           { label: "Holdings",         val: (indHoldings.length + usHoldings.length + mfs.length) + " assets", color: "var(--color-text-primary)" },
         ].map(c => (
-          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "12px 14px" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+          <div key={c.label} style={STYLES.s1087}>
+            <div style={STYLES.s153}>{c.label}</div>
             <div style={{ fontSize: 17, fontWeight: 700, color: c.color }}>{c.val}</div>
             {c.sub && <div style={{ fontSize: 11, color: c.color, marginTop: 2, fontWeight: 500 }}>{c.sub}</div>}
           </div>
@@ -15594,50 +16898,50 @@ function MutualFundsPageInner({ data, update }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 26 }}>💼 Mutual Funds</h1>
-        <button onClick={() => setShowForm(p => !p)} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+      <div style={STYLES.s75}>
+        <h1 style={STYLES.s179}>💼 Mutual Funds</h1>
+        <button onClick={() => setShowForm(p => !p)} style={STYLES.s158}>
           {showForm ? "✕ Cancel" : "+ Add Fund"}
         </button>
       </div>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={STYLES.s1086}>
         {[
           { label: "Total Invested", val: fmt(totalInvested), color: "var(--color-text-primary)" },
           { label: "Current Value",  val: fmt(currentValue),  color: "#1a6b3c" },
           { label: "Total Return",   val: fmt(totalReturn),   color: totalReturn >= 0 ? "#1a6b3c" : "#d44" },
           { label: "Return %",       val: returnPct + "%",    color: parseFloat(returnPct) >= 0 ? "#1a6b3c" : "#d44" },
         ].map(c => (
-          <div key={c.label} style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>{c.label}</div>
+          <div key={c.label} style={STYLES.s1138}>
+            <div style={STYLES.s153}>{c.label}</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.val}</div>
           </div>
         ))}
         {/* XIRR */}
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>XIRR</div>
+        <div style={STYLES.s1138}>
+          <div style={STYLES.s153}>XIRR</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: mfXIRR != null ? (mfXIRR >= 0 ? "#1a6b3c" : "#d44") : "var(--color-text-secondary)" }}>
             {mfXIRR != null ? fmtRate(mfXIRR) : "—"}
           </div>
-          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+          <div style={STYLES.s752}>
             {mfXIRR != null ? "Annualised return" : "Add start dates"}
           </div>
         </div>
         {/* CAGR */}
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "0.9rem 1rem" }}>
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>CAGR</div>
+        <div style={STYLES.s1138}>
+          <div style={STYLES.s153}>CAGR</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: mfCAGR != null ? (mfCAGR >= 0 ? "#1a6b3c" : "#d44") : "var(--color-text-secondary)" }}>
             {mfCAGR != null ? fmtRate(mfCAGR) : "—"}
           </div>
-          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+          <div style={STYLES.s752}>
             {mfCAGR != null ? "Since earliest fund" : "Add start dates"}
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}>
+      <div style={STYLES.s685}>
         {[["holdings","📊 Holdings"],["sip","🧮 SIP Calculator"]].map(([v, lbl]) => (
           <button key={v} onClick={() => setTab(v)} style={{ padding: "8px 20px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: tab === v ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: tab === v ? 500 : 400, borderBottom: tab === v ? "2px solid #1a6b3c" : "2px solid transparent", marginBottom: -1 }}>
             {lbl}
@@ -15649,24 +16953,24 @@ function MutualFundsPageInner({ data, update }) {
       {tab === "holdings" && (
         <>
           {showForm && (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", padding: "1rem", marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 10 }}>
-                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Fund Name *</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Mirae Asset Large Cap" style={{ width: "100%", boxSizing: "border-box" }} /></div>
-                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Units</label><input type="number" value={form.units} onChange={e => setForm(p => ({ ...p, units: e.target.value }))} placeholder="e.g. 100.5" style={{ width: "100%", boxSizing: "border-box" }} /></div>
-                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Current NAV (₹)</label><input type="number" value={form.nav} onChange={e => setForm(p => ({ ...p, nav: e.target.value }))} placeholder="e.g. 85.4" style={{ width: "100%", boxSizing: "border-box" }} /></div>
-                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Invested (₹)</label><input type="number" value={form.investedAmount} onChange={e => setForm(p => ({ ...p, investedAmount: e.target.value }))} placeholder="e.g. 8000" style={{ width: "100%", boxSizing: "border-box" }} /></div>
-                <div><label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 3 }}>Start Date</label><input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} /></div>
+            <div style={STYLES.s1139}>
+              <div style={STYLES.s1140}>
+                <div><label style={STYLES.s181}>Fund Name *</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Mirae Asset Large Cap" style={STYLES.s45} /></div>
+                <div><label style={STYLES.s181}>Units</label><input type="number" value={form.units} onChange={e => setForm(p => ({ ...p, units: e.target.value }))} placeholder="e.g. 100.5" style={STYLES.s45} /></div>
+                <div><label style={STYLES.s181}>Current NAV (₹)</label><input type="number" value={form.nav} onChange={e => setForm(p => ({ ...p, nav: e.target.value }))} placeholder="e.g. 85.4" style={STYLES.s45} /></div>
+                <div><label style={STYLES.s181}>Invested (₹)</label><input type="number" value={form.investedAmount} onChange={e => setForm(p => ({ ...p, investedAmount: e.target.value }))} placeholder="e.g. 8000" style={STYLES.s45} /></div>
+                <div><label style={STYLES.s181}>Start Date</label><input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={STYLES.s45} /></div>
               </div>
-              <button onClick={addMF} style={{ marginTop: 10, background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>+ Add Fund</button>
+              <button onClick={addMF} style={STYLES.s1141}>+ Add Fund</button>
             </div>
           )}
           {mfs.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-secondary)", fontSize: 13 }}>No mutual funds yet. Click "+ Add Fund" to add.</div>
+            <div style={STYLES.s1142}>No mutual funds yet. Click "+ Add Fund" to add.</div>
           ) : (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead><tr style={{ background: "var(--color-background-secondary)" }}>
+            <div style={STYLES.s537}>
+              <div style={STYLES.s1143}>
+              <table style={STYLES.s632}>
+                <thead><tr style={STYLES.s633}>
                   {["Fund","Units","NAV","Invested","Current Value","Return","Return %","CAGR","XIRR",""].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: h === "Fund" ? "left" : "right", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>{h}</th>)}
                 </tr></thead>
                 <tbody>
@@ -15682,27 +16986,27 @@ function MutualFundsPageInner({ data, update }) {
                     const rateColor = r => r == null ? "var(--color-text-secondary)" : r >= 0 ? "#1a6b3c" : "#d44";
                     return (
                       <tr key={m.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
-                        <td style={{ padding: "9px 14px", fontWeight: 500 }}>
+                        <td style={STYLES.s1144}>
                           {m.name}
-                          {m.startDate && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>📅 Since {new Date(m.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
+                          {m.startDate && <div style={STYLES.s752}>📅 Since {new Date(m.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
                         </td>
-                        <td style={{ padding: "9px 14px", textAlign: "right" }}>{m.units}</td>
-                        <td style={{ padding: "9px 14px", textAlign: "right" }}>₹{m.nav}</td>
-                        <td style={{ padding: "9px 14px", textAlign: "right" }}>{fmt(m.investedAmount || 0)}</td>
-                        <td style={{ padding: "9px 14px", textAlign: "right", color: "#1a6b3c", fontWeight: 600 }}>{fmt(cur)}</td>
+                        <td style={STYLES.s1145}>{m.units}</td>
+                        <td style={STYLES.s1145}>₹{m.nav}</td>
+                        <td style={STYLES.s1145}>{fmt(m.investedAmount || 0)}</td>
+                        <td style={STYLES.s1146}>{fmt(cur)}</td>
                         <td style={{ padding: "9px 14px", textAlign: "right", color: ret >= 0 ? "#1a6b3c" : "#d44", fontWeight: 600 }}>{fmt(ret)}</td>
                         <td style={{ padding: "9px 14px", textAlign: "right", color: parseFloat(pct) >= 0 ? "#1a6b3c" : "#d44" }}>{pct}%</td>
-                        <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                        <td style={STYLES.s1145}>
                           {mCAGR != null
                             ? <span style={{ color: rateColor(mCAGR), fontWeight: 600 }}>{fmtRate(mCAGR)}</span>
-                            : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add start date">—</span>}
+                            : <span style={STYLES.s440} title="Add start date">—</span>}
                         </td>
-                        <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                        <td style={STYLES.s1145}>
                           {mXIRR != null
                             ? <span style={{ color: rateColor(mXIRR), fontWeight: 600 }}>{fmtRate(mXIRR)}</span>
-                            : <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }} title="Add start date">—</span>}
+                            : <span style={STYLES.s440} title="Add start date">—</span>}
                         </td>
-                        <td style={{ padding: "9px 14px", textAlign: "right" }}><button onClick={() => deleteMF(m.id)} style={{ background: "none", border: "0.5px solid #d44", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#d44" }}>🗑</button></td>
+                        <td style={STYLES.s1145}><button onClick={() => deleteMF(m.id)} style={STYLES.s1147}>🗑</button></td>
                       </tr>
                     );
                   })}
@@ -15718,8 +17022,8 @@ function MutualFundsPageInner({ data, update }) {
       {tab === "sip" && (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, alignItems: "start" }}>
           {/* Sliders */}
-          <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem" }}>
-            <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: 20 }}>🧮 Step-Up SIP Calculator</h3>
+          <div style={STYLES.s1148}>
+            <h3 style={STYLES.s1149}>🧮 Step-Up SIP Calculator</h3>
             {[
               { label: "Monthly Investment", val: monthly, set: setMonthly, min: 500, max: 200000, step: 500, suffix: "₹", prefix: true },
               { label: "Annual Step-Up %",   val: stepUp,  set: setStepUp,  min: 0,   max: 30,     step: 1,   suffix: "%" },
@@ -15727,16 +17031,16 @@ function MutualFundsPageInner({ data, update }) {
               { label: "Time Period",         val: years,  set: setYears,   min: 1,   max: 40,     step: 1,   suffix: " Yr" },
               { label: "Inflation Rate (p.a.)", val: inflation, set: setInflation, min: 0, max: 15, step: 0.5, suffix: "%" },
             ].map(s => (
-              <div key={s.label} style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{s.label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "#1a6b3c", background: "#e8f5ee", borderRadius: 6, padding: "2px 10px" }}>
+              <div key={s.label} style={STYLES.s1150}>
+                <div style={STYLES.s305}>
+                  <span style={STYLES.s141}>{s.label}</span>
+                  <span style={STYLES.s1151}>
                     {s.prefix ? "₹" : ""}{s.val.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}
                   </span>
                 </div>
                 <input type="range" min={s.min} max={s.max} step={s.step} value={s.val} onChange={e => s.set(Number(e.target.value))}
-                  style={{ width: "100%", accentColor: "#1a6b3c", cursor: "pointer" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                  style={STYLES.s1152} />
+                <div style={STYLES.s1153}>
                   <span>{s.prefix ? "₹" : ""}{s.min.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}</span>
                   <span>{s.prefix ? "₹" : ""}{s.max.toLocaleString("en-IN")}{!s.prefix ? s.suffix : ""}</span>
                 </div>
@@ -15746,11 +17050,11 @@ function MutualFundsPageInner({ data, update }) {
 
           {/* Results */}
           <div>
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-tertiary)", padding: "1.5rem", marginBottom: 12 }}>
-              <h4 style={{ margin: "0 0 16px", fontSize: 14, color: "var(--color-text-secondary)", fontWeight: 500 }}>Projection after {years} years</h4>
+            <div style={STYLES.s1154}>
+              <h4 style={STYLES.s1155}>Projection after {years} years</h4>
               {/* Donut chart */}
-              <div style={{ position: "relative", width: 160, height: 160, margin: "0 auto 20px" }}>
-                <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
+              <div style={STYLES.s1156}>
+                <svg viewBox="0 0 36 36" style={STYLES.s1157}>
                   <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e8f5ee" strokeWidth="3.5" />
                   <circle cx="18" cy="18" r="15.9" fill="none" stroke="#1a6b3c" strokeWidth="3.5"
                     strokeDasharray={`${(sip.invested / sip.corpus * 100).toFixed(1)} 100`} />
@@ -15758,31 +17062,31 @@ function MutualFundsPageInner({ data, update }) {
                     strokeDasharray={`${(sip.returns / sip.corpus * 100).toFixed(1)} 100`}
                     strokeDashoffset={`${-(sip.invested / sip.corpus * 100).toFixed(1)}`} />
                 </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Total</div>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(sip.corpus)}</div>
+                <div style={STYLES.s1158}>
+                  <div style={STYLES.s72}>Total</div>
+                  <div style={STYLES.s1159}>{fmt(sip.corpus)}</div>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 20, fontSize: 11 }}>
-                <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#1a6b3c", marginRight: 4 }} />Invested</span>
-                <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#4da6ff", marginRight: 4 }} />Returns</span>
+              <div style={STYLES.s1160}>
+                <span><span style={STYLES.s1161} />Invested</span>
+                <span><span style={STYLES.s1162} />Returns</span>
               </div>
               {[
                 { label: "Invested Amount", val: fmt(sip.invested), color: "#1a6b3c" },
                 { label: "Est. Returns",    val: fmt(sip.returns),  color: "#4da6ff" },
                 { label: "Total Value",     val: fmt(sip.corpus),   color: "var(--color-text-primary)", bold: true },
               ].map(r => (
-                <div key={r.label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{r.label}</span>
+                <div key={r.label} style={STYLES.s1163}>
+                  <span style={STYLES.s141}>{r.label}</span>
                   <span style={{ fontSize: 13, fontWeight: r.bold ? 700 : 600, color: r.color }}>{r.val}</span>
                 </div>
               ))}
             </div>
             {/* Inflation-adjusted */}
-            <div style={{ background: "#fef9c3", borderRadius: 12, border: "0.5px solid #fbbf24", padding: "1rem 1.1rem" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 6 }}>📉 Inflation-Adjusted Value ({inflation}% p.a.)</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: "#78350f" }}>{fmt(sip.realCorpus)}</div>
-              <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}>Real purchasing power after {years} years at {inflation}% inflation</div>
+            <div style={STYLES.s1164}>
+              <div style={STYLES.s1165}>📉 Inflation-Adjusted Value ({inflation}% p.a.)</div>
+              <div style={STYLES.s1166}>{fmt(sip.realCorpus)}</div>
+              <div style={STYLES.s1167}>Real purchasing power after {years} years at {inflation}% inflation</div>
             </div>
           </div>
         </div>
@@ -16181,15 +17485,15 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
       <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontWeight: 400, fontSize: isMobile ? 22 : 26 }}>{title}</h1>
-          <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+          <div style={STYLES.s324}>
             {lastRefresh ? `Prices updated at ${lastRefresh}` : "Add your demat holdings to get started"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={STYLES.s1168}>
           {/* USD ↔ INR segmented control — only for US Stocks */}
           {isUS && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ display: "flex", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 3, gap: 2 }}>
+            <div style={STYLES.s408}>
+              <div style={STYLES.s1169}>
                 <button onClick={() => setShowUSD(false)}
                   style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
                     background: !showUSD ? "#1a6b3c" : "transparent",
@@ -16206,20 +17510,20 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
                 </button>
               </div>
               {showUSD && (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 7, padding: "5px 9px" }}>
-                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>1$=₹</span>
+                <div style={STYLES.s1170}>
+                  <span style={STYLES.s72}>1$=₹</span>
                   {rateLoading
-                    ? <span style={{ fontSize: 11, color: "#1a6b3c", animation: "spin 1s linear infinite", display: "inline-block" }}>↻</span>
+                    ? <span style={STYLES.s1171}>↻</span>
                     : editingRate ? (
                     <input type="number" value={usdRate} onChange={e => setUsdRate(Number(e.target.value))}
                       onBlur={() => { setEditingRate(false); update(() => ({ usdInrRate: usdRate })); }}
                       onKeyDown={e => e.key === "Enter" && setEditingRate(false)}
                       autoFocus
-                      style={{ width: 52, fontSize: 12, padding: "2px 5px", borderRadius: 5, border: "0.5px solid #1a6b3c", outline: "none", fontFamily: "inherit" }} />
+                      style={STYLES.s1172} />
                   ) : (
                     <button onClick={() => setEditingRate(true)}
                       title="Click to edit rate manually"
-                      style={{ fontSize: 12, fontWeight: 700, color: "#1a6b3c", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}>
+                      style={STYLES.s1173}>
                       {usdRate} ✏️
                     </button>
                   )}
@@ -16237,7 +17541,7 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
             💰 Record Sell
           </button>
           <button onClick={openAdd}
-            style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+            style={STYLES.s1174}>
             + Add Stock
           </button>
         </div>
@@ -16247,11 +17551,11 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
       {holdings.length > 0 && (
         <>
           {mergedHoldings.some(h => h._merged) && (
-            <div style={{ fontSize: 12, color: "#92400e", background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 8, padding: "6px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={STYLES.s1175}>
               ⚡ <strong>{holdings.length - mergedHoldings.length}</strong> duplicate entr{holdings.length - mergedHoldings.length === 1 ? "y" : "ies"} auto-merged into weighted avg price. Showing {mergedHoldings.length} unique holdings.
             </div>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 20 }}>
+          <div style={STYLES.s1176}>
             <StatCard label={`Total Invested (${isUS && showUSD ? "USD" : "INR"})`} value={fmtVal(totalInvested)} icon="💰" />
             <StatCard label={`Current Value (${isUS && showUSD ? "USD" : "INR"})`}  value={fmtVal(totalCurVal)}   icon="📊" accent={totalPnl > 0} />
             <StatCard label="Total P&L"      value={fmtPnlVal(totalPnl)} sub={fmtPct(totalPnlPct)} icon={totalPnl >= 0 ? "▲" : "▼"} pnl={totalPnl} />
@@ -16259,7 +17563,7 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
             <StatCard label="Holdings"       value={mergedHoldings.length}  sub={holdings.length !== mergedHoldings.length ? `${holdings.length} entries` : undefined} icon="🗂" />
             </div>
           {/* XIRR + CAGR always on same row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+          <div style={STYLES.s1177}>
             <StatCard
               label="XIRR"
               value={portfolioXIRR != null ? fmtRate(portfolioXIRR) : "Add buy dates"}
@@ -16282,14 +17586,14 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
 
       {/* Add/Edit form */}
       {showForm && (
-        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
-          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14 }}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+        <div style={STYLES.s1178}>
+          <div style={STYLES.s1179}>{editId ? "Edit Holding" : "Add Stock Holding"}</div>
+          <div style={STYLES.s1180}>
 
             {/* Exchange selector */}
             <div>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Exchange</label>
-              <select value={form.exchange} onChange={e => setForm(f => ({ ...f, exchange: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }}>
+              <label style={STYLES.s1049}>Exchange</label>
+              <select value={form.exchange} onChange={e => setForm(f => ({ ...f, exchange: e.target.value }))} style={STYLES.s45}>
                 <option value="NSE">NSE (India)</option>
                 <option value="BSE">BSE (India)</option>
                 <option value="US">US (NYSE / NASDAQ)</option>
@@ -16298,8 +17602,8 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
             </div>
 
             {/* Symbol with autocomplete */}
-            <div ref={acRef} style={{ position: "relative" }}>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>
+            <div ref={acRef} style={STYLES.s563}>
+              <label style={STYLES.s1049}>
                 {form.exchange === "NSE" || form.exchange === "BSE" ? "Search Stock / Symbol" : "Symbol"}
               </label>
               <input
@@ -16308,19 +17612,19 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
                 value={form.symbol}
                 onChange={e => handleSymbolInput(e.target.value)}
                 onFocus={() => { if (acResults.length > 0) setAcOpen(true); }}
-                style={{ width: "100%", boxSizing: "border-box" }}
+                style={STYLES.s45}
                 autoComplete="off"
               />
               {/* Dropdown */}
               {acOpen && acResults.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 300, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,0.12)", marginTop: 2, maxHeight: 220, overflowY: "auto" }}>
+                <div style={STYLES.s1181}>
                   {acResults.map(s => (
                     <div key={s.symbol} onMouseDown={() => selectAcStock(s)}
-                      style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                      style={STYLES.s1182}
                       onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>{s.symbol}</span>
-                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)", maxWidth: 180, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                      <span style={STYLES.s448}>{s.symbol}</span>
+                      <span style={STYLES.s1183}>{s.name}</span>
                     </div>
                   ))}
                 </div>
@@ -16329,7 +17633,7 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
 
             {/* Company name (auto-filled) */}
             <div>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Company Name</label>
+              <label style={STYLES.s1049}>Company Name</label>
               <input type="text" placeholder="Auto-filled for NSE stocks" value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 style={{ width: "100%", boxSizing: "border-box", background: form.name ? "#fff" : "#f9f9f9" }} />
@@ -16340,16 +17644,16 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
 
             {/* Buy Date */}
             <div>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Buy Date <span style={{ fontWeight: 400, color: "#94a3b8" }}>(optional)</span></label>
+              <label style={STYLES.s1049}>Buy Date <span style={STYLES.s1184}>(optional)</span></label>
               <input type="date" value={form.buyDate}
                 onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))}
                 max={new Date().toISOString().split("T")[0]}
-                style={{ width: "100%", boxSizing: "border-box" }} />
+                style={STYLES.s45} />
             </div>
           </div>
 
           {/* Hint line + Yahoo ticker preview */}
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", margin: "8px 0 8px" }}>
+          <div style={STYLES.s1185}>
             {(form.exchange === "NSE" || form.exchange === "BSE") && "Start typing the symbol or company name — suggestions will appear."}
             {form.exchange === "US"    && "Use US tickers: AAPL, MSFT, TSLA, GOOGL, AMZN …"}
             {form.exchange === "OTHER" && "Enter full Yahoo Finance ticker e.g. RELIANCE.NS or BTC-USD"}
@@ -16357,69 +17661,69 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
 
           {/* Yahoo override — shown when symbol is filled */}
           {form.symbol.trim() && (
-            <div style={{ background: "#f0f9ff", border: "0.5px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: "#0369a1", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <div style={STYLES.s1186}>
+              <div style={STYLES.s1187}>
                 📡 Yahoo Finance ticker:
-                <code style={{ background: "#e0f2fe", borderRadius: 4, padding: "1px 6px", fontSize: 12 }}>{toYahooTicker(form.symbol, form.exchange, form.yahooOverride)}</code>
-                <span style={{ fontWeight: 400, color: "#64748b" }}>— used to fetch live prices</span>
+                <code style={STYLES.s1188}>{toYahooTicker(form.symbol, form.exchange, form.yahooOverride)}</code>
+                <span style={STYLES.s1189}>— used to fetch live prices</span>
               </div>
 
               {/* Quick-try buttons for common alternatives */}
               {form.symbol.trim() && (
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 7 }}>
-                  <span style={{ fontSize: 10, color: "#64748b", alignSelf: "center" }}>Try:</span>
+                <div style={STYLES.s1190}>
+                  <span style={STYLES.s1191}>Try:</span>
                   {[
                     form.symbol.trim().toUpperCase() + ".NS",
                     form.symbol.trim().toUpperCase() + ".BO",
                     form.symbol.trim().toUpperCase().replace(/&/g, "-") + ".NS",
                   ].filter((t, i, a) => a.indexOf(t) === i && t !== toYahooTicker(form.symbol, form.exchange, form.yahooOverride)).map(t => (
                     <button key={t} onClick={() => setForm(f => ({ ...f, yahooOverride: t }))}
-                      style={{ fontSize: 10, background: "#e0f2fe", border: "0.5px solid #7dd3fc", borderRadius: 4, padding: "2px 8px", cursor: "pointer", color: "#0369a1", fontFamily: "monospace" }}>
+                      style={STYLES.s1192}>
                       {t}
                     </button>
                   ))}
                   <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(form.symbol)}`}
                     target="_blank" rel="noreferrer"
-                    style={{ fontSize: 10, background: "#fffbeb", border: "0.5px solid #fcd34d", borderRadius: 4, padding: "2px 8px", color: "#92400e", textDecoration: "none" }}>
+                    style={STYLES.s1193}>
                     🔍 Search on Yahoo →
                   </a>
                 </div>
               )}
 
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={STYLES.s535}>
                 <input
                   type="text"
                   placeholder="Paste correct ticker here e.g. ABCAPITAL.NS or AMARAJAEL.NS"
                   value={form.yahooOverride}
                   onChange={e => setForm(f => ({ ...f, yahooOverride: e.target.value.trim().toUpperCase() }))}
-                  style={{ flex: 1, fontSize: 11, padding: "5px 8px", border: "0.5px solid #bae6fd", borderRadius: 6, outline: "none", fontFamily: "monospace" }}
+                  style={STYLES.s1194}
                 />
-                {form.yahooOverride && <button onClick={() => setForm(f => ({ ...f, yahooOverride: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>✕</button>}
+                {form.yahooOverride && <button onClick={() => setForm(f => ({ ...f, yahooOverride: "" }))} style={STYLES.s1195}>✕</button>}
               </div>
-              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4, lineHeight: 1.5 }}>
-                If LTP shows "No price", search the stock on <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(form.symbol || "")}`} target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>Yahoo Finance</a>, copy the ticker exactly (e.g. <code>ABCAPITAL.NS</code>) and paste above.
+              <div style={STYLES.s1196}>
+                If LTP shows "No price", search the stock on <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(form.symbol || "")}`} target="_blank" rel="noreferrer" style={STYLES.s1197}>Yahoo Finance</a>, copy the ticker exactly (e.g. <code>ABCAPITAL.NS</code>) and paste above.
               </div>
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={STYLES.s249}>
             <GreenBtn onClick={saveHolding} label={editId ? "Save Changes" : "Add Holding"} />
-            <button onClick={closeForm} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+            <button onClick={closeForm} style={STYLES.s1198}>Cancel</button>
           </div>
         </div>
       )}
 
       {/* Sell / Realize Profit Form */}
       {showSellForm && (
-        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid #b6ddc2", borderRadius: 12, padding: "1.2rem", marginBottom: 20 }}>
-          <div style={{ fontWeight: 500, fontSize: 15, marginBottom: 14, color: "#1a6b3c" }}>💰 Record Realized Profit</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+        <div style={STYLES.s1199}>
+          <div style={STYLES.s1200}>💰 Record Realized Profit</div>
+          <div style={STYLES.s1180}>
             <div>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Select Holding *</label>
+              <label style={STYLES.s1049}>Select Holding *</label>
               <select value={sellForm.holdingId} onChange={e => {
                 const h = mergedHoldings.find(x => String(x.id) === e.target.value) || mergedHoldings.find(x => String(x._ids?.[0]) === e.target.value);
                 setSellForm(f => ({ ...f, holdingId: e.target.value, symbol: h?.symbol || "", qty: "", sellPrice: "" }));
-              }} style={{ width: "100%", boxSizing: "border-box" }}>
+              }} style={STYLES.s45}>
                 <option value="">— Select stock —</option>
                 {mergedHoldings.map(h => (
                   <option key={h.id} value={String(h._ids?.[0] ?? h.id)}>{h.symbol} ({h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + h.buyPrice})</option>
@@ -16427,16 +17731,16 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
               </select>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Qty Sold *</label>
-              <input type="number" placeholder="e.g. 5" value={sellForm.qty} onChange={e => setSellForm(f => ({ ...f, qty: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s1049}>Qty Sold *</label>
+              <input type="number" placeholder="e.g. 5" value={sellForm.qty} onChange={e => setSellForm(f => ({ ...f, qty: e.target.value }))} style={STYLES.s45} />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{isUS && showUSD ? "Sell Price ($) *" : "Sell Price (₹) *"}</label>
-              <input type="number" placeholder={isUS && showUSD ? "e.g. 25.00" : "e.g. 1800"} value={sellForm.sellPrice} onChange={e => setSellForm(f => ({ ...f, sellPrice: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s1049}>{isUS && showUSD ? "Sell Price ($) *" : "Sell Price (₹) *"}</label>
+              <input type="number" placeholder={isUS && showUSD ? "e.g. 25.00" : "e.g. 1800"} value={sellForm.sellPrice} onChange={e => setSellForm(f => ({ ...f, sellPrice: e.target.value }))} style={STYLES.s45} />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>Sell Date *</label>
-              <input type="date" value={sellForm.sellDate} onChange={e => setSellForm(f => ({ ...f, sellDate: e.target.value }))} style={{ width: "100%", boxSizing: "border-box" }} />
+              <label style={STYLES.s1049}>Sell Date *</label>
+              <input type="date" value={sellForm.sellDate} onChange={e => setSellForm(f => ({ ...f, sellDate: e.target.value }))} style={STYLES.s45} />
             </div>
           </div>
           {/* Live profit preview */}
@@ -16452,38 +17756,38 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
                 <span style={{ fontSize: 13, fontWeight: 600, color: profit >= 0 ? "#1a6b3c" : "#cc2222" }}>
                   {profit >= 0 ? "📈 Realized Gain: " : "📉 Realized Loss: "}
                   {fmtCur(Math.abs(profit))}
-                  <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>({pct >= 0 ? "+" : ""}{pct.toFixed(2)}%)</span>
+                  <span style={STYLES.s1201}>({pct >= 0 ? "+" : ""}{pct.toFixed(2)}%)</span>
                 </span>
               </div>
             );
           })()}
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div style={STYLES.s1202}>
             <GreenBtn onClick={recordSell} label="✓ Record Sale" />
-            <button onClick={() => setShowSellForm(false)} style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+            <button onClick={() => setShowSellForm(false)} style={STYLES.s1198}>Cancel</button>
           </div>
         </div>
       )}
 
       {/* Empty state */}
       {holdings.length === 0 && !showForm && (
-        <div style={{ textAlign: "center", padding: "4rem 1rem", background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 6 }}>No holdings yet</div>
-          <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16 }}>Add your demat account stocks to track real-time P&L</div>
+        <div style={STYLES.s1203}>
+          <div style={STYLES.s230}>📈</div>
+          <div style={STYLES.s1204}>No holdings yet</div>
+          <div style={STYLES.s425}>Add your demat account stocks to track real-time P&L</div>
           <GreenBtn onClick={openAdd} label="+ Add Your First Stock" />
         </div>
       )}
 
       {/* Holdings table */}
       {holdings.length > 0 && (
-        <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: "0.5px solid var(--color-border-tertiary)", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontWeight: 500, fontSize: 14 }}>
+        <div style={STYLES.s537}>
+          <div style={STYLES.s1205}>
+            <span style={STYLES.s52}>
               Holdings ({mergedHoldings.length})
-              {holdings.length !== mergedHoldings.length && <span style={{ fontSize: 11, color: "#92400e", background: "#fef9c3", borderRadius: 4, padding: "1px 6px", marginLeft: 6 }}>⚡ {holdings.length} entries merged</span>}
+              {holdings.length !== mergedHoldings.length && <span style={STYLES.s1206}>⚡ {holdings.length} entries merged</span>}
             </span>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Sort:</span>
+            <div style={STYLES.s587}>
+              <span style={STYLES.s72}>Sort:</span>
               {[["symbol","A-Z"],["value","Value"],["pnl","P&L"],["pct","% Return"]].map(([k,l]) => (
                 <button key={k} onClick={() => setSortBy(k)} style={{ padding: "3px 9px", borderRadius: 6, border: "0.5px solid", borderColor: sortBy === k ? "#1a6b3c" : "var(--color-border-secondary)", background: sortBy === k ? "#1a6b3c" : "transparent", color: sortBy === k ? "#fff" : "var(--color-text-secondary)", fontSize: 11, cursor: "pointer" }}>{l}</button>
               ))}
@@ -16492,13 +17796,13 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
 
           {/* Column headers — desktop only */}
           {!isMobile && (
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "6px 1rem", background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+          <div style={STYLES.s1207}>
             <span>STOCK</span>
-            <span style={{ textAlign: "right" }}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
-            <span style={{ textAlign: "right" }}>DAY CHG</span>
-            <span style={{ textAlign: "right" }}>INVESTED {isUS ? `(${curSymbol})` : "(₹)"}</span>
-            <span style={{ textAlign: "right" }}>CUR VALUE {isUS ? `(${curSymbol})` : "(₹)"}</span>
-            <span style={{ textAlign: "right" }}>P&amp;L {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={STYLES.s238}>LTP {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={STYLES.s238}>DAY CHG</span>
+            <span style={STYLES.s238}>INVESTED {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={STYLES.s238}>CUR VALUE {isUS ? `(${curSymbol})` : "(₹)"}</span>
+            <span style={STYLES.s238}>P&amp;L {isUS ? `(${curSymbol})` : "(₹)"}</span>
             <span />
           </div>
           )}
@@ -16506,103 +17810,103 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
           {/* Rows */}
           {sorted.map(h => isMobile ? (
             /* ── Mobile card layout ── */
-            <div key={h._ids ? h._ids[0] : h.id} style={{ padding: "12px 14px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+            <div key={h._ids ? h._ids[0] : h.id} style={STYLES.s1208}>
               {/* Row 1: symbol + badges + actions */}
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+              <div style={STYLES.s1209}>
+                <div style={STYLES.s206}>
+                  <div style={STYLES.s1210}>
                     {h.symbol.replace(/\.(NS|BO)$/i, "")}
-                    <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
-                    {h._merged && <span style={{ fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600 }}>⚡ avg {h._originalCount}×</span>}
+                    <span style={STYLES.s1211}>{h.exchange}</span>
+                    {h._merged && <span style={STYLES.s1212}>⚡ avg {h._originalCount}×</span>}
                   </div>
-                  {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
-                  <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + fmt(h.buyPrice)}</div>
+                  {h.name && h.name !== h.symbol && <div style={STYLES.s72}>{h.name}</div>}
+                  <div style={STYLES.s196}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) : "₹" + fmt(h.buyPrice)}</div>
                 </div>
                 {/* P&L + actions on right */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <div style={STYLES.s1213}>
                   {h.pnl != null && (
-                    <div style={{ textAlign: "right" }}>
+                    <div style={STYLES.s238}>
                       <div style={{ color: pnlColor(h.pnl), fontWeight: 700, fontSize: 14 }}>{fmtPnlVal(h.pnl)}</div>
                       <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
                     </div>
                   )}
                   <button onClick={() => { const m = h._merged && h._ids?.length > 1 ? { ...h, id: h._ids[0] } : (holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h); openEdit(m); }}
-                    style={{ background: "none", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer", fontSize: 13, padding: "4px 8px", color: "var(--color-text-secondary)" }}>✏️</button>
+                    style={STYLES.s1214}>✏️</button>
                   <button onClick={() => { if (window.confirm(`Delete ${h.symbol}?`)) { if (h._ids) update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(x => !h._ids.includes(x.id)) })); else update(p => ({ [holdingsKey]: (p[holdingsKey] || []).filter(x => x.id !== h.id) })); } }}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#d44", padding: "2px 4px" }}>🗑</button>
+                    style={STYLES.s1215}>🗑</button>
                 </div>
               </div>
               {/* Row 2: LTP | Day Chg | Invested | Cur Value */}
-              <div className="mobile-stats-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, background: "var(--color-background-secondary)", borderRadius: 8, padding: "8px 10px" }}>
+              <div className="mobile-stats-2col" style={STYLES.s1216}>
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>LTP</div>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                  <div style={STYLES.s1217}>LTP</div>
+                  <div style={STYLES.s551}>
                     {loading ? "…" : h.cur != null ? (isUS && showUSD ? "$" + (h.curUsd ?? (h.cur / usdRate)).toFixed(2) : "₹" + fmt(h.cur)) : "—"}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Day</div>
+                  <div style={STYLES.s1217}>Day</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: pnlColor(h.dayChangePct) }}>
                     {h.dayChangePct != null ? `${h.dayChangePct >= 0 ? "▲" : "▼"}${Math.abs(h.dayChangePct).toFixed(2)}%` : "—"}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Inv.</div>
-                  <div style={{ fontSize: 12 }}>{fmtVal(h.invested)}</div>
+                  <div style={STYLES.s1217}>Inv.</div>
+                  <div style={STYLES.s610}>{fmtVal(h.invested)}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, textTransform: "uppercase" }}>Cur</div>
-                  <div style={{ fontSize: 12 }}>{h.curVal != null ? fmtVal(h.curVal) : "—"}</div>
+                  <div style={STYLES.s1217}>Cur</div>
+                  <div style={STYLES.s610}>{h.curVal != null ? fmtVal(h.curVal) : "—"}</div>
                 </div>
               </div>
             </div>
           ) : (
-            <div key={h._ids ? h._ids[0] : h.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.2fr 52px", padding: "10px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", alignItems: "center", fontSize: 13 }}>
+            <div key={h._ids ? h._ids[0] : h.id} style={STYLES.s1218}>
               <div>
-                <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                <div style={STYLES.s1219}>
                   {h.symbol.replace(/\.(NS|BO)$/i, "")}
-                  <span style={{ fontSize: 10, background: "var(--color-background-secondary)", borderRadius: 4, padding: "1px 5px", fontWeight: 400, color: "var(--color-text-secondary)" }}>{h.exchange}</span>
+                  <span style={STYLES.s1211}>{h.exchange}</span>
                   {h._merged && (
-                    <span title={`${h._originalCount} entries merged — avg buy price`} style={{ fontSize: 9, background: "#fef9c3", border: "1px solid #fcd34d", borderRadius: 4, padding: "1px 5px", color: "#92400e", fontWeight: 600, cursor: "help" }}>
+                    <span title={`${h._originalCount} entries merged — avg buy price`} style={STYLES.s1220}>
                       ⚡ avg {h._originalCount}×
                     </span>
                   )}
                 </div>
-                {h.name && h.name !== h.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{h.name}</div>}
-                <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) + " (₹" + fmt(h.buyPrice) + ")" : "₹" + fmt(h.buyPrice)}</div>
-                {h.buyDate && <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>📅 Bought: {new Date(h.buyDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
+                {h.name && h.name !== h.symbol && <div style={STYLES.s72}>{h.name}</div>}
+                <div style={STYLES.s83}>{h.qty} shares @ {isUS && showUSD ? "$" + (h.buyPrice / usdRate).toFixed(2) + " (₹" + fmt(h.buyPrice) + ")" : "₹" + fmt(h.buyPrice)}</div>
+                {h.buyDate && <div style={STYLES.s1221}>📅 Bought: {new Date(h.buyDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
               </div>
 
               {/* LTP — currency-aware */}
-              <div style={{ textAlign: "right" }}>
+              <div style={STYLES.s238}>
                 {loading
-                  ? <span style={{ color: "var(--color-text-secondary)", fontSize: 11 }}>…</span>
+                  ? <span style={STYLES.s440}>…</span>
                   : h.cur != null
                     ? <div>
                         {isUS && showUSD
                           ? <div>
-                              <span style={{ fontWeight: 500 }}>${h.curUsd != null ? h.curUsd.toFixed(2) : (h.cur / usdRate).toFixed(2)}</span>
-                              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 1 }}>≈ ₹{fmt(h.cur)}</div>
+                              <span style={STYLES.s123}>${h.curUsd != null ? h.curUsd.toFixed(2) : (h.cur / usdRate).toFixed(2)}</span>
+                              <div style={STYLES.s1221}>≈ ₹{fmt(h.cur)}</div>
                             </div>
-                          : <span style={{ fontWeight: 500 }}>₹{fmt(h.cur)}</span>
+                          : <span style={STYLES.s123}>₹{fmt(h.cur)}</span>
                         }
                         {prices[h.ticker]?._autoFixedTo && (
-                          <div style={{ fontSize: 9, color: "#1d4ed8", background: "#dbeafe", borderRadius: 3, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>
+                          <div style={STYLES.s1222}>
                             ⚡ via {prices[h.ticker]._autoFixedTo}
                           </div>
                         )}
                       </div>
-                    : <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                        <span style={{ fontSize: 10, color: "#d44", fontWeight: 500 }}>⚠ No price</span>
-                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "monospace" }}>{h.ticker}</span>
-                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    : <div style={STYLES.s1223}>
+                        <span style={STYLES.s1224}>⚠ No price</span>
+                        <span style={STYLES.s1225}>{h.ticker}</span>
+                        <div style={STYLES.s1226}>
                           <button onClick={() => { const mergedAsOne = h._merged && h._ids?.length > 1 ? { ...h, id: h._ids[0] } : (holdings.find(hh => hh.id === (h._ids?.[0] ?? h.id)) || h); openEdit(mergedAsOne); }}
-                            style={{ fontSize: 9, background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 4, padding: "2px 7px", cursor: "pointer", color: "#92400e", whiteSpace: "nowrap" }}>
+                            style={STYLES.s1227}>
                             ✏️ Fix ticker
                           </button>
                           <a href={`https://finance.yahoo.com/lookup/?s=${encodeURIComponent(h.symbol)}`}
                             target="_blank" rel="noreferrer"
-                            style={{ fontSize: 9, background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 4, padding: "2px 7px", color: "#1d4ed8", textDecoration: "none", whiteSpace: "nowrap" }}>
+                            style={STYLES.s1228}>
                             🔍 Search
                           </a>
                         </div>
@@ -16615,22 +17919,22 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
                 {h.dayChangePct != null ? <>{h.dayChangePct >= 0 ? "▲" : "▼"} {Math.abs(h.dayChangePct).toFixed(2)}%</> : "—"}
               </div>
 
-              <div style={{ textAlign: "right" }}>{fmtVal(h.invested)}</div>
+              <div style={STYLES.s238}>{fmtVal(h.invested)}</div>
 
-              <div style={{ textAlign: "right" }}>
-                {h.curVal != null ? fmtVal(h.curVal) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+              <div style={STYLES.s238}>
+                {h.curVal != null ? fmtVal(h.curVal) : <span style={STYLES.s172}>—</span>}
               </div>
 
-              <div style={{ textAlign: "right" }}>
+              <div style={STYLES.s238}>
                 {h.pnl != null ? (
                   <div>
                     <div style={{ color: pnlColor(h.pnl), fontWeight: 500 }}>{fmtPnlVal(h.pnl)}</div>
                     <div style={{ fontSize: 11, color: pnlColor(h.pnlPct) }}>{fmtPct(h.pnlPct)}</div>
                   </div>
-                ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
+                ) : <span style={STYLES.s172}>—</span>}
               </div>
 
-              <div style={{ textAlign: "right" }}>
+              <div style={STYLES.s238}>
                 <ThreeDotMenu
                   onEdit={() => {
                     if (h._merged && h._ids?.length > 1) {
@@ -16655,9 +17959,9 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
           ))}
 
           {/* Footer */}
-          <div style={{ padding: "8px 1rem", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 11, color: "var(--color-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+          <div style={STYLES.s1229}>
             <span>Prices via Yahoo Finance · 15-min delayed · For informational purposes only</span>
-            {priceError && <span style={{ color: "#f0a020" }}>⚠ {priceError}</span>}
+            {priceError && <span style={STYLES.s1230}>⚠ {priceError}</span>}
           </div>
         </div>
       )}
@@ -16673,39 +17977,39 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
         const totalGains  = soldEntries.filter(e => e.realizedProfit >= 0).reduce((s, e) => s + e.realizedProfit, 0);
         const totalLosses = soldEntries.filter(e => e.realizedProfit < 0).reduce((s, e) => s + e.realizedProfit, 0);
         return (
-          <div style={{ marginTop: 24 }}>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={STYLES.s1231}>
+            <div style={STYLES.s1232}>
               💰 Realized Profit / Loss
-              <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>({soldEntries.length} sale{soldEntries.length !== 1 ? "s" : ""})</span>
+              <span style={STYLES.s1233}>({soldEntries.length} sale{soldEntries.length !== 1 ? "s" : ""})</span>
             </div>
             {/* Summary row */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+            <div style={STYLES.s1086}>
               <div style={{ background: totalRealized >= 0 ? "#e8f5ee" : "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid " + (totalRealized >= 0 ? "#b6ddc2" : "#f5c0c0") }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Net Realized P&L</div>
+                <div style={STYLES.s153}>Net Realized P&L</div>
                 <div style={{ fontWeight: 700, fontSize: 18, color: totalRealized >= 0 ? "#1a6b3c" : "#cc2222" }}>{totalRealized >= 0 ? "+" : ""}{fmtCur(totalRealized)}</div>
               </div>
-              <div style={{ background: "#e8f5ee", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #b6ddc2" }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Gains</div>
-                <div style={{ fontWeight: 700, fontSize: 18, color: "#1a6b3c" }}>+{fmtCur(totalGains)}</div>
+              <div style={STYLES.s1234}>
+                <div style={STYLES.s153}>Total Gains</div>
+                <div style={STYLES.s1235}>+{fmtCur(totalGains)}</div>
               </div>
-              <div style={{ background: "#fff0f0", borderRadius: 10, padding: "0.8rem 1rem", border: "0.5px solid #f5c0c0" }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>Total Losses</div>
-                <div style={{ fontWeight: 700, fontSize: 18, color: "#cc2222" }}>{fmtCur(totalLosses)}</div>
+              <div style={STYLES.s1236}>
+                <div style={STYLES.s153}>Total Losses</div>
+                <div style={STYLES.s1237}>{fmtCur(totalLosses)}</div>
               </div>
             </div>
             {/* Table */}
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <div style={STYLES.s537}>
+              <div style={STYLES.s291}>
+                <table style={STYLES.s632}>
                   <thead>
-                    <tr style={{ background: "var(--color-background-secondary)", fontSize: 11, color: "var(--color-text-secondary)" }}>
-                      <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600 }}>Symbol</th>
-                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Qty</th>
-                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Buy Price</th>
-                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Sell Price</th>
-                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Sell Date</th>
-                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}>Realized P&L</th>
-                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600 }}></th>
+                    <tr style={STYLES.s1238}>
+                      <th style={STYLES.s1239}>Symbol</th>
+                      <th style={STYLES.s1240}>Qty</th>
+                      <th style={STYLES.s1240}>Buy Price</th>
+                      <th style={STYLES.s1240}>Sell Price</th>
+                      <th style={STYLES.s1240}>Sell Date</th>
+                      <th style={STYLES.s1240}>Realized P&L</th>
+                      <th style={STYLES.s1240}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -16713,18 +18017,18 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
                       const pct = e.buyPrice > 0 ? ((e.sellPrice - e.buyPrice) / e.buyPrice) * 100 : 0;
                       const isGain = e.realizedProfit >= 0;
                       return (
-                        <tr key={e.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                        <tr key={e.id} style={STYLES.s294}
                           onMouseEnter={ev => ev.currentTarget.style.background = "var(--color-background-secondary)"}
                           onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
-                          <td style={{ padding: "9px 12px", fontWeight: 600 }}>
+                          <td style={STYLES.s1241}>
                             <div>{e.symbol}</div>
-                            {e.name && e.name !== e.symbol && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 400 }}>{e.name}</div>}
+                            {e.name && e.name !== e.symbol && <div style={STYLES.s1242}>{e.name}</div>}
                           </td>
-                          <td style={{ padding: "9px 12px", textAlign: "right" }}>{e.qty}</td>
-                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{isUS && showUSD ? "$" + (e.buyPrice / usdRate).toFixed(2) : fmtCur(e.buyPrice)}</td>
-                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)" }}>{isUS && showUSD ? "$" + (e.sellPrice / usdRate).toFixed(2) : fmtCur(e.sellPrice)}</td>
-                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--color-text-secondary)", fontSize: 12 }}>{e.sellDate}</td>
-                          <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                          <td style={STYLES.s1243}>{e.qty}</td>
+                          <td style={STYLES.s1244}>{isUS && showUSD ? "$" + (e.buyPrice / usdRate).toFixed(2) : fmtCur(e.buyPrice)}</td>
+                          <td style={STYLES.s1244}>{isUS && showUSD ? "$" + (e.sellPrice / usdRate).toFixed(2) : fmtCur(e.sellPrice)}</td>
+                          <td style={STYLES.s1245}>{e.sellDate}</td>
+                          <td style={STYLES.s1243}>
                             <div style={{ fontWeight: 700, color: isGain ? "#1a6b3c" : "#cc2222" }}>
                               {isGain ? "+" : ""}{fmtCur(e.realizedProfit)}
                             </div>
@@ -16732,12 +18036,12 @@ function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey
                               {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
                             </div>
                           </td>
-                          <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                          <td style={STYLES.s1243}>
                             <button onClick={() => {
                               if (window.confirm("Remove this realized entry?")) {
                                 update(p => ({ [soldKey]: (p[soldKey] || []).filter(x => x.id !== e.id) }));
                               }
-                            }} style={{ background: "none", border: "none", cursor: "pointer", color: "#d44", fontSize: 13, opacity: 0.5, padding: "2px 4px" }}
+                            }} style={STYLES.s1246}
                               onMouseEnter={ev => ev.currentTarget.style.opacity = "1"}
                               onMouseLeave={ev => ev.currentTarget.style.opacity = "0.5"}>🗑</button>
                           </td>
@@ -16931,7 +18235,7 @@ function PortfolioAnalysisView({ data }) {
           <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color}
             strokeWidth={hov===i ? stroke+3 : stroke}
             strokeDasharray={`${s.dash} ${s.gap}`} strokeDashoffset={s.offset}
-            style={{cursor:"pointer", transition:"stroke-width 0.15s"}}
+            style={STYLES.s1247}
             onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}/>
         ))}
         {hov!==null ? <>
@@ -16947,18 +18251,18 @@ function PortfolioAnalysisView({ data }) {
   function AllocationCard({ title, items, total, colors }) {
     const sorted = [...items].sort((a,b)=>b.value-a.value);
     return (
-      <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
-        <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>{title}</div>
-        <div style={{display:"flex",gap:16,alignItems:"center"}}>
+      <div style={STYLES.s1248}>
+        <div style={STYLES.s1249}>{title}</div>
+        <div style={STYLES.s1250}>
           <DonutChart items={sorted.map((it,i)=>({...it,color:colors[i%colors.length]}))} total={total} size={130}/>
-          <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,maxHeight:180,overflowY:"auto"}}>
+          <div style={STYLES.s1251}>
             {sorted.map((it,i)=>{
               const pct=total>0?(it.value/total*100).toFixed(1):0;
               return (
-                <div key={it.label} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                <div key={it.label} style={STYLES.s1252}>
                   <div style={{width:10,height:10,borderRadius:2,background:colors[i%colors.length],flexShrink:0}}/>
-                  <span style={{flex:1,color:"var(--color-text-secondary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.label}</span>
-                  <span style={{fontWeight:600,fontSize:11}}>{pct}%</span>
+                  <span style={STYLES.s1253}>{it.label}</span>
+                  <span style={STYLES.s1254}>{pct}%</span>
                 </div>
               );
             })}
@@ -16970,10 +18274,10 @@ function PortfolioAnalysisView({ data }) {
 
   function MetricBadge({ label, value, sub, color }) {
     return (
-      <div style={{background:"var(--color-background-secondary)",borderRadius:10,padding:"0.8rem 1rem",textAlign:"center"}}>
-        <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:4}}>{label}</div>
+      <div style={STYLES.s1255}>
+        <div style={STYLES.s1256}>{label}</div>
         <div style={{fontSize:22,fontWeight:700,color:color||"var(--color-text-primary)"}}>{value}</div>
-        {sub && <div style={{fontSize:10,color:"var(--color-text-secondary)",marginTop:2}}>{sub}</div>}
+        {sub && <div style={STYLES.s1257}>{sub}</div>}
       </div>
     );
   }
@@ -16991,10 +18295,10 @@ function PortfolioAnalysisView({ data }) {
   }
 
   if (allEmpty) return (
-    <div style={{textAlign:"center",padding:"3rem",color:"var(--color-text-secondary)"}}>
-      <div style={{fontSize:36,marginBottom:10}}>📊</div>
-      <div style={{fontWeight:500,marginBottom:6}}>No portfolio holdings yet</div>
-      <div style={{fontSize:13}}>Add Indian or US stocks in the Portfolio tab to see analysis.</div>
+    <div style={STYLES.s1258}>
+      <div style={STYLES.s1259}>📊</div>
+      <div style={STYLES.s1260}>No portfolio holdings yet</div>
+      <div style={STYLES.s1261}>Add Indian or US stocks in the Portfolio tab to see analysis.</div>
     </div>
   );
 
@@ -17002,12 +18306,12 @@ function PortfolioAnalysisView({ data }) {
   const capItemList = Object.entries(capMap).map(([label,value])=>({label,value,color:CAP_COLORS[label.replace(" Cap","")]||"#9ca3af"}));
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <div style={STYLES.s1262}>
 
       {/* Refresh button + status */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
-        {fundLoading && <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>⟳ Loading fundamentals…</span>}
-        {fundLoaded  && !fundLoading && <span style={{fontSize:12,color:"#1a6b3c"}}>✓ Live data loaded</span>}
+      <div style={STYLES.s1263}>
+        {fundLoading && <span style={STYLES.s1264}>⟳ Loading fundamentals…</span>}
+        {fundLoaded  && !fundLoading && <span style={STYLES.s1265}>✓ Live data loaded</span>}
         <button onClick={fetchFundamentals} disabled={fundLoading}
           style={{padding:"6px 14px",borderRadius:8,border:"0.5px solid var(--color-border-secondary)",
             background:"var(--color-background-primary)",cursor:"pointer",fontSize:12,
@@ -17017,31 +18321,31 @@ function PortfolioAnalysisView({ data }) {
       </div>
 
       {/* Row 1: IN vs US + Cap */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(280px,100%),1fr))",gap:14}}>
-        <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
-          <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>🌏 Indian vs US Holdings</div>
-          <div style={{display:"flex",gap:16,alignItems:"center"}}>
+      <div style={STYLES.s1266}>
+        <div style={STYLES.s1248}>
+          <div style={STYLES.s1249}>🌏 Indian vs US Holdings</div>
+          <div style={STYLES.s1250}>
             <DonutChart
               items={[
                 indTotal>0?{label:"🇮🇳 Indian",value:indTotal,color:"#1a6b3c"}:null,
                 usTotal >0?{label:"🇺🇸 US",    value:usTotal, color:"#4da6ff"}:null,
               ].filter(Boolean)} total={grandTotal} size={130}/>
-            <div style={{flex:1,display:"flex",flexDirection:"column",gap:10}}>
+            <div style={STYLES.s1267}>
               {indTotal>0&&<div>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                  <div style={{width:10,height:10,borderRadius:2,background:"#1a6b3c"}}/>
-                  <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>🇮🇳 Indian (NSE/BSE)</span>
+                <div style={STYLES.s1268}>
+                  <div style={STYLES.s1269}/>
+                  <span style={STYLES.s1264}>🇮🇳 Indian (NSE/BSE)</span>
                 </div>
-                <div style={{fontSize:18,fontWeight:700,color:"#1a6b3c"}}>{(indTotal/grandTotal*100).toFixed(1)}%</div>
-                <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{indHoldings.length} stocks</div>
+                <div style={STYLES.s1270}>{(indTotal/grandTotal*100).toFixed(1)}%</div>
+                <div style={STYLES.s515}>{indHoldings.length} stocks</div>
               </div>}
               {usTotal>0&&<div>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                  <div style={{width:10,height:10,borderRadius:2,background:"#4da6ff"}}/>
-                  <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>🇺🇸 US (NYSE/NASDAQ)</span>
+                <div style={STYLES.s1268}>
+                  <div style={STYLES.s1271}/>
+                  <span style={STYLES.s1264}>🇺🇸 US (NYSE/NASDAQ)</span>
                 </div>
-                <div style={{fontSize:18,fontWeight:700,color:"#4da6ff"}}>{(usTotal/grandTotal*100).toFixed(1)}%</div>
-                <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{usHoldings.length} stocks</div>
+                <div style={STYLES.s1272}>{(usTotal/grandTotal*100).toFixed(1)}%</div>
+                <div style={STYLES.s515}>{usHoldings.length} stocks</div>
               </div>}
             </div>
           </div>
@@ -17051,7 +18355,7 @@ function PortfolioAnalysisView({ data }) {
           <AllocationCard title="📏 Market Cap Allocation" items={capItemList} total={grandTotal}
             colors={capItemList.map(c=>c.color)}/>
         ) : (
-          <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--color-text-secondary)",fontSize:13}}>
+          <div style={STYLES.s1273}>
             {fundLoading?"Loading cap data…":"Cap data not available"}
           </div>
         )}
@@ -17064,9 +18368,9 @@ function PortfolioAnalysisView({ data }) {
 
       {/* Row 3: PE & Beta summary */}
       {(indHoldings.length>0||usHoldings.length>0) && (
-        <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
-          <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>📐 Portfolio PE & Beta</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+        <div style={STYLES.s1248}>
+          <div style={STYLES.s1249}>📐 Portfolio PE & Beta</div>
+          <div style={STYLES.s1274}>
             {indHoldings.length>0&&<>
               <MetricBadge label="🇮🇳 Avg PE" value={indPE}
                 sub="Weighted avg (Indian)" color={Number(indPE)>40?"#f59e0b":"#1a6b3c"}/>
@@ -17082,25 +18386,25 @@ function PortfolioAnalysisView({ data }) {
                 color={Number(usBeta)>1.2?"#ef4444":Number(usBeta)<0.8?"#4da6ff":"#f59e0b"}/>
             </>}
           </div>
-          <div style={{fontSize:11,color:"var(--color-text-secondary)",marginTop:10}}>
+          <div style={STYLES.s1275}>
             ⓘ PE & Beta fetched live from Yahoo Finance. Click ↻ Refresh to update.
           </div>
         </div>
       )}
 
       {/* Row 4: Per-stock table with sort */}
-      <div style={{background:"var(--color-background-secondary)",borderRadius:12,padding:"1rem 1.1rem"}}>
-        <div style={{fontWeight:600,fontSize:14,marginBottom:10}}>
+      <div style={STYLES.s1248}>
+        <div style={STYLES.s1276}>
           📋 Stock-Level Fundamentals
-          <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:8}}>Click column headers to sort</span>
+          <span style={STYLES.s510}>Click column headers to sort</span>
         </div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <div style={STYLES.s1277}>
+          <table style={STYLES.s485}>
             <thead>
-              <tr style={{background:"var(--color-background-primary)"}}>
-                <th style={{padding:"7px 10px",textAlign:"center",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"}}></th>
+              <tr style={STYLES.s1278}>
+                <th style={STYLES.s1279}></th>
                 <SortTh col="symbol" label="Symbol"/>
-                <th style={{padding:"7px 10px",textAlign:"left",fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>Company</th>
+                <th style={STYLES.s1280}>Company</th>
                 <SortTh col="sector" label="Sector"/>
                 <SortTh col="cap"    label="Cap"/>
                 <SortTh col="pe"     label="PE" right/>
@@ -17112,39 +18416,39 @@ function PortfolioAnalysisView({ data }) {
               {sortedRows().map((h,i)=>{
                 const weight = h.weight.toFixed(1);
                 return (
-                  <tr key={i} style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}
+                  <tr key={i} style={STYLES.s1281}
                     onMouseEnter={e=>e.currentTarget.style.background="var(--color-background-primary)"}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    <td style={{padding:"7px 10px",textAlign:"center"}}>{h.region}</td>
-                    <td style={{padding:"7px 10px",fontWeight:600}}>{h.symbol}</td>
-                    <td style={{padding:"7px 10px",color:"var(--color-text-secondary)",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    <td style={STYLES.s1282}>{h.region}</td>
+                    <td style={STYLES.s1283}>{h.symbol}</td>
+                    <td style={STYLES.s1284}>
                       {h.liveName || h.name || "—"}
                     </td>
-                    <td style={{padding:"7px 10px"}}>
+                    <td style={STYLES.s1285}>
                       {h.sector
-                        ? <span style={{background:"var(--color-background-primary)",borderRadius:4,padding:"2px 6px",fontSize:10}}>{h.sector}</span>
-                        : <span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                        ? <span style={STYLES.s1286}>{h.sector}</span>
+                        : <span style={STYLES.s836}>—</span>}
                     </td>
-                    <td style={{padding:"7px 10px",textAlign:"center"}}>
+                    <td style={STYLES.s1282}>
                       {h.cap
                         ? <span style={{color:CAP_COLORS[h.cap]||"#9ca3af",fontWeight:500,fontSize:11}}>{h.cap}</span>
-                        : <span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                        : <span style={STYLES.s836}>—</span>}
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
                       color:h.pe==null?"var(--color-text-secondary)":h.pe>60?"#ef4444":h.pe>35?"#f59e0b":"#1a6b3c"}}>
-                      {h.pe??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                      {h.pe??<span style={STYLES.s836}>—</span>}
                     </td>
                     <td style={{padding:"7px 10px",textAlign:"right",fontWeight:500,
                       color:h.beta==null?"var(--color-text-secondary)":h.beta>1.3?"#ef4444":h.beta<0.8?"#1a6b3c":"#f59e0b"}}>
-                      {h.beta??<span style={{color:"var(--color-text-secondary)"}}>—</span>}
+                      {h.beta??<span style={STYLES.s836}>—</span>}
                     </td>
-                    <td style={{padding:"7px 10px",textAlign:"right"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
-                        <div style={{width:60,height:5,borderRadius:3,background:"var(--color-border-tertiary)",overflow:"hidden"}}>
+                    <td style={STYLES.s1287}>
+                      <div style={STYLES.s1288}>
+                        <div style={STYLES.s1289}>
                           <div style={{width:Math.min(100,h.weight/Math.max(...sortedRows().map(r=>r.weight))*100)+"%",height:"100%",
                             background:h.region==="🇮🇳"?"#1a6b3c":"#4da6ff",borderRadius:3}}/>
                         </div>
-                        <span style={{fontSize:11,color:"var(--color-text-secondary)",minWidth:36,textAlign:"right"}}>{weight}%</span>
+                        <span style={STYLES.s496}>{weight}%</span>
                       </div>
                     </td>
                   </tr>
@@ -17208,20 +18512,16 @@ class ErrorBoundary extends React.Component {
     return (
       <div style={wrap}>
         <div style={card}>
-          <div style={{ fontSize: 44, lineHeight: 1, marginBottom: "0.5rem" }}>⚠️</div>
-          <h2 style={{ margin: "0 0 0.5rem", fontSize: 20, color: "#0f172a" }}>
+          <div style={STYLES.s1290}>⚠️</div>
+          <h2 style={STYLES.s1291}>
             Something went wrong
           </h2>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 14, lineHeight: 1.5 }}>
+          <p style={STYLES.s1292}>
             The app hit an unexpected error. Your saved data is safe — try again,
             or reload the app.
           </p>
           {this.state.error?.message && (
-            <pre style={{
-              marginTop: "1rem", padding: "0.75rem", background: "#fef2f2",
-              color: "#b91c1c", borderRadius: 8, fontSize: 12, textAlign: "left",
-              whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 140, overflow: "auto",
-            }}>
+            <pre style={STYLES.s1293}>
               {this.state.error.message}
             </pre>
           )}
