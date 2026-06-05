@@ -6626,8 +6626,6 @@ function AnalysisTab({ data, update, accounts }) {
   const [calDay,   setCalDay]   = useState(null);
 
   const txns = data.transactions || [];
-
-  const txns = data.transactions || [];
   const fmtCur = n => "₹" + Math.abs(Number(n)||0).toLocaleString("en-IN", {maximumFractionDigits:0});
   const COLORS = ["#6d28d9","#1a6b3c","#f59e0b","#ef4444","#3b82f6","#10b981","#f97316","#8b5cf6","#ec4899","#14b8a6","#a78bfa","#84cc16"];
 
