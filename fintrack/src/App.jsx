@@ -7,6 +7,8 @@ import {
   loadFromFirestore,
   saveToFirestore,
   getFreshDriveToken,
+  handleAuthCallback,
+  clearDriveToken,
 } from "./firebase";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -266,8 +268,9 @@ export default function App() {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
-  // ── 1. Listen to Firebase auth changes ───────────────────────────────────
+  // ── 1. Handle OAuth callback + listen to Firebase auth changes ────────────
   useEffect(() => {
+    handleAuthCallback().catch(err => console.error("Auth callback error:", err.message));
     const unsub = onAuthStateChanged(auth, (user) => setFirebaseUser(user ?? null));
     return unsub;
   }, []);
