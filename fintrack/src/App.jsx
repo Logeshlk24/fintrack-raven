@@ -8562,7 +8562,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       transactions: (p.transactions || []).filter(t =>
         !(t.scheduledPaymentId === id && t.scheduledPeriodKey && t.scheduledPeriodKey >= nextMonthKey)
       ),
-    }), true);
+    }, true);
   }
 
   function togglePaid(id) {
