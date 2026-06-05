@@ -7,6 +7,9 @@ import {
   loadFromFirestore,
   saveToFirestore,
   getFreshDriveToken,
+  handleAuthCallback,
+  clearDriveToken,
+  replaceAllData,
 } from "./firebase";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -264,8 +267,9 @@ export default function App() {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
-  // ── 1. Listen to Firebase auth changes ───────────────────────────────────
+  // ── 1. Handle OAuth callback + listen to Firebase auth changes ────────────
   useEffect(() => {
+    handleAuthCallback().catch(err => console.error("Auth callback error:", err.message));
     const unsub = onAuthStateChanged(auth, (user) => setFirebaseUser(user ?? null));
     return unsub;
   }, []);
@@ -4723,9 +4727,8 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     const SIX_HOURS = 6 * 60 * 60 * 1000;
 
     async function runAutoBackup() {
-      const token = localStorage.getItem("ft_drv_access_tok");
-      const expiry = parseInt(localStorage.getItem("ft_drv_access_exp") || "0");
-      if (!token || Date.now() > expiry) return; // token gone — skip silently
+      const token = await getFreshDriveToken();
+      if (!token) return; // no token — skip silently
 
       try {
         // Need fresh gdrive values — read from localStorage snapshot via closure
@@ -4855,7 +4858,9 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
       if (!parsed._meta || parsed._meta.appVersion !== "fintrack_v2")
         throw new Error("This file doesn't look like a FinTrack backup.");
       const { _meta, ...restored } = parsed;
-      update(prev => ({ ...restored, user: prev.user, gdriveIntegration: prev.gdriveIntegration }));
+      const restoredWithUser = { ...restored, user: data.user, gdriveIntegration: data.gdriveIntegration };
+      setData(restoredWithUser);
+      if (firebaseUser) await replaceAllData(firebaseUser.uid, restoredWithUser);
       setRestoreConfirm(null);
       setShowFiles(false);
       flashMsg("success", `✅ Restored from ${file.name}`);
@@ -5514,15 +5519,20 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
   }
 
   // ── IMPORT — step 2: user confirmed, apply data ──────────────────────────────
-  function confirmImport() {
+  async function confirmImport() {
     if (!pendingImport) return;
     const { _meta, ...restored } = pendingImport;
-    // Preserve current Firebase user identity
-    update(prev => ({ ...defaultData, ...restored, user: prev.user }));
+    const restoredWithUser = { ...defaultData, ...restored, user: data.user };
+    // Update local state immediately
+    setData(restoredWithUser);
     setShowConfirm(false);
     setPendingImport(null);
     setImportStatus("success");
     setImportMsg(`Backup restored successfully from ${_meta.exportedAt?.slice(0, 10) || "unknown date"}.`);
+    // Replace all Firestore data with restored data
+    if (firebaseUser) {
+      await replaceAllData(firebaseUser.uid, restoredWithUser);
+    }
   }
 
   function cancelImport() {
@@ -6614,6 +6624,8 @@ function AnalysisTab({ data, update, accounts }) {
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calDay,   setCalDay]   = useState(null);
+
+  const txns = data.transactions || [];
 
   const txns = data.transactions || [];
   const fmtCur = n => "₹" + Math.abs(Number(n)||0).toLocaleString("en-IN", {maximumFractionDigits:0});
