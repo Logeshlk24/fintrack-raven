@@ -136,17 +136,7 @@ function migrateLocalStorage() {
 }
 
 
-// Recursively freezes an object so accidental in-place mutations throw
-// (in strict mode) instead of silently corrupting the shared defaults.
-function deepFreeze(obj) {
-  if (obj && typeof obj === "object" && !Object.isFrozen(obj)) {
-    Object.values(obj).forEach(deepFreeze);
-    Object.freeze(obj);
-  }
-  return obj;
-}
-
-const defaultData = deepFreeze({
+const defaultData = {
   user: null,
   profile: { age: "", income: "", expense: "", savings: "" },
   assets: [],
@@ -174,7 +164,7 @@ const defaultData = deepFreeze({
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
-});
+};
 
 // ── Main data reducer ───────────────────────────────────────────────────────
 // Using useReducer (instead of useState) guarantees that rapid, successive
