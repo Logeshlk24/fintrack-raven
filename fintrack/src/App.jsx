@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useReducer, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   auth,
   signInWithGoogle,
@@ -7,9 +7,6 @@ import {
   loadFromFirestore,
   saveToFirestore,
   getFreshDriveToken,
-  handleAuthCallback,
-  clearDriveToken,
-  replaceAllData,
 } from "./firebase";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -159,30 +156,14 @@ const defaultData = {
   scheduledPayments: [],
   budgets: [],
   needsWants: [],
+  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare", timeLogs: [] },
+  commuteLeaves: [],
   featureToggles: { fo: true, portfolio: true },
   businessData: [],
   projectsData: [],
   projectTaskTypes: ["Design", "Development", "Research", "Review", "Testing", "Meeting", "Documentation", "Bug Fix", "Marketing", "Other"],
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
 };
-
-// ── Main data reducer ───────────────────────────────────────────────────────
-// Using useReducer (instead of useState) guarantees that rapid, successive
-// updates are applied SEQUENTIALLY against the latest state — so no update can
-// ever be lost to a race condition. The reducer is PURE (no side effects); the
-// Firestore save is scheduled separately inside update() (see below).
-function dataReducer(state, action) {
-  switch (action.type) {
-    case "UPDATE":
-      // fn(state) returns a partial object that is merged into the current state
-      return { ...state, ...action.fn(state) };
-    case "SET":
-      // value may be a full object or an updater fn (same API as setData)
-      return typeof action.value === "function" ? action.value(state) : action.value;
-    default:
-      return state;
-  }
-}
 
 
 
@@ -247,7 +228,7 @@ function fmtRate(r) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function App() {
+export default function App() {
   // ── Mobile detection ──────────────────────────────────────────────────────
   const [mobile, setMobile] = useState(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
@@ -263,9 +244,7 @@ function App() {
   // ── Firebase auth state ───────────────────────────────────────────────────
   // undefined = still checking  |  null = signed out  |  object = signed in
   const [firebaseUser, setFirebaseUser] = useState(undefined);
-  const [data, dispatch]                = useReducer(dataReducer, { ...defaultData });
-  // Backwards-compatible shim so every existing setData(...) call keeps working.
-  const setData = useCallback((value) => dispatch({ type: "SET", value }), []);
+  const [data, setData]                 = useState({ ...defaultData });
   const [dataReady, setDataReady]       = useState(false);
 
   const [page, setPage]                 = useState("overview");
@@ -287,9 +266,8 @@ function App() {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
-  // ── 1. Handle OAuth callback + listen to Firebase auth changes ────────────
+  // ── 1. Listen to Firebase auth changes ───────────────────────────────────
   useEffect(() => {
-    handleAuthCallback().catch(err => console.error("Auth callback error:", err.message));
     const unsub = onAuthStateChanged(auth, (user) => setFirebaseUser(user ?? null));
     return unsub;
   }, []);
@@ -359,15 +337,19 @@ function App() {
               }
             }
             if (folderId && !cancelled) {
-              // update() sets state (race-free) AND schedules the debounced save.
-              update(() => ({
-                gdriveIntegration: {
-                  connected: true,
-                  email: firebaseUser.email || "",
-                  folderId,
-                  connectedAt: new Date().toISOString(),
-                },
-              }));
+              setData(prev => {
+                const next = {
+                  ...prev,
+                  gdriveIntegration: {
+                    connected: true,
+                    email: firebaseUser.email || "",
+                    folderId,
+                    connectedAt: new Date().toISOString(),
+                  },
+                };
+                saveToFirestore(firebaseUser.uid, next);
+                return next;
+              });
               console.log("✅ Google Drive auto-connected successfully!");
             }
           } else {
@@ -386,20 +368,78 @@ function App() {
 
   // ── 3. update() — same API as before, but writes to Firestore ─────────────
   const update = useCallback((fn) => {
-    // Dispatch a sequential, race-free state update (reducer is pure).
-    dispatch({ type: "UPDATE", fn });
-    // Debounced Firestore write (800 ms after the last change). The timer reads
-    // the freshest, fully-composed state from dataRef when it actually fires,
-    // so batched rapid updates all get persisted together.
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      if (firebaseUser) saveToFirestore(firebaseUser.uid, dataRef.current);
-    }, 800);
+    setData(prev => {
+      const next = { ...prev, ...fn(prev) };
+      // Debounced Firestore write (800 ms after last change)
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        if (firebaseUser) saveToFirestore(firebaseUser.uid, next);
+      }, 800);
+      return next;
+    });
   }, [firebaseUser]);
 
+  // ── Auto Bus Fare: runs on load (catch-up) + every minute (real-time) ────────
+  const autoAddBusFare = useCallback((currentData) => {
+    const settings = currentData.commuteSettings || {};
+    const timeLogs = settings.timeLogs || [];
+    if (!settings.busFare || !settings.bankId || timeLogs.length === 0) return;
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    const dow = now.getDay(); // 0=Sun,6=Sat
+    if (dow === 0 || dow === 6) return; // weekend
+    const leaves = currentData.commuteLeaves || [];
+    if (leaves.includes(todayKey)) return; // on leave
+
+    const nowHHMM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const txns = currentData.transactions || [];
+
+    const toAdd = [];
+    timeLogs.forEach(tl => {
+      if (!tl.time) return;
+      // Add if current time >= slot time and not already added today
+      if (nowHHMM < tl.time) return;
+      const alreadyAdded = txns.some(t => t.date === todayKey && t._busfare === true && t._timeLogId === tl.id);
+      if (alreadyAdded) return;
+      toAdd.push({
+        id: Date.now() + Math.random(),
+        date: todayKey,
+        time: tl.time,
+        type: "expense",
+        amount: Number(settings.busFare),
+        category: settings.category || "Transport",
+        note: (settings.note || "Bus fare") + " – " + tl.label,
+        bankId: settings.bankId,
+        _busfare: true,
+        _timeLogId: tl.id,
+        _autoAdded: true,
+      });
+    });
+
+    if (toAdd.length > 0) {
+      update(p => ({ transactions: [...(p.transactions || []), ...toAdd] }));
+    }
+  }, [update]);
+
+  // Run catch-up when data is ready (handles app-was-closed case)
+  useEffect(() => {
+    if (dataReady) autoAddBusFare(dataRef.current);
+  }, [dataReady]); // eslint-disable-line
+
+  // Run every minute to auto-add at exact time
+  useEffect(() => {
+    if (!dataReady) return;
+    const interval = setInterval(() => {
+      autoAddBusFare(dataRef.current);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [dataReady, autoAddBusFare]);
+
   // ── Auto Scheduled Payments: process due payments regardless of tab ──────────
-  const processScheduledPayments = useCallback(() => {
-    const payments = dataRef.current.scheduledPayments || [];
+  const processScheduledPayments = useCallback((currentData) => {
+    const payments = currentData.scheduledPayments || [];
     if (!payments.length) return;
 
     const now = new Date();
@@ -580,14 +620,14 @@ function App() {
 
   // Run catch-up when data is ready (handles overdue payments when app opens)
   useEffect(() => {
-    if (dataReady) processScheduledPayments();
+    if (dataReady) processScheduledPayments(dataRef.current);
   }, [dataReady]); // eslint-disable-line
 
   // Run every minute to process scheduled payments at exact time
   useEffect(() => {
     if (!dataReady) return;
     const interval = setInterval(() => {
-      processScheduledPayments();
+      processScheduledPayments(dataRef.current);
     }, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [dataReady, processScheduledPayments]);
@@ -4743,8 +4783,9 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
     const SIX_HOURS = 6 * 60 * 60 * 1000;
 
     async function runAutoBackup() {
-      const token = await getFreshDriveToken();
-      if (!token) return; // no token — skip silently
+      const token = localStorage.getItem("ft_drv_access_tok");
+      const expiry = parseInt(localStorage.getItem("ft_drv_access_exp") || "0");
+      if (!token || Date.now() > expiry) return; // token gone — skip silently
 
       try {
         // Need fresh gdrive values — read from localStorage snapshot via closure
@@ -4874,9 +4915,7 @@ function IntegrationsSettings({ data, update, cardStyle, sectionTitle, firebaseU
       if (!parsed._meta || parsed._meta.appVersion !== "fintrack_v2")
         throw new Error("This file doesn't look like a FinTrack backup.");
       const { _meta, ...restored } = parsed;
-      const restoredWithUser = { ...restored, user: data.user, gdriveIntegration: data.gdriveIntegration };
-      setData(restoredWithUser);
-      if (firebaseUser) await replaceAllData(firebaseUser.uid, restoredWithUser);
+      update(prev => ({ ...restored, user: prev.user, gdriveIntegration: prev.gdriveIntegration }));
       setRestoreConfirm(null);
       setShowFiles(false);
       flashMsg("success", `✅ Restored from ${file.name}`);
@@ -5535,20 +5574,15 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
   }
 
   // ── IMPORT — step 2: user confirmed, apply data ──────────────────────────────
-  async function confirmImport() {
+  function confirmImport() {
     if (!pendingImport) return;
     const { _meta, ...restored } = pendingImport;
-    const restoredWithUser = { ...defaultData, ...restored, user: data.user };
-    // Update local state immediately
-    setData(restoredWithUser);
+    // Preserve current Firebase user identity
+    update(prev => ({ ...defaultData, ...restored, user: prev.user }));
     setShowConfirm(false);
     setPendingImport(null);
     setImportStatus("success");
     setImportMsg(`Backup restored successfully from ${_meta.exportedAt?.slice(0, 10) || "unknown date"}.`);
-    // Replace all Firestore data with restored data
-    if (firebaseUser) {
-      await replaceAllData(firebaseUser.uid, restoredWithUser);
-    }
   }
 
   function cancelImport() {
@@ -5744,7 +5778,7 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
       <div style={cardStyle}>
         {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
         <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 }}>
-          Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, and all settings.
+          Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, commute logs, and all settings.
           Store this file somewhere safe (email to yourself, cloud storage, or external drive).
         </p>
         <button style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }} onClick={handleExport}>
@@ -6640,6 +6674,12 @@ function AnalysisTab({ data, update, accounts }) {
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calDay,   setCalDay]   = useState(null);
+
+  // ── Office / commute settings ──────────────────────────────────────────────
+  const [showCommuteSetup, setShowCommuteSetup] = useState(false);
+  const commuteSettings = data.commuteSettings || { busFare: 0, bankId: "", category: "Transport", note: "Bus fare" };
+  // leaves: Set of date strings "YYYY-MM-DD" stored in data.commuteLeaves
+  const commuteLeaves = data.commuteLeaves || [];
 
   const txns = data.transactions || [];
   const fmtCur = n => "₹" + Math.abs(Number(n)||0).toLocaleString("en-IN", {maximumFractionDigits:0});
@@ -17147,90 +17187,5 @@ function PortfolioAnalysisView({ data }) {
         </div>
       </div>
     </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Error Boundary — catches any render/runtime crash so the app shows a friendly
-// recovery screen instead of a blank white page. (Issue #8)
-// ═══════════════════════════════════════════════════════════════════════════════
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error, info) {
-    // Log only in development; avoids leaking internals in production.
-    if (import.meta.env && import.meta.env.DEV) {
-      console.error("[ErrorBoundary] Caught error:", error, info);
-    }
-  }
-
-  handleReset = () => {
-    this.setState({ hasError: false, error: null });
-  };
-
-  render() {
-    if (!this.state.hasError) return this.props.children;
-
-    const wrap = {
-      minHeight: "100vh", display: "flex", alignItems: "center",
-      justifyContent: "center", padding: "1.5rem",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      background: "#f8fafc",
-    };
-    const card = {
-      maxWidth: 440, width: "100%", background: "#fff", borderRadius: 16,
-      padding: "2rem", textAlign: "center",
-      boxShadow: "0 10px 30px rgba(0,0,0,0.08)", border: "1px solid #e5e7eb",
-    };
-    const btnRow = { display: "flex", gap: 10, justifyContent: "center", marginTop: "1.25rem", flexWrap: "wrap" };
-    const btn = {
-      padding: "0.6rem 1.2rem", borderRadius: 10, border: "none",
-      fontSize: 14, fontWeight: 600, cursor: "pointer",
-    };
-    const primary = { ...btn, background: "#059669", color: "#fff" };
-    const ghost   = { ...btn, background: "#f1f5f9", color: "#0f172a", border: "1px solid #e2e8f0" };
-
-    return (
-      <div style={wrap}>
-        <div style={card}>
-          <div style={{ fontSize: 44, lineHeight: 1, marginBottom: "0.5rem" }}>⚠️</div>
-          <h2 style={{ margin: "0 0 0.5rem", fontSize: 20, color: "#0f172a" }}>
-            Something went wrong
-          </h2>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 14, lineHeight: 1.5 }}>
-            The app hit an unexpected error. Your saved data is safe — try again,
-            or reload the app.
-          </p>
-          {this.state.error?.message && (
-            <pre style={{
-              marginTop: "1rem", padding: "0.75rem", background: "#fef2f2",
-              color: "#b91c1c", borderRadius: 8, fontSize: 12, textAlign: "left",
-              whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 140, overflow: "auto",
-            }}>
-              {this.state.error.message}
-            </pre>
-          )}
-          <div style={btnRow}>
-            <button style={primary} onClick={this.handleReset}>Try Again</button>
-            <button style={ghost} onClick={() => window.location.reload()}>Reload App</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-}
-
-export default function AppWithErrorBoundary() {
-  return (
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
   );
 }
