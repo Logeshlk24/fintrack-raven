@@ -184,7 +184,7 @@ const PF_WITHDRAWALS   = "pfWithdrawals";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const settingsRef = (uid) => doc(db, "users", uid, "fintrack", "settings");
-const subRef      = (uid, sub) => collection(db, "users", uid, "fintrack", sub);
+const subRef      = (uid, sub) => collection(db, "users", uid, sub);
 
 function cleanData(obj) {
   return JSON.parse(JSON.stringify(obj, (_, val) => val === undefined ? null : val));
@@ -220,7 +220,7 @@ async function writeSubcollection(uid, subName, items) {
     const chunk = items.slice(i, i + BATCH_SIZE);
     chunk.forEach(item => {
       const id  = toDocId(item);
-      const ref = doc(db, "users", uid, "fintrack", subName, id);
+      const ref = doc(db, "users", uid, subName, id);
       batch.set(ref, cleanData(item), { merge: true });
     });
     await batch.commit();
@@ -425,7 +425,7 @@ export async function saveSettingsToFirestore(uid, data) {
 export async function saveSubcollectionItem(uid, subName, item) {
   try {
     const id  = toDocId(item);
-    const ref = doc(db, "users", uid, "fintrack", subName, id);
+    const ref = doc(db, "users", uid, subName, id);
     await setDoc(ref, cleanData(item), { merge: true });
   } catch (e) {
     console.error(`[firestore] Save item error in ${subName}:`, e);
@@ -438,7 +438,7 @@ export async function saveSubcollectionItem(uid, subName, item) {
 export async function deleteSubcollectionItem(uid, subName, item) {
   try {
     const id  = toDocId(item);
-    const ref = doc(db, "users", uid, "fintrack", subName, id);
+    const ref = doc(db, "users", uid, subName, id);
     await deleteDoc(ref);
   } catch (e) {
     console.error(`[firestore] Delete item error in ${subName}:`, e);
