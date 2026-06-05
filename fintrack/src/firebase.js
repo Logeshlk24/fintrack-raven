@@ -11,6 +11,12 @@ import {
   doc,
   getDoc,
   setDoc,
+  collection,
+  getDocs,
+  writeBatch,
+  deleteDoc,
+  query,
+  orderBy,
 } from "firebase/firestore";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -34,53 +40,24 @@ export const db   = getFirestore(app);
 // ══════════════════════════════════════════════════════════════════════════════
 // GOOGLE DRIVE AUTH — Full OAuth redirect flow
 // ══════════════════════════════════════════════════════════════════════════════
-//
-// Flow:
-//   1. signInWithGoogle() → redirects to /api/auth/google
-//   2. /api/auth/google   → redirects to Google consent page
-//   3. Google             → redirects to /api/auth/callback?code=...
-//   4. /api/auth/callback → exchanges code for tokens
-//                        → stores refresh_token encrypted in Firestore (server only)
-//                        → creates Firebase custom token
-//                        → redirects to app?custom_token=...
-//   5. App picks up ?custom_token from URL → signInWithCustomToken()
-//   6. Firebase auth is established. Refresh token NEVER in browser.
-//
-//   Any Drive API call → getFreshDriveToken()
-//                     → POST /api/drive-token { action:"refresh", idToken }
-//                     → server decrypts refresh token → returns fresh access token
-//                     → stored in memory only (_cachedAccessToken)
-//                     → no expiry UX — server refreshes silently forever
-//
-// The refresh token NEVER leaves the server. Ever.
-
-// ── In-memory access token cache (no localStorage, no sessionStorage) ────────
 let _cachedAccessToken = null;
-let _tokenExpiresAt    = 0; // epoch ms
+let _tokenExpiresAt    = 0;
 
-// ── signInWithGoogle — redirects to OAuth flow ───────────────────────────────
-// This replaces the old signInWithPopup approach entirely.
 export function signInWithGoogle() {
-  // Full page redirect to our serverless OAuth initiator
   window.location.href = "/api/auth/google";
 }
 
-// ── handleAuthCallback — call this on app load to complete sign-in ───────────
-// Checks URL for ?custom_token= param, signs into Firebase, cleans URL.
-// Returns true if a token was found and used, false otherwise.
 export async function handleAuthCallback() {
   const params      = new URLSearchParams(window.location.search);
   const customToken = params.get("custom_token");
   const authError   = params.get("auth_error");
 
-  // Clean up URL params regardless
   if (customToken || authError) {
-    const clean = window.location.pathname;
-    window.history.replaceState({}, "", clean);
+    window.history.replaceState({}, "", window.location.pathname);
   }
 
   if (authError) {
-    console.error("[auth] OAuth error from callback:", authError);
+    console.error("[auth] OAuth error:", authError);
     throw new Error(decodeURIComponent(authError));
   }
 
@@ -94,71 +71,38 @@ export async function handleAuthCallback() {
   return false;
 }
 
-// ── getFreshDriveToken — returns a valid Drive access token ──────────────────
-// 1. Returns cached in-memory token if still fresh (>5 min left)
-// 2. Calls /api/drive-token to get a fresh token from the server
-// 3. Returns null if server has no refresh token (user must sign in again)
-//
-// NO localStorage. NO sessionStorage. Token lives only in this module variable.
 export async function getFreshDriveToken() {
   const user = auth.currentUser;
-  if (!user) {
-    console.log("[drive] No Firebase user — cannot get Drive token");
-    return null;
-  }
+  if (!user) return null;
 
-  // ── Step 1: Return cached token if fresh ────────────────────────────────────
   if (_cachedAccessToken && Date.now() < _tokenExpiresAt - 5 * 60 * 1000) {
     return _cachedAccessToken;
   }
 
-  // ── Step 2: Ask server for a fresh access token ──────────────────────────────
   try {
-    console.log("[drive] Requesting fresh token from server...");
-    // Firebase ID token proves to our server that the caller is the real user
     const idToken = await user.getIdToken();
-
     const res = await fetch("/api/drive-token", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ action: "refresh", idToken }),
     });
 
-    if (res.status === 404) {
-      // No refresh token on server — user needs to sign in again
-      console.log("[drive] No refresh token on server — re-auth needed");
-      _cachedAccessToken = null;
-      _tokenExpiresAt    = 0;
-      return null;
-    }
-
-    if (res.status === 401) {
-      // Token was revoked
-      console.log("[drive] Refresh token revoked — re-auth needed");
-      _cachedAccessToken = null;
-      _tokenExpiresAt    = 0;
-      return null;
-    }
-
     if (!res.ok) {
-      console.error("[drive] Server error:", res.status);
+      _cachedAccessToken = null;
+      _tokenExpiresAt    = 0;
       return null;
     }
 
     const { accessToken, expiresIn } = await res.json();
-    // Store in memory only — persists across tab navigations via server
     _cachedAccessToken = accessToken;
-    _tokenExpiresAt    = Date.now() + (expiresIn - 60) * 1000; // 1 min buffer
-    console.log("[drive] Fresh access token received from server ✅");
+    _tokenExpiresAt    = Date.now() + (expiresIn - 60) * 1000;
     return accessToken;
-
   } catch (err) {
     console.error("[drive] Token fetch error:", err.message);
     return null;
   }
 }
 
-// ── clearDriveToken — call when user disconnects Drive from Settings ──────────
 export async function clearDriveToken() {
   _cachedAccessToken = null;
   _tokenExpiresAt    = 0;
@@ -177,7 +121,6 @@ export async function clearDriveToken() {
   }
 }
 
-// ── signOutUser ───────────────────────────────────────────────────────────────
 export const signOutUser = () => {
   _cachedAccessToken = null;
   _tokenExpiresAt    = 0;
@@ -187,31 +130,397 @@ export const signOutUser = () => {
 export { onAuthStateChanged };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// FIRESTORE HELPERS
+// FIRESTORE STRUCTURE
 // ══════════════════════════════════════════════════════════════════════════════
+//
+// users/{uid}/
+//   settings                          ← DOCUMENT: static config only
+//   transactions/{id}                 ← SUBCOLLECTION
+//   assets/{id}                       ← SUBCOLLECTION
+//   liabilities/{id}                  ← SUBCOLLECTION
+//   banks/{id}                        ← SUBCOLLECTION
+//   emis/{id}                         ← SUBCOLLECTION
+//   goals/{id}                        ← SUBCOLLECTION
+//   goalAccounts/{id}                 ← SUBCOLLECTION
+//   budgets/{id}                      ← SUBCOLLECTION
+//   scheduledPayments/{id}            ← SUBCOLLECTION
+//   needsWants/{id}                   ← SUBCOLLECTION
+//   portfolioHoldings/{id}            ← SUBCOLLECTION
+//   foTrades/{id}                     ← SUBCOLLECTION
+//   snapshots/{id}                    ← SUBCOLLECTION
+//   businessData/{id}                 ← SUBCOLLECTION
+//   projectsData/{id}                 ← SUBCOLLECTION
+//   pfContributions/{id}              ← SUBCOLLECTION
+//   pfWithdrawals/{id}                ← SUBCOLLECTION
+//
+// Settings document stores:
+//   profile, categories, featureToggles, brokerProfiles,
+//   lotSizes, customInstruments, foCharges, liabilityTypes,
+//   projectTaskTypes, navOrder, gdriveIntegration, needsWantsConfig
 
-const userRef = (uid) => doc(db, "users", uid, "fintrack", "data");
+// ── Which keys are subcollections ────────────────────────────────────────────
+// Each key maps to its Firestore subcollection name
+const SUBCOLLECTIONS = {
+  transactions:      "transactions",
+  assets:            "assets",
+  liabilities:       "liabilities",
+  banks:             "banks",
+  emis:              "emis",
+  goals:             "goals",
+  goalAccounts:      "goalAccounts",
+  budgets:           "budgets",
+  scheduledPayments: "scheduledPayments",
+  needsWants:        "needsWants",
+  portfolioHoldings: "portfolioHoldings",
+  foTrades:          "foTrades",
+  snapshots:         "snapshots",
+  businessData:      "businessData",
+  projectsData:      "projectsData",
+};
+
+// pfAccount is special — split into two subcollections
+const PF_CONTRIBUTIONS = "pfContributions";
+const PF_WITHDRAWALS   = "pfWithdrawals";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const settingsRef = (uid) => doc(db, "users", uid, "fintrack", "settings");
+const subRef      = (uid, sub) => collection(db, "users", uid, "fintrack", sub);
 
 function cleanData(obj) {
-  return JSON.parse(JSON.stringify(obj, (key, val) =>
-    val === undefined ? null : val
-  ));
+  return JSON.parse(JSON.stringify(obj, (_, val) => val === undefined ? null : val));
 }
 
+// Generate a stable string ID from a number or use existing string id
+function toDocId(item) {
+  if (item.id !== undefined && item.id !== null) {
+    return String(item.id).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100);
+  }
+  return `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ── Read all docs from a subcollection → returns array ───────────────────────
+async function readSubcollection(uid, subName) {
+  try {
+    const snap = await getDocs(subRef(uid, subName));
+    return snap.docs.map(d => d.data());
+  } catch (e) {
+    console.error(`[firestore] Error reading ${subName}:`, e);
+    return [];
+  }
+}
+
+// ── Write an array to a subcollection (batch, overwrites all) ────────────────
+async function writeSubcollection(uid, subName, items) {
+  if (!Array.isArray(items) || items.length === 0) return;
+
+  // Firestore batch limit is 500 ops
+  const BATCH_SIZE = 400;
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    const chunk = items.slice(i, i + BATCH_SIZE);
+    chunk.forEach(item => {
+      const id  = toDocId(item);
+      const ref = doc(db, "users", uid, "fintrack", subName, id);
+      batch.set(ref, cleanData(item), { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
+// ── Delete all docs in a subcollection then rewrite ──────────────────────────
+async function replaceSubcollection(uid, subName, items) {
+  // Delete existing docs
+  const snap = await getDocs(subRef(uid, subName));
+  if (!snap.empty) {
+    const BATCH_SIZE = 400;
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+  // Write new docs
+  if (Array.isArray(items) && items.length > 0) {
+    await writeSubcollection(uid, subName, items);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// loadFromFirestore — reads settings doc + all subcollections
+// ══════════════════════════════════════════════════════════════════════════════
 export async function loadFromFirestore(uid, fallback) {
   try {
-    const snap = await getDoc(userRef(uid));
-    if (snap.exists()) return { ...fallback, ...snap.data() };
+    // ── 1. Read settings document ──────────────────────────────────────────
+    const settingsSnap = await getDoc(settingsRef(uid));
+    const settings     = settingsSnap.exists() ? settingsSnap.data() : {};
+
+    // ── 2. Check if this is an old-format user (single doc) ───────────────
+    // Old format stored data at: users/{uid}/fintrack/data
+    const oldRef  = doc(db, "users", uid, "fintrack", "data");
+    const oldSnap = await getDoc(oldRef);
+
+    if (oldSnap.exists() && !settingsSnap.exists()) {
+      // First load after migration — migrate old data to new structure
+      console.log("[firestore] Old format detected — migrating to subcollections...");
+      const oldData = oldSnap.data();
+      await migrateOldFormat(uid, oldData);
+      // Delete old doc after migration
+      await deleteDoc(oldRef);
+      console.log("[firestore] Migration complete ✅");
+      // Now load the freshly migrated data
+      return await loadFromFirestore(uid, fallback);
+    }
+
+    // ── 3. Read all subcollections in parallel ─────────────────────────────
+    const [
+      transactions,
+      assets,
+      liabilities,
+      banks,
+      emis,
+      goals,
+      goalAccounts,
+      budgets,
+      scheduledPayments,
+      needsWants,
+      portfolioHoldings,
+      foTrades,
+      snapshots,
+      businessData,
+      projectsData,
+      pfContributions,
+      pfWithdrawals,
+    ] = await Promise.all([
+      readSubcollection(uid, "transactions"),
+      readSubcollection(uid, "assets"),
+      readSubcollection(uid, "liabilities"),
+      readSubcollection(uid, "banks"),
+      readSubcollection(uid, "emis"),
+      readSubcollection(uid, "goals"),
+      readSubcollection(uid, "goalAccounts"),
+      readSubcollection(uid, "budgets"),
+      readSubcollection(uid, "scheduledPayments"),
+      readSubcollection(uid, "needsWants"),
+      readSubcollection(uid, "portfolioHoldings"),
+      readSubcollection(uid, "foTrades"),
+      readSubcollection(uid, "snapshots"),
+      readSubcollection(uid, "businessData"),
+      readSubcollection(uid, "projectsData"),
+      readSubcollection(uid, "pfContributions"),
+      readSubcollection(uid, "pfWithdrawals"),
+    ]);
+
+    // ── 4. Assemble full app state ─────────────────────────────────────────
+    return {
+      ...fallback,
+      ...settings,
+      transactions,
+      assets,
+      liabilities,
+      banks,
+      emis,
+      goals,
+      goalAccounts,
+      budgets,
+      scheduledPayments,
+      needsWants,
+      portfolioHoldings,
+      foTrades,
+      snapshots,
+      businessData,
+      projectsData,
+      pfAccount: {
+        contributions: pfContributions,
+        withdrawals:   pfWithdrawals,
+      },
+    };
   } catch (e) {
-    console.error("Firestore load error:", e);
+    console.error("[firestore] Load error:", e);
+    return fallback;
   }
-  return fallback;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// saveToFirestore — writes settings doc + changed subcollections
+// ══════════════════════════════════════════════════════════════════════════════
 export async function saveToFirestore(uid, data) {
   try {
-    await setDoc(userRef(uid), cleanData(data), { merge: true });
+    // ── 1. Split data into settings vs subcollections ──────────────────────
+    const {
+      // subcollection fields — extracted out
+      transactions,
+      assets,
+      liabilities,
+      banks,
+      emis,
+      goals,
+      goalAccounts,
+      budgets,
+      scheduledPayments,
+      needsWants,
+      portfolioHoldings,
+      foTrades,
+      snapshots,
+      businessData,
+      projectsData,
+      pfAccount,
+      // non-persisted fields
+      user,
+      // everything else goes to settings doc
+      ...settingsData
+    } = data;
+
+    // ── 2. Write settings document (merge: true) ───────────────────────────
+    await setDoc(settingsRef(uid), cleanData(settingsData), { merge: true });
+
+    // ── 3. Write subcollections in parallel ───────────────────────────────
+    await Promise.all([
+      writeSubcollection(uid, "transactions",      transactions      || []),
+      writeSubcollection(uid, "assets",            assets            || []),
+      writeSubcollection(uid, "liabilities",       liabilities       || []),
+      writeSubcollection(uid, "banks",             banks             || []),
+      writeSubcollection(uid, "emis",              emis              || []),
+      writeSubcollection(uid, "goals",             goals             || []),
+      writeSubcollection(uid, "goalAccounts",      goalAccounts      || []),
+      writeSubcollection(uid, "budgets",           budgets           || []),
+      writeSubcollection(uid, "scheduledPayments", scheduledPayments || []),
+      writeSubcollection(uid, "needsWants",        needsWants        || []),
+      writeSubcollection(uid, "portfolioHoldings", portfolioHoldings || []),
+      writeSubcollection(uid, "foTrades",          foTrades          || []),
+      writeSubcollection(uid, "snapshots",         snapshots         || []),
+      writeSubcollection(uid, "businessData",      businessData      || []),
+      writeSubcollection(uid, "projectsData",      projectsData      || []),
+      writeSubcollection(uid, "pfContributions",   pfAccount?.contributions || []),
+      writeSubcollection(uid, "pfWithdrawals",     pfAccount?.withdrawals   || []),
+    ]);
   } catch (e) {
-    console.error("Firestore save error:", e);
+    console.error("[firestore] Save error:", e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// saveSettingsToFirestore — lightweight save for settings-only changes
+// Use this when only non-array config changes (featureToggles, profile, etc.)
+// ══════════════════════════════════════════════════════════════════════════════
+export async function saveSettingsToFirestore(uid, data) {
+  try {
+    const {
+      transactions, assets, liabilities, banks, emis, goals, goalAccounts,
+      budgets, scheduledPayments, needsWants, portfolioHoldings, foTrades,
+      snapshots, businessData, projectsData, pfAccount, user,
+      ...settingsData
+    } = data;
+    await setDoc(settingsRef(uid), cleanData(settingsData), { merge: true });
+  } catch (e) {
+    console.error("[firestore] Settings save error:", e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// saveSubcollectionItem — save/update a single item in a subcollection
+// Use for adding/editing one transaction, one asset, etc. — much faster
+// than rewriting the entire subcollection
+// ══════════════════════════════════════════════════════════════════════════════
+export async function saveSubcollectionItem(uid, subName, item) {
+  try {
+    const id  = toDocId(item);
+    const ref = doc(db, "users", uid, "fintrack", subName, id);
+    await setDoc(ref, cleanData(item), { merge: true });
+  } catch (e) {
+    console.error(`[firestore] Save item error in ${subName}:`, e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// deleteSubcollectionItem — delete a single item from a subcollection
+// ══════════════════════════════════════════════════════════════════════════════
+export async function deleteSubcollectionItem(uid, subName, item) {
+  try {
+    const id  = toDocId(item);
+    const ref = doc(db, "users", uid, "fintrack", subName, id);
+    await deleteDoc(ref);
+  } catch (e) {
+    console.error(`[firestore] Delete item error in ${subName}:`, e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// migrateOldFormat — one-time migration from single doc to subcollections
+// Called automatically on first load if old format is detected
+// ══════════════════════════════════════════════════════════════════════════════
+async function migrateOldFormat(uid, oldData) {
+  const {
+    transactions, assets, liabilities, banks, emis, goals, goalAccounts,
+    budgets, scheduledPayments, needsWants, portfolioHoldings, foTrades,
+    snapshots, businessData, projectsData, pfAccount,
+    user,
+    ...settingsData
+  } = oldData;
+
+  // Write settings doc
+  await setDoc(settingsRef(uid), cleanData(settingsData), { merge: true });
+
+  // Write all subcollections
+  await Promise.all([
+    writeSubcollection(uid, "transactions",      transactions      || []),
+    writeSubcollection(uid, "assets",            assets            || []),
+    writeSubcollection(uid, "liabilities",       liabilities       || []),
+    writeSubcollection(uid, "banks",             banks             || []),
+    writeSubcollection(uid, "emis",              emis              || []),
+    writeSubcollection(uid, "goals",             goals             || []),
+    writeSubcollection(uid, "goalAccounts",      goalAccounts      || []),
+    writeSubcollection(uid, "budgets",           budgets           || []),
+    writeSubcollection(uid, "scheduledPayments", scheduledPayments || []),
+    writeSubcollection(uid, "needsWants",        needsWants        || []),
+    writeSubcollection(uid, "portfolioHoldings", portfolioHoldings || []),
+    writeSubcollection(uid, "foTrades",          foTrades          || []),
+    writeSubcollection(uid, "snapshots",         snapshots         || []),
+    writeSubcollection(uid, "businessData",      businessData      || []),
+    writeSubcollection(uid, "projectsData",      projectsData      || []),
+    writeSubcollection(uid, "pfContributions",   pfAccount?.contributions || []),
+    writeSubcollection(uid, "pfWithdrawals",     pfAccount?.withdrawals   || []),
+  ]);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// replaceAllSubcollections — used during import/restore
+// Completely replaces all subcollections with new data
+// ══════════════════════════════════════════════════════════════════════════════
+export async function replaceAllData(uid, data) {
+  try {
+    const {
+      transactions, assets, liabilities, banks, emis, goals, goalAccounts,
+      budgets, scheduledPayments, needsWants, portfolioHoldings, foTrades,
+      snapshots, businessData, projectsData, pfAccount,
+      user,
+      ...settingsData
+    } = data;
+
+    // Settings doc — full overwrite
+    await setDoc(settingsRef(uid), cleanData(settingsData));
+
+    // Subcollections — delete all then rewrite
+    await Promise.all([
+      replaceSubcollection(uid, "transactions",      transactions      || []),
+      replaceSubcollection(uid, "assets",            assets            || []),
+      replaceSubcollection(uid, "liabilities",       liabilities       || []),
+      replaceSubcollection(uid, "banks",             banks             || []),
+      replaceSubcollection(uid, "emis",              emis              || []),
+      replaceSubcollection(uid, "goals",             goals             || []),
+      replaceSubcollection(uid, "goalAccounts",      goalAccounts      || []),
+      replaceSubcollection(uid, "budgets",           budgets           || []),
+      replaceSubcollection(uid, "scheduledPayments", scheduledPayments || []),
+      replaceSubcollection(uid, "needsWants",        needsWants        || []),
+      replaceSubcollection(uid, "portfolioHoldings", portfolioHoldings || []),
+      replaceSubcollection(uid, "foTrades",          foTrades          || []),
+      replaceSubcollection(uid, "snapshots",         snapshots         || []),
+      replaceSubcollection(uid, "businessData",      businessData      || []),
+      replaceSubcollection(uid, "projectsData",      projectsData      || []),
+      replaceSubcollection(uid, "pfContributions",   pfAccount?.contributions || []),
+      replaceSubcollection(uid, "pfWithdrawals",     pfAccount?.withdrawals   || []),
+    ]);
+  } catch (e) {
+    console.error("[firestore] Replace all error:", e);
   }
 }
