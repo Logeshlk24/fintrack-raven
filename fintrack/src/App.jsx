@@ -2415,7 +2415,7 @@ function MoneyPage({ data, update, tab, setTab }) {
       {tab === "transfer" && <TransferTab data={data} update={update} accounts={accounts} />}
 
       {/* ── Scheduled Payments Tab ── */}
-      {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} />}
+      {tab === "scheduled" && <ScheduledPaymentsTab data={data} update={update} accounts={accounts} processScheduledPayments={processScheduledPayments} dataRef={dataRef} />}
 
       {/* ── Budget Tab ── */}
       {tab === "budget" && <BudgetTab data={data} update={update} categories={categories} />}
@@ -7115,7 +7115,7 @@ function AnalysisTab({ data, update, accounts }) {
 }
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ScheduledPaymentsTab({ data, update, accounts }) {
+function ScheduledPaymentsTab({ data, update, accounts, processScheduledPayments, dataRef }) {
   const payments = data.scheduledPayments || [];
   const categories = data.categories || { expense: ["Food","Rent","Travel","Shopping","Health","Bills","EMI","Other"], income: ["Salary","Freelance","Investment","Business","Gift","Other"] };
   const [form, setForm] = useState({ name: "", flowType: "expense", type: "EMI", amount: "", day: "", startDate: new Date().toISOString().slice(0, 10), freq: "monthly", customEveryN: "1", customUnit: "months", customWeekDays: [], autoTime: "", tenure: "", notes: "", accountId: "" });
@@ -7143,7 +7143,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
     if (!form.name.trim() || !form.amount || (needsDay && !form.day)) return;
     const isWeekly = form.freq === "custom" && form.customUnit === "weeks";
     const sd = new Date(form.startDate);
-    update(p => ({ scheduledPayments: [...(p.scheduledPayments || []), {
+    const newPayment = {
       id: Date.now(), ...form,
       amount: parseFloat(form.amount),
       day: isWeekly ? (sd.getDate()) : parseInt(form.day),
@@ -7152,8 +7152,17 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       autoTime: form.autoTime || "",
       tenure: form.tenure ? parseInt(form.tenure) : null,
       paid: []
-    }] }));
+    };
+    update(p => ({ scheduledPayments: [...(p.scheduledPayments || []), newPayment] }));
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
+    // After React flushes the state update, run processScheduledPayments so any
+    // past-due occurrences of the newly added payment are auto-processed immediately
+    // (instead of waiting up to 60 seconds for the interval tick).
+    setTimeout(() => {
+      if (processScheduledPayments && dataRef) {
+        processScheduledPayments(dataRef.current);
+      }
+    }, 100);
   }
 
   // Note: Auto-payment processing is now handled globally in the App component,
