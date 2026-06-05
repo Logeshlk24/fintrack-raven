@@ -398,8 +398,8 @@ export default function App() {
   }, [firebaseUser]);
 
   // ── Auto Scheduled Payments: process due payments regardless of tab ──────────
-  const processScheduledPayments = useCallback((currentData) => {
-    const payments = currentData.scheduledPayments || [];
+  const processScheduledPayments = useCallback(() => {
+    const payments = dataRef.current.scheduledPayments || [];
     if (!payments.length) return;
 
     const now = new Date();
@@ -580,14 +580,14 @@ export default function App() {
 
   // Run catch-up when data is ready (handles overdue payments when app opens)
   useEffect(() => {
-    if (dataReady) processScheduledPayments(dataRef.current);
+    if (dataReady) processScheduledPayments();
   }, [dataReady]); // eslint-disable-line
 
   // Run every minute to process scheduled payments at exact time
   useEffect(() => {
     if (!dataReady) return;
     const interval = setInterval(() => {
-      processScheduledPayments(dataRef.current);
+      processScheduledPayments();
     }, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [dataReady, processScheduledPayments]);
