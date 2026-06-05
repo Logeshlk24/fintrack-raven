@@ -8690,7 +8690,9 @@ function AddSavingsInline({ item, cardAccent, accounts, goalAccounts, addSavings
 }
 
 // ─── Goals Page ───────────────────────────────────────────────────────────────
-function GoalsPage({ data, update }) {
+// GoalsPage wrapped in React.memo — skips re-render when data/update are unchanged (Issue #9)
+const GoalsPage = React.memo(GoalsPageInner);
+function GoalsPageInner({ data, update }) {
   const items = data.needsWants || [];
   const [activeTab, setActiveTab] = useState("needs");
   // selectedGoal: { id } — which goal folder is open; null = show grid
@@ -9792,7 +9794,9 @@ function PriceEditor({ monthEntry, onSave }) {
   );
 }
 
-function BusinessPage({ data, update }) {
+// BusinessPage wrapped in React.memo — skips re-render when data/update are unchanged (Issue #9)
+const BusinessPage = React.memo(BusinessPageInner);
+function BusinessPageInner({ data, update }) {
   // Data structure: businesses = [{ id, name, data: [{id, year, month, monthIndex, grossIncome, netIncome, billImage, ...}] }]
   // Migrate legacy flat businessData into first business if needed
   const businesses = data.businesses || [];
@@ -15522,7 +15526,9 @@ function ComparativeAnalysisView({ data }) {
 }
 
 // ─── Mutual Funds Page ────────────────────────────────────────────────────────
-function MutualFundsPage({ data, update }) {
+// MutualFundsPage wrapped in React.memo — skips re-render when data/update are unchanged (Issue #9)
+const MutualFundsPage = React.memo(MutualFundsPageInner);
+function MutualFundsPageInner({ data, update }) {
   const mfs = data.mutualFunds || [];
   const [tab, setTab] = useState("holdings"); // "holdings" | "sip"
   const [form, setForm] = useState({ name: "", units: "", nav: "", investedAmount: "", startDate: "" });
@@ -15785,7 +15791,9 @@ function MutualFundsPage({ data, update }) {
   );
 }
 
-function PortfolioPage({ data, update, title = "Indian Stocks", holdingsKey = "portfolioHoldings", defaultExchange = "NSE" }) {
+// PortfolioPage wrapped in React.memo — skips re-render when data/update are unchanged (Issue #9)
+const PortfolioPage = React.memo(PortfolioPageInner);
+function PortfolioPageInner({ data, update, title = "Indian Stocks", holdingsKey = "portfolioHoldings", defaultExchange = "NSE" }) {
   const holdings = data[holdingsKey] || [];
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
 
