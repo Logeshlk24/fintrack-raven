@@ -247,7 +247,7 @@ function fmtRate(r) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export default function App() {
+function App() {
   // ── Mobile detection ──────────────────────────────────────────────────────
   const [mobile, setMobile] = useState(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
@@ -17149,3 +17149,89 @@ function PortfolioAnalysisView({ data }) {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Error Boundary — catches any render/runtime crash so the app shows a friendly
+// recovery screen instead of a blank white page. (Issue #8)
+// ═══════════════════════════════════════════════════════════════════════════════
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, info) {
+    // Log only in development; avoids leaking internals in production.
+    if (import.meta.env && import.meta.env.DEV) {
+      console.error("[ErrorBoundary] Caught error:", error, info);
+    }
+  }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+
+    const wrap = {
+      minHeight: "100vh", display: "flex", alignItems: "center",
+      justifyContent: "center", padding: "1.5rem",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      background: "#f8fafc",
+    };
+    const card = {
+      maxWidth: 440, width: "100%", background: "#fff", borderRadius: 16,
+      padding: "2rem", textAlign: "center",
+      boxShadow: "0 10px 30px rgba(0,0,0,0.08)", border: "1px solid #e5e7eb",
+    };
+    const btnRow = { display: "flex", gap: 10, justifyContent: "center", marginTop: "1.25rem", flexWrap: "wrap" };
+    const btn = {
+      padding: "0.6rem 1.2rem", borderRadius: 10, border: "none",
+      fontSize: 14, fontWeight: 600, cursor: "pointer",
+    };
+    const primary = { ...btn, background: "#059669", color: "#fff" };
+    const ghost   = { ...btn, background: "#f1f5f9", color: "#0f172a", border: "1px solid #e2e8f0" };
+
+    return (
+      <div style={wrap}>
+        <div style={card}>
+          <div style={{ fontSize: 44, lineHeight: 1, marginBottom: "0.5rem" }}>⚠️</div>
+          <h2 style={{ margin: "0 0 0.5rem", fontSize: 20, color: "#0f172a" }}>
+            Something went wrong
+          </h2>
+          <p style={{ margin: 0, color: "#64748b", fontSize: 14, lineHeight: 1.5 }}>
+            The app hit an unexpected error. Your saved data is safe — try again,
+            or reload the app.
+          </p>
+          {this.state.error?.message && (
+            <pre style={{
+              marginTop: "1rem", padding: "0.75rem", background: "#fef2f2",
+              color: "#b91c1c", borderRadius: 8, fontSize: 12, textAlign: "left",
+              whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 140, overflow: "auto",
+            }}>
+              {this.state.error.message}
+            </pre>
+          )}
+          <div style={btnRow}>
+            <button style={primary} onClick={this.handleReset}>Try Again</button>
+            <button style={ghost} onClick={() => window.location.reload()}>Reload App</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
+export default function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
