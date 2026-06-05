@@ -246,6 +246,50 @@ async function replaceSubcollection(uid, subName, items) {
   }
 }
 
+// ── Sync an array to a subcollection (upsert current + delete removed) ───────
+// This is what saveToFirestore uses. Unlike writeSubcollection (which only
+// adds/updates and can never remove), this reconciles deletions: any doc that
+// exists in Firestore but is NOT in `items` is deleted. This fixes the bug
+// where deleted scheduled payments / transactions reappeared after reload.
+async function syncSubcollection(uid, subName, items) {
+  if (!Array.isArray(items)) return;
+  const wantIds = new Set(items.map(toDocId));
+
+  // Read existing docs so we know which ones were removed in the app state.
+  let existingDocs = [];
+  try {
+    const snap = await getDocs(subRef(uid, subName));
+    existingDocs = snap.docs;
+  } catch (e) {
+    console.error(`[firestore] Sync read error in ${subName}:`, e);
+    return; // bail out rather than risk a partial/destructive write
+  }
+
+  // Build the op list: delete removed docs, upsert current items.
+  const ops = [];
+  existingDocs.forEach(d => {
+    if (!wantIds.has(d.id)) ops.push({ type: "delete", ref: d.ref });
+  });
+  items.forEach(item => {
+    const id  = toDocId(item);
+    const ref = doc(db, "users", uid, subName, id);
+    ops.push({ type: "set", ref, data: cleanData(item) });
+  });
+
+  if (ops.length === 0) return;
+
+  // Commit in batches (Firestore limit is 500 ops/batch).
+  const BATCH_SIZE = 400;
+  for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + BATCH_SIZE).forEach(op => {
+      if (op.type === "delete") batch.delete(op.ref);
+      else                       batch.set(op.ref, op.data, { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // loadFromFirestore — reads settings doc + all subcollections
 // ══════════════════════════════════════════════════════════════════════════════
@@ -376,23 +420,23 @@ export async function saveToFirestore(uid, data) {
 
     // ── 3. Write subcollections in parallel ───────────────────────────────
     await Promise.all([
-      writeSubcollection(uid, "transactions",      transactions      || []),
-      writeSubcollection(uid, "assets",            assets            || []),
-      writeSubcollection(uid, "liabilities",       liabilities       || []),
-      writeSubcollection(uid, "banks",             banks             || []),
-      writeSubcollection(uid, "emis",              emis              || []),
-      writeSubcollection(uid, "goals",             goals             || []),
-      writeSubcollection(uid, "goalAccounts",      goalAccounts      || []),
-      writeSubcollection(uid, "budgets",           budgets           || []),
-      writeSubcollection(uid, "scheduledPayments", scheduledPayments || []),
-      writeSubcollection(uid, "needsWants",        needsWants        || []),
-      writeSubcollection(uid, "portfolioHoldings", portfolioHoldings || []),
-      writeSubcollection(uid, "foTrades",          foTrades          || []),
-      writeSubcollection(uid, "snapshots",         snapshots         || []),
-      writeSubcollection(uid, "businessData",      businessData      || []),
-      writeSubcollection(uid, "projectsData",      projectsData      || []),
-      writeSubcollection(uid, "pfContributions",   pfAccount?.contributions || []),
-      writeSubcollection(uid, "pfWithdrawals",     pfAccount?.withdrawals   || []),
+      syncSubcollection(uid,  "transactions",      transactions      || []),
+      syncSubcollection(uid,  "assets",            assets            || []),
+      syncSubcollection(uid,  "liabilities",       liabilities       || []),
+      syncSubcollection(uid,  "banks",             banks             || []),
+      syncSubcollection(uid,  "emis",              emis              || []),
+      syncSubcollection(uid,  "goals",             goals             || []),
+      syncSubcollection(uid,  "goalAccounts",      goalAccounts      || []),
+      syncSubcollection(uid,  "budgets",           budgets           || []),
+      syncSubcollection(uid,  "scheduledPayments", scheduledPayments || []),
+      syncSubcollection(uid,  "needsWants",        needsWants        || []),
+      syncSubcollection(uid,  "portfolioHoldings", portfolioHoldings || []),
+      syncSubcollection(uid,  "foTrades",          foTrades          || []),
+      syncSubcollection(uid,  "snapshots",         snapshots         || []),
+      syncSubcollection(uid,  "businessData",      businessData      || []),
+      syncSubcollection(uid,  "projectsData",      projectsData      || []),
+      syncSubcollection(uid,  "pfContributions",   pfAccount?.contributions || []),
+      syncSubcollection(uid,  "pfWithdrawals",     pfAccount?.withdrawals   || []),
     ]);
   } catch (e) {
     console.error("[firestore] Save error:", e);
