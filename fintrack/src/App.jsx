@@ -7,8 +7,6 @@ import {
   loadFromFirestore,
   saveToFirestore,
   getFreshDriveToken,
-  handleAuthCallback,
-  clearDriveToken,
 } from "./firebase";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -158,8 +156,6 @@ const defaultData = {
   scheduledPayments: [],
   budgets: [],
   needsWants: [],
-  commuteSettings: { busFare: 0, bankId: "", category: "Transport", note: "Bus fare", timeLogs: [] },
-  commuteLeaves: [],
   featureToggles: { fo: true, portfolio: true },
   businessData: [],
   projectsData: [],
@@ -268,9 +264,8 @@ export default function App() {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
-  // ── 1. Handle OAuth callback + listen to Firebase auth changes ────────────
+  // ── 1. Listen to Firebase auth changes ───────────────────────────────────
   useEffect(() => {
-    handleAuthCallback().catch(err => console.error("Auth callback error:", err.message));
     const unsub = onAuthStateChanged(auth, (user) => setFirebaseUser(user ?? null));
     return unsub;
   }, []);
@@ -381,64 +376,6 @@ export default function App() {
       return next;
     });
   }, [firebaseUser]);
-
-  // ── Auto Bus Fare: runs on load (catch-up) + every minute (real-time) ────────
-  const autoAddBusFare = useCallback((currentData) => {
-    const settings = currentData.commuteSettings || {};
-    const timeLogs = settings.timeLogs || [];
-    if (!settings.busFare || !settings.bankId || timeLogs.length === 0) return;
-
-    const now = new Date();
-    const pad = n => String(n).padStart(2, "0");
-    const todayKey = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-    const dow = now.getDay(); // 0=Sun,6=Sat
-    if (dow === 0 || dow === 6) return; // weekend
-    const leaves = currentData.commuteLeaves || [];
-    if (leaves.includes(todayKey)) return; // on leave
-
-    const nowHHMM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const txns = currentData.transactions || [];
-
-    const toAdd = [];
-    timeLogs.forEach(tl => {
-      if (!tl.time) return;
-      // Add if current time >= slot time and not already added today
-      if (nowHHMM < tl.time) return;
-      const alreadyAdded = txns.some(t => t.date === todayKey && t._busfare === true && t._timeLogId === tl.id);
-      if (alreadyAdded) return;
-      toAdd.push({
-        id: Date.now() + Math.random(),
-        date: todayKey,
-        time: tl.time,
-        type: "expense",
-        amount: Number(settings.busFare),
-        category: settings.category || "Transport",
-        note: (settings.note || "Bus fare") + " – " + tl.label,
-        bankId: settings.bankId,
-        _busfare: true,
-        _timeLogId: tl.id,
-        _autoAdded: true,
-      });
-    });
-
-    if (toAdd.length > 0) {
-      update(p => ({ transactions: [...(p.transactions || []), ...toAdd] }));
-    }
-  }, [update]);
-
-  // Run catch-up when data is ready (handles app-was-closed case)
-  useEffect(() => {
-    if (dataReady) autoAddBusFare(dataRef.current);
-  }, [dataReady]); // eslint-disable-line
-
-  // Run every minute to auto-add at exact time
-  useEffect(() => {
-    if (!dataReady) return;
-    const interval = setInterval(() => {
-      autoAddBusFare(dataRef.current);
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [dataReady, autoAddBusFare]);
 
   // ── Auto Scheduled Payments: process due payments regardless of tab ──────────
   const processScheduledPayments = useCallback((currentData) => {
@@ -5781,7 +5718,7 @@ function BackupSettings({ data, update, cardStyle, sectionTitle, firebaseUser })
       <div style={cardStyle}>
         {sectionTitle("📤", "Export Data", "Download a full backup of all your FinTrack data as a JSON file.")}
         <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.6 }}>
-          Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, commute logs, and all settings.
+          Exports everything — transactions, assets, liabilities, EMIs, F&O trades, goals, portfolio holdings, and all settings.
           Store this file somewhere safe (email to yourself, cloud storage, or external drive).
         </p>
         <button style={{ ...btnBase, background: "#1a6b3c", color: "#fff" }} onClick={handleExport}>
@@ -6677,12 +6614,6 @@ function AnalysisTab({ data, update, accounts }) {
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calDay,   setCalDay]   = useState(null);
-
-  // ── Office / commute settings ──────────────────────────────────────────────
-  const [showCommuteSetup, setShowCommuteSetup] = useState(false);
-  const commuteSettings = data.commuteSettings || { busFare: 0, bankId: "", category: "Transport", note: "Bus fare" };
-  // leaves: Set of date strings "YYYY-MM-DD" stored in data.commuteLeaves
-  const commuteLeaves = data.commuteLeaves || [];
 
   const txns = data.transactions || [];
   const fmtCur = n => "₹" + Math.abs(Number(n)||0).toLocaleString("en-IN", {maximumFractionDigits:0});
