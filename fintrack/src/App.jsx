@@ -890,7 +890,7 @@ export default function App() {
       {/* Main */}
       <main style={{ flex: 1, padding: mobile ? "1rem" : "1.5rem", paddingBottom: mobile ? "80px" : "1.5rem", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%" }}>
         {page === "overview" && <Overview data={data} netWorth={netWorth} foNetPnl={foNetPnl} setPage={setPage} toggles={toggles} update={update} portfolioOn={portfolioOn} />}
-        {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} />}
+        {page === "money" && <MoneyPage data={data} update={update} tab={moneyTab} setTab={setMoneyTab} processScheduledPayments={processScheduledPayments} dataRef={dataRef} />}
         {page === "fo" && <FOPage data={data} update={update} tab={foTab} setTab={setFoTab} calcCharges={calcCharges} foNetPnl={foNetPnl} />}
         {page === "portfolio" && portfolioOn && <PortfolioHub data={data} update={update} />}
         {page === "goals" && <GoalsPage data={data} update={update} />}
@@ -2165,7 +2165,7 @@ function BudgetTab({ data, update, categories }) {
 // MONEY PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 
-function MoneyPage({ data, update, tab, setTab }) {
+function MoneyPage({ data, update, tab, setTab, processScheduledPayments, dataRef }) {
   const accounts = data.banks || [];
   const categories = data.categories || { expense: ["Food", "Rent", "Travel", "Shopping", "Health", "Bills", "EMI", "Other"], income: ["Salary", "Freelance", "Investment", "Business", "Gift", "Other"] };
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches);
