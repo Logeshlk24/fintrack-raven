@@ -1827,16 +1827,39 @@ function App() {
   }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 3. update() — same API as before, but writes to Firestore ─────────────
-  const update = useCallback((fn) => {
-    // Dispatch a sequential, race-free state update (reducer is pure).
-    dispatch({ type: "UPDATE", fn });
-    // Debounced Firestore write (800 ms after the last change). The timer reads
-    // the freshest, fully-composed state from dataRef when it actually fires,
-    // so batched rapid updates all get persisted together.
+  const update = useCallback((fn, immediate = false) => {
+    // Compose the next state ONCE (fn is pure) and keep dataRef in sync
+    // SYNCHRONOUSLY, so every save — debounced OR flushed on unload — always
+    // persists the very latest data instead of a stale snapshot.
+    const partial = fn(dataRef.current);
+    const next    = { ...dataRef.current, ...partial };
+    dataRef.current = next;
+    dispatch({ type: "SET", value: next });
+    // Debounced Firestore write (800 ms after the last change). Pass
+    // immediate = true for destructive actions (delete) so they persist at once.
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       if (firebaseUser) saveToFirestore(firebaseUser.uid, dataRef.current);
-    }, 800);
+    }, immediate ? 0 : 800);
+  }, [firebaseUser]);
+
+  // ── Flush pending (debounced) writes before the tab is hidden / reloaded ──
+  // Without this, a change made within the 800 ms debounce window is lost on
+  // reload — the classic "I deleted it but it came back" bug.
+  useEffect(() => {
+    const flush = () => {
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      if (firebaseUser) saveToFirestore(firebaseUser.uid, dataRef.current);
+    };
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [firebaseUser]);
 
   // ── Auto Scheduled Payments: process due payments regardless of tab ──────────
@@ -4415,7 +4438,7 @@ function TransactionsDashboardTab({ data, update, accounts, setEditTx }) {
                           </div>
                           {t.time && <div style={STYLES.s196}>{t.time}</div>}
                         </div>
-                        <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
+                        <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) }), true); }}
                           style={STYLES.s211}
                           title="Delete"
                           onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
@@ -4957,7 +4980,7 @@ function RecentTransactionsTab({ data, update, accounts, setEditTx }) {
                         </div>
                         {t.time && <div style={STYLES.s72}>{t.time}</div>}
                       </div>
-                      <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) })); }}
+                      <button onClick={e => { e.stopPropagation(); update(p => ({ transactions: p.transactions.filter(x => x.id !== t.id) }), true); }}
                         style={STYLES.s211}
                         title="Delete"
                         onMouseEnter={e => { e.currentTarget.style.color = "#cc2222"; e.currentTarget.style.opacity = "1"; }}
@@ -8539,7 +8562,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
       transactions: (p.transactions || []).filter(t =>
         !(t.scheduledPaymentId === id && t.scheduledPeriodKey && t.scheduledPeriodKey >= nextMonthKey)
       ),
-    }));
+    }), true);
   }
 
   function togglePaid(id) {
@@ -8585,7 +8608,7 @@ function ScheduledPaymentsTab({ data, update, accounts }) {
         scheduledPayments: payments.map(x => x.id === id ? { ...x, paid } : x),
         transactions,
       };
-    });
+    }, true);
   }
 
   function pad2(n) { return String(n).padStart(2,"0"); }
