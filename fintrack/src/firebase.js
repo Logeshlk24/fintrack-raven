@@ -248,7 +248,7 @@ async function replaceSubcollection(uid, subName, items) {
 
 // ── Sync an array to a subcollection (upsert current + delete removed) ───────
 // This is what saveToFirestore uses. Unlike writeSubcollection (which only
-// adds/updates and can never remove), this reconciles deletions: any doc that
+// adds/updates and can NEVER remove), this reconciles deletions: any doc that
 // exists in Firestore but is NOT in `items` is deleted. This fixes the bug
 // where deleted scheduled payments / transactions reappeared after reload.
 async function syncSubcollection(uid, subName, items) {
@@ -265,28 +265,39 @@ async function syncSubcollection(uid, subName, items) {
     return; // bail out rather than risk a partial/destructive write
   }
 
-  // Build the op list: delete removed docs, upsert current items.
-  const ops = [];
-  existingDocs.forEach(d => {
-    if (!wantIds.has(d.id)) ops.push({ type: "delete", ref: d.ref });
-  });
-  items.forEach(item => {
-    const id  = toDocId(item);
-    const ref = doc(db, "users", uid, subName, id);
-    ops.push({ type: "set", ref, data: cleanData(item) });
-  });
-
-  if (ops.length === 0) return;
-
-  // Commit in batches (Firestore limit is 500 ops/batch).
+  const toDelete = existingDocs.filter(d => !wantIds.has(d.id));
   const BATCH_SIZE = 400;
-  for (let i = 0; i < ops.length; i += BATCH_SIZE) {
-    const batch = writeBatch(db);
-    ops.slice(i, i + BATCH_SIZE).forEach(op => {
-      if (op.type === "delete") batch.delete(op.ref);
-      else                       batch.set(op.ref, op.data, { merge: true });
-    });
-    await batch.commit();
+
+  // 1) DELETE removed docs in their OWN batch(es). Kept separate from the
+  //    upserts so a permissions error on delete cannot also roll back the
+  //    upserts, and so the failure is clearly logged.
+  if (toDelete.length) {
+    try {
+      for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db);
+        toDelete.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
+      console.log(`[firestore] ${subName}: deleted ${toDelete.length} removed doc(s)`);
+    } catch (e) {
+      // Most common cause: Firestore Security Rules allow create/update but
+      // NOT delete. If you see this, fix your rules to allow delete.
+      console.error(`[firestore] DELETE failed in ${subName} (check Security Rules — must allow delete):`, e);
+    }
+  }
+
+  // 2) UPSERT current items.
+  try {
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      items.slice(i, i + BATCH_SIZE).forEach(item => {
+        const ref = doc(db, "users", uid, subName, toDocId(item));
+        batch.set(ref, cleanData(item), { merge: true });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.error(`[firestore] UPSERT failed in ${subName}:`, e);
   }
 }
 
