@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useReducer, useRef, useMemo } from "react";
 import {
   auth,
   signInWithGoogle,
@@ -166,6 +166,24 @@ const defaultData = {
   liabilityTypes: ["Credit Card", "Personal Loan", "Car Loan", "Home Loan", "Other"],
 };
 
+// ── Main data reducer ───────────────────────────────────────────────────────
+// Using useReducer (instead of useState) guarantees that rapid, successive
+// updates are applied SEQUENTIALLY against the latest state — so no update can
+// ever be lost to a race condition. The reducer is PURE (no side effects); the
+// Firestore save is scheduled separately inside update() (see below).
+function dataReducer(state, action) {
+  switch (action.type) {
+    case "UPDATE":
+      // fn(state) returns a partial object that is merged into the current state
+      return { ...state, ...action.fn(state) };
+    case "SET":
+      // value may be a full object or an updater fn (same API as setData)
+      return typeof action.value === "function" ? action.value(state) : action.value;
+    default:
+      return state;
+  }
+}
+
 
 
 const ASSET_TYPES = ["Stocks & Equity", "Equity Funds", "Gold & Silver", "FD & RD", "EPF / PPF / NPS", "Real Estate", "Crypto", "Cash", "Other"];
@@ -245,7 +263,9 @@ export default function App() {
   // ── Firebase auth state ───────────────────────────────────────────────────
   // undefined = still checking  |  null = signed out  |  object = signed in
   const [firebaseUser, setFirebaseUser] = useState(undefined);
-  const [data, setData]                 = useState({ ...defaultData });
+  const [data, dispatch]                = useReducer(dataReducer, { ...defaultData });
+  // Backwards-compatible shim so every existing setData(...) call keeps working.
+  const setData = useCallback((value) => dispatch({ type: "SET", value }), []);
   const [dataReady, setDataReady]       = useState(false);
 
   const [page, setPage]                 = useState("overview");
@@ -339,19 +359,15 @@ export default function App() {
               }
             }
             if (folderId && !cancelled) {
-              setData(prev => {
-                const next = {
-                  ...prev,
-                  gdriveIntegration: {
-                    connected: true,
-                    email: firebaseUser.email || "",
-                    folderId,
-                    connectedAt: new Date().toISOString(),
-                  },
-                };
-                saveToFirestore(firebaseUser.uid, next);
-                return next;
-              });
+              // update() sets state (race-free) AND schedules the debounced save.
+              update(() => ({
+                gdriveIntegration: {
+                  connected: true,
+                  email: firebaseUser.email || "",
+                  folderId,
+                  connectedAt: new Date().toISOString(),
+                },
+              }));
               console.log("✅ Google Drive auto-connected successfully!");
             }
           } else {
@@ -370,15 +386,15 @@ export default function App() {
 
   // ── 3. update() — same API as before, but writes to Firestore ─────────────
   const update = useCallback((fn) => {
-    setData(prev => {
-      const next = { ...prev, ...fn(prev) };
-      // Debounced Firestore write (800 ms after last change)
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        if (firebaseUser) saveToFirestore(firebaseUser.uid, next);
-      }, 800);
-      return next;
-    });
+    // Dispatch a sequential, race-free state update (reducer is pure).
+    dispatch({ type: "UPDATE", fn });
+    // Debounced Firestore write (800 ms after the last change). The timer reads
+    // the freshest, fully-composed state from dataRef when it actually fires,
+    // so batched rapid updates all get persisted together.
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      if (firebaseUser) saveToFirestore(firebaseUser.uid, dataRef.current);
+    }, 800);
   }, [firebaseUser]);
 
   // ── Auto Scheduled Payments: process due payments regardless of tab ──────────
