@@ -9855,6 +9855,7 @@ function BusinessPage({ data, update }) {
   const [billModal,    setBillModal]    = useState(null);
   const [renamingBiz,  setRenamingBiz]  = useState(null); // { id, value }
   const [renamingYear, setRenamingYear] = useState(null); // { year, value }
+  const [bizTab,       setBizTab]       = useState("active"); // "active" | "forecast"
   const [selectedMonth, setSelectedMonth] = useState(null); // monthEntry id (day-wise)
   const [selectedNonDayMonth, setSelectedNonDayMonth] = useState(null); // monthEntry id (non-day-wise detail)
   const [renamingDayMonth, setRenamingDayMonth] = useState(false); // day-wise month rename
@@ -9991,7 +9992,7 @@ function BusinessPage({ data, update }) {
 
   function addBusiness() {
     if (!newBizName.trim()) return;
-    const biz = { id: "biz_" + Date.now(), name: newBizName.trim(), data: [], createdAt: new Date().toISOString() };
+    const biz = { id: "biz_" + Date.now(), name: newBizName.trim(), data: [], bizType: bizTab, createdAt: new Date().toISOString() };
     update(p => ({ businesses: [...(p.businesses || []), biz] }));
     setNewBizName(""); setShowAddBiz(false);
     setSelectedBiz(biz.id);
@@ -10021,6 +10022,10 @@ function BusinessPage({ data, update }) {
   function renameBusiness(id, newName) {
     const n = newName.trim(); if (!n) return;
     update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, name: n } : b) }));
+  }
+
+  function moveBizType(id, type) {
+    update(p => ({ businesses: (p.businesses || []).map(b => b.id === id ? { ...b, bizType: type } : b) }));
   }
 
   function addYear() {
@@ -10678,84 +10683,114 @@ function BusinessPage({ data, update }) {
               <button onClick={addBusiness} style={{ background: "#1a6b3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Create</button>
             </div>
           )}
-          {businesses.length === 0 ? (
-            <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
-              No businesses yet. Click "+ New Business" to create your first one.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-              {businesses.map(biz => {
-                const bizYears = [...new Set((biz.data || []).map(e => e.year))];
-                const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
-                const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
-                const bizLiabilities = biz.liabilities || [];
-                const paidLiab   = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
-                const unpaidLiab = bizLiabilities.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
-                const finalNet   = totalNet - paidLiab - unpaidLiab;
-                const hasLiab    = bizLiabilities.length > 0;
-                return (
-                  <div key={biz.id} onClick={() => { if (!renamingBiz) { setSelectedBiz(biz.id); setShowLiabilitiesSection(false); } }}
-                    style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: "3px solid #1a6b3c", position: "relative" }}
-                    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
-                    onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
-                    <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
-                      style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
-                    <button onClick={ev => { ev.stopPropagation(); setRenamingBiz({ id: biz.id, value: biz.name }); }}
-                      style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, opacity: 0.6, padding: 2 }} title="Rename">✏️</button>
-                    <div style={{ fontSize: 32, marginBottom: 6 }}>🏢</div>
-                    {renamingBiz?.id === biz.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
-                        <input autoFocus value={renamingBiz.value}
-                          onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
-                          onKeyDown={e => { if (e.key === "Enter") { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
-                          onBlur={() => { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); }}
-                          style={{ width: "100%", boxSizing: "border-box", fontSize: 18, fontWeight: 700, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "'DM Serif Display', serif", background: "var(--color-background-secondary)" }} />
-                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
-                      </div>
-                    ) : (
-                      <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
-                    )}
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
 
-                    {/* Gross row — always shown */}
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
-                      <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(totalGross)}</span>
-                    </div>
+          {/* ── Tab Bar: Active / Forecast ── */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "var(--color-background-secondary)", borderRadius: 10, padding: 4, width: "fit-content" }}>
+            {[
+              { key: "active",   label: "🟢 Active Business" },
+              { key: "forecast", label: "🔮 Forecast Business" },
+            ].map(t => (
+              <button key={t.key} onClick={() => setBizTab(t.key)}
+                style={{ padding: "7px 18px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 13, fontWeight: bizTab === t.key ? 700 : 400,
+                  background: bizTab === t.key ? "var(--color-background-primary)" : "transparent",
+                  color: bizTab === t.key ? (t.key === "active" ? "#1a6b3c" : "#7c3aed") : "var(--color-text-secondary)",
+                  boxShadow: bizTab === t.key ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+                  transition: "all 0.15s" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-                    {/* Net row */}
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: hasLiab ? 4 : 0 }}>
-                      <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
-                      <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(totalNet)}</span>
-                    </div>
-
-                    {/* Liabilities breakdown — shown only if any liabilities exist */}
-                    {hasLiab && (
-                      <>
-                        <div style={{ borderTop: "0.5px dashed var(--color-border-tertiary)", margin: "6px 0" }} />
-                        {paidLiab > 0 && (
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                            <span style={{ color: "#c0392b" }}>Liabilities (paid)</span>
-                            <span style={{ color: "#c0392b", fontWeight: 600 }}>-{fmtCur(paidLiab)}</span>
-                          </div>
-                        )}
-                        {unpaidLiab > 0 && (
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                            <span style={{ color: "#f59e0b" }}>Liabilities (pending)</span>
-                            <span style={{ color: "#f59e0b", fontWeight: 500 }}>{fmtCur(unpaidLiab)}</span>
-                          </div>
-                        )}
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 5, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 2 }}>
-                          <span style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>Final Net</span>
-                          <span style={{ fontWeight: 700, color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", fontSize: 14 }}>{fmtCur(finalNet)}</span>
+          {(() => {
+            const filtered = businesses.filter(b => (b.bizType || "active") === bizTab);
+            return filtered.length === 0 ? (
+              <div style={{ background: "var(--color-background-primary)", borderRadius: 12, border: "0.5px dashed var(--color-border-secondary)", padding: "3rem", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                {businesses.length === 0
+                  ? 'No businesses yet. Click "+ New Business" to create your first one.'
+                  : `No ${bizTab === "active" ? "active" : "forecast"} businesses. Move one from the ${bizTab === "active" ? "Forecast" : "Active"} tab or create a new one.`}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+                {filtered.map(biz => {
+                  const bizYears = [...new Set((biz.data || []).map(e => e.year))];
+                  const totalGross = (biz.data || []).reduce((s, e) => s + (e.grossIncome || 0), 0);
+                  const totalNet   = (biz.data || []).reduce((s, e) => s + (e.netIncome   || 0), 0);
+                  const bizLiabilities = biz.liabilities || [];
+                  const paidLiab   = bizLiabilities.filter(l => l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                  const unpaidLiab = bizLiabilities.filter(l => !l.paid).reduce((s, l) => s + (l.amount || 0), 0);
+                  const finalNet   = totalNet - paidLiab - unpaidLiab;
+                  const hasLiab    = bizLiabilities.length > 0;
+                  const isForecast = (biz.bizType || "active") === "forecast";
+                  return (
+                    <div key={biz.id} onClick={() => { if (!renamingBiz) { setSelectedBiz(biz.id); setShowLiabilitiesSection(false); } }}
+                      style={{ background: "var(--color-background-primary)", borderRadius: 14, border: "0.5px solid var(--color-border-secondary)", padding: "1.2rem", cursor: renamingBiz?.id === biz.id ? "default" : "pointer", borderTop: isForecast ? "3px solid #7c3aed" : "3px solid #1a6b3c", position: "relative" }}
+                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+                      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                      {/* Move to other tab button */}
+                      <button onClick={ev => { ev.stopPropagation(); moveBizType(biz.id, isForecast ? "active" : "forecast"); }}
+                        title={isForecast ? "Move to Active" : "Move to Forecast"}
+                        style={{ position: "absolute", top: 10, right: 60, background: "none", border: "none", cursor: "pointer", color: isForecast ? "#1a6b3c" : "#7c3aed", fontSize: 13, opacity: 0.7, padding: 2 }}>
+                        {isForecast ? "🟢" : "🔮"}
+                      </button>
+                      <button onClick={ev => { ev.stopPropagation(); deleteBusiness(biz.id); }}
+                        style={{ position: "absolute", top: 10, right: 34, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: 0.5, padding: 2 }}>🗑</button>
+                      <button onClick={ev => { ev.stopPropagation(); setRenamingBiz({ id: biz.id, value: biz.name }); }}
+                        style={{ position: "absolute", top: 10, right: 8, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, opacity: 0.6, padding: 2 }} title="Rename">✏️</button>
+                      <div style={{ fontSize: 32, marginBottom: 6 }}>{isForecast ? "🔮" : "🏢"}</div>
+                      {renamingBiz?.id === biz.id ? (
+                        <div onClick={e => e.stopPropagation()} style={{ marginBottom: 4 }}>
+                          <input autoFocus value={renamingBiz.value}
+                            onChange={e => setRenamingBiz(p => ({ ...p, value: e.target.value }))}
+                            onKeyDown={e => { if (e.key === "Enter") { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); } if (e.key === "Escape") setRenamingBiz(null); }}
+                            onBlur={() => { renameBusiness(biz.id, renamingBiz.value); setRenamingBiz(null); }}
+                            style={{ width: "100%", boxSizing: "border-box", fontSize: 18, fontWeight: 700, border: "0.5px solid #1a6b3c", borderRadius: 6, padding: "3px 8px", outline: "none", fontFamily: "'DM Serif Display', serif", background: "var(--color-background-secondary)" }} />
+                          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>Enter to save · Esc to cancel</div>
                         </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                      ) : (
+                        <div style={{ fontWeight: 700, fontSize: 20, fontFamily: "'DM Serif Display', serif", marginBottom: 4 }}>{biz.name}</div>
+                      )}
+                      <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 8 }}>{bizYears.length} year{bizYears.length !== 1 ? "s" : ""} of data</div>
+
+                      {/* Gross row — always shown */}
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: "var(--color-text-secondary)" }}>Gross</span>
+                        <span style={{ color: "#1a6b3c", fontWeight: 600 }}>{fmtCur(totalGross)}</span>
+                      </div>
+
+                      {/* Net row */}
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: hasLiab ? 4 : 0 }}>
+                        <span style={{ color: "var(--color-text-secondary)" }}>Net</span>
+                        <span style={{ color: "#4da6ff", fontWeight: 600 }}>{fmtCur(totalNet)}</span>
+                      </div>
+
+                      {/* Liabilities breakdown — shown only if any liabilities exist */}
+                      {hasLiab && (
+                        <>
+                          <div style={{ borderTop: "0.5px dashed var(--color-border-tertiary)", margin: "6px 0" }} />
+                          {paidLiab > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                              <span style={{ color: "#c0392b" }}>Liabilities (paid)</span>
+                              <span style={{ color: "#c0392b", fontWeight: 600 }}>-{fmtCur(paidLiab)}</span>
+                            </div>
+                          )}
+                          {unpaidLiab > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                              <span style={{ color: "#f59e0b" }}>Liabilities (pending)</span>
+                              <span style={{ color: "#f59e0b", fontWeight: 500 }}>{fmtCur(unpaidLiab)}</span>
+                            </div>
+                          )}
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 5, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 2 }}>
+                            <span style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>Final Net</span>
+                            <span style={{ fontWeight: 700, color: finalNet >= 0 ? "#1a6b3c" : "#c0392b", fontSize: 14 }}>{fmtCur(finalNet)}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </>
       )}
 
