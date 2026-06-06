@@ -609,8 +609,10 @@ export default function App() {
           }];
         }
 
+        // Always sync paid[] — even if tx was already logged (catches race where
+        // paid[] update was missed on a previous run due to stale dataRef snapshot)
         scheduledPayments = scheduledPayments.map(x =>
-          x.id === pay.id ? { ...x, paid: [...x.paid, key] } : x
+          x.id === pay.id && !x.paid.includes(key) ? { ...x, paid: [...x.paid, key] } : x
         );
       });
 
@@ -7155,14 +7157,14 @@ function ScheduledPaymentsTab({ data, update, accounts, processScheduledPayments
     };
     update(p => ({ scheduledPayments: [...(p.scheduledPayments || []), newPayment] }));
     setForm(p => ({ ...p, name: "", amount: "", day: "", notes: "", tenure: "" }));
-    // After React flushes the state update, run processScheduledPayments so any
-    // past-due occurrences of the newly added payment are auto-processed immediately
-    // (instead of waiting up to 60 seconds for the interval tick).
+    // After state has flushed + dataRef has updated, process any due occurrences
+    // of the newly added payment immediately (avoids waiting for the 60s interval).
+    // 800ms gives React time to flush setData → dataRef.current update.
     setTimeout(() => {
       if (processScheduledPayments && dataRef) {
         processScheduledPayments(dataRef.current);
       }
-    }, 100);
+    }, 800);
   }
 
   // Note: Auto-payment processing is now handled globally in the App component,
@@ -7571,10 +7573,10 @@ function ScheduledPaymentsTab({ data, update, accounts, processScheduledPayments
               {list.length === 0 ? <EmptyState msg="No scheduled payments yet. Add one on the left." /> : list.map(p => {
                 const d = getDueDate(p);
                 const key = getNextDueKey(p);
-                const isPaid = key && p.paid.includes(key);
+                // Also check transactions directly — in case paid[] update lagged behind tx creation
+                const autoPaidTx = key && (data.transactions || []).find(t => t.scheduledPaymentId === p.id && t.scheduledPeriodKey === key && t.note?.endsWith("(auto)"));
+                const isPaid = (key && p.paid.includes(key)) || !!autoPaidTx;
                 const days = d ? daysDiff(d) : null;
-                // Check if this was auto-paid (transaction note ends with "(auto)")
-                const autoPaidTx = isPaid && (data.transactions || []).find(t => t.scheduledPaymentId === p.id && t.scheduledPeriodKey === key && t.note?.endsWith("(auto)"));
                 let badge = "", badgeColor = "var(--color-text-secondary)", badgeBg = "var(--color-background-secondary)";
                 if (!isPaid && d && days !== null) {
                   if (days < 0) { badge = `${Math.abs(days)}d overdue`; badgeColor = "#d44"; badgeBg = "#fdf0f0"; }
