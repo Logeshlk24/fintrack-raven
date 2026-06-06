@@ -7169,16 +7169,9 @@ function ScheduledPaymentsTab({ data, update, accounts, processScheduledPayments
   // so scheduled payments are processed automatically even when this tab is not active.
 
   function deletePayment(id) {
-    // Keep all past transactions including current month — only drop strictly future ones
-    const now = new Date();
-    const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const nextMonthKey = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, "0")}`;
+    // Only remove the scheduled payment entry — all auto-generated transactions stay
     update(p => ({
       scheduledPayments: (p.scheduledPayments || []).filter(x => x.id !== id),
-      // Only remove transactions from NEXT month onwards — keep all past + current month data
-      transactions: (p.transactions || []).filter(t =>
-        !(t.scheduledPaymentId === id && t.scheduledPeriodKey && t.scheduledPeriodKey >= nextMonthKey)
-      ),
     }));
   }
 
